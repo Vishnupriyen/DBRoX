@@ -4,6 +4,7 @@ import { allocateOldestFirst, r2, shopOutstanding } from '../core/ledger';
 import { inr, speak, t } from '../core/i18n';
 import { fileToDataUrl } from '../core/scan';
 import type { CreditNote, Invoice, Payment, Product, Shop } from '../core/types';
+import { ask, askText, confirmBox } from './dialog';
 
 interface Stop { shop: Shop; invoices: Invoice[] }
 
@@ -191,10 +192,12 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                       {s?.qty ? <span className="badge red">−{s.qty} {REASONS.find(r => r.value === s.reason)?.label}</span> : null}
                     </div>
                   </div>
-                  <button className="btn small" onClick={() => {
-                    const q = Number(prompt(`${t('short')}: how many pieces of ${l.name}?`, String(s?.qty ?? '')) ?? '');
+                  <button className="btn small" onClick={async () => {
+                    const raw = await askText(`${t('short')}: how many pieces of ${l.name}?`, String(s?.qty ?? ''), 'number');
+                    if (raw == null) return;
+                    const q = Number(raw);
                     if (!Number.isFinite(q)) return;
-                    const reason = q ? (confirm('Damaged in van? (OK = damaged, Cancel = not loaded / refused)') ? 'damaged' : 'short') : 'short';
+                    const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
                     setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
                   }}>{t('short')}</button>
                 </div>
@@ -204,7 +207,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         </div>
       ))}
       <button className="btn big primary" onClick={toConfirm}>{t('delivered')}</button>
-      <button className="btn big" style={{ marginTop: 8 }} onClick={() => { if (confirm('Shop refused everything? All goods go back to godown and a credit note is made.')) void confirmDelivery(true); }}>{t('returnAll')}</button>
+      <button className="btn big" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown and a credit note is made.', 'Return all')) void confirmDelivery(true); }}>{t('returnAll')}</button>
     </div>
   );
 }

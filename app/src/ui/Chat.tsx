@@ -5,6 +5,7 @@ import { getLang, t } from '../core/i18n';
 import { ApproveTable, ReadTable } from './ApproveTable';
 import { PrintBill } from './PrintBill';
 import type { Invoice, Role } from '../core/types';
+import { notify } from './dialog';
 
 interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[] }
 
@@ -49,7 +50,7 @@ export function Chat({ role }: { role: Role }) {
   const listen = () => {
     const W = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
     const Rec = W.SpeechRecognition ?? W.webkitSpeechRecognition;
-    if (!Rec) { alert('Voice typing is not available in this browser. Use the microphone on your keyboard instead.'); return; }
+    if (!Rec) { void notify('Voice typing not available here', 'Use the microphone key on your phone keyboard instead.'); return; }
     const r = new Rec();
     r.lang = getLang() === 'ta' ? 'ta-IN' : 'en-IN';
     r.interimResults = false;

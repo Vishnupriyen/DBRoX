@@ -6,6 +6,7 @@ import { downloadText } from '../core/readers';
 import { syncNow } from '../core/sync';
 import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff } from '../core/types';
 import { PrintBill } from './PrintBill';
+import { askText, confirmBox, notify } from './dialog';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
@@ -31,10 +32,10 @@ export function More({ role, onLogout, onLang }: { role: Role; onLogout: () => v
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
         downloadText(`DBRoX-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(dump));
       }}>💾 <span className="grow">Download full backup (all my data)</span></button>}
-      <button className="item" onClick={async () => alert(await syncNow())}>🔄 <span className="grow">Sync now</span></button>
+      <button className="item" onClick={async () => notify('Sync', await syncNow())}>🔄 <span className="grow">Sync now</span></button>
       <button className="item" onClick={onLogout}>🚪 <span className="grow">{t('logout')}</span></button>
       {role === 'owner' && <button className="item" style={{ color: 'var(--red)' }} onClick={async () => {
-        if (!confirm('Delete ALL data on this phone and load the demo again?')) return;
+        if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
       }}>🗑 <span className="grow">Reset demo data on this phone</span></button>}
       <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.1</div>
@@ -96,13 +97,13 @@ function StaffPage({ editable }: { editable: boolean }) {
   const load = () => db.staff.toArray().then(setList);
   useEffect(() => { load(); }, []);
   const add = async () => {
-    if (!form.name || !/^\d{10}$/.test(form.phone) || !/^\d{4}$/.test(form.pin)) { alert('Name, 10-digit phone and 4-digit PIN needed'); return; }
-    if (list.some(s => s.phone === form.phone)) { alert('This phone is already used'); return; }
+    if (!form.name || !/^\d{10}$/.test(form.phone) || !/^\d{4}$/.test(form.pin)) { void notify('Name, 10-digit phone and 4-digit PIN needed'); return; }
+    if (list.some(s => s.phone === form.phone)) { void notify('This phone number is already used'); return; }
     const cs = new ChangeSet(); cs.put<Staff>('staff', { ...form, active: true }, 'add staff'); await cs.commit('Staff added');
     setForm({ name: '', phone: '', role: 'salesman', pin: '' }); load();
   };
   const setActive = async (s: Staff, active: boolean) => {
-    if (!active && !confirm(`Remove ${s.name}'s access now? Their phone is locked out at the next sync. Their shops, orders and cash stay in the app.`)) return;
+    if (!active && !await confirmBox(`Remove ${s.name}'s access?`, 'Their phone is locked out at the next sync. Their shops, orders and cash stay in the app.', 'Remove access')) return;
     const cs = new ChangeSet(); cs.put('staff', { ...s, active }, active ? 'restore access' : 'remove access'); await cs.commit(active ? 'Access restored' : 'Access removed'); load();
   };
   return (
@@ -148,7 +149,7 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   };
   useEffect(() => { load(); }, []);
   const cancel = async (i: Invoice) => {
-    const reason = prompt(`Cancel bill ${i.number}? Bills are never deleted — give a reason:`);
+    const reason = await askText(`Cancel bill ${i.number}? Bills are never deleted — give a reason`);
     if (!reason) return;
     const cs = new ChangeSet();
     cs.put('invoices', { ...i, cancelled: { at: new Date().toISOString(), by: 'owner', reason } }, 'cancel bill');
@@ -185,7 +186,7 @@ function Claims() {
   useEffect(() => { load(); }, []);
   const set = async (c: Claim, status: Claim['status']) => {
     let received = c.received;
-    if (status === 'received') received = Number(prompt('Amount received ₹', String(c.amount)) ?? c.amount);
+    if (status === 'received') received = Number((await askText('Amount received ₹', String(c.amount), 'number')) ?? c.amount);
     const cs = new ChangeSet(); cs.put('claims', { ...c, status, received }, `claim ${status}`); await cs.commit('Claim status'); load();
   };
   const pending = list.filter(c => c.status !== 'received' && c.status !== 'rejected').reduce((a, c) => a + c.amount, 0);

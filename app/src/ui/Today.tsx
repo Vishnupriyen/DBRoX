@@ -6,6 +6,7 @@ import { inr, t } from '../core/i18n';
 import { loadSheet } from '../core/engine';
 import { ReadTable } from './ApproveTable';
 import type { AuditEntry, Order, Role } from '../core/types';
+import { askText, confirmBox } from './dialog';
 
 interface Data {
   sales: number; bills: number; collected: number; outstanding: number; cashWithStaff: number;
@@ -85,7 +86,7 @@ export function Today({ role }: { role: Role }) {
   };
   const okOrder = async (id: string) => { await approveOrder(id); setTick(x => x + 1); };
   const rejectOrder = async (o: Order) => {
-    const reason = prompt('Why cancel this order?');
+    const reason = await askText('Why cancel this order?');
     if (!reason) return;
     const cs = new ChangeSet(); cs.put('orders', { ...o, status: 'cancelled', issues: [...o.issues, `Cancelled: ${reason}`] }, 'cancel order');
     await cs.commit('Order cancelled'); setTick(x => x + 1);
@@ -155,7 +156,7 @@ export function Today({ role }: { role: Role }) {
             {d.recent.map(a => (
               <div key={a.id} className="row">
                 <span className="grow"><b>{a.action.split(':')[0]}</b> <span className="muted">· {new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span></span>
-                <button className="btn small" onClick={async () => { if (confirm('Undo this whole action?')) { await undoBatch(a.batchId); setTick(x => x + 1); } }}>↶ {t('undo')}</button>
+                <button className="btn small" onClick={async () => { if (await confirmBox('Undo this whole action?', 'Everything this approval changed goes back to how it was.', 'Undo')) { await undoBatch(a.batchId); setTick(x => x + 1); } }}>↶ {t('undo')}</button>
               </div>
             ))}
             {!d.recent.length && <div className="muted">{t('noItems')}</div>}

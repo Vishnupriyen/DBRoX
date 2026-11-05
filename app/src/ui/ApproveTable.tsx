@@ -4,6 +4,7 @@ import { refreshOrderRow } from '../core/engine';
 import { downloadSheet } from '../core/readers';
 import { t } from '../core/i18n';
 import type { Invoice } from '../core/types';
+import { notify } from './dialog';
 
 interface Props {
   proposal: Proposal;
@@ -50,7 +51,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
       onDone(res);
     } catch (e) {
       setClosed(null);
-      alert((e as Error).message);
+      void notify('Could not save', (e as Error).message);
     } finally { setBusy(false); }
   };
 

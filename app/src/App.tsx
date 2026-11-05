@@ -9,6 +9,7 @@ import { Delivery } from './ui/Delivery';
 import { Collect } from './ui/Collect';
 import { More } from './ui/More';
 import type { Role, Staff } from './core/types';
+import { DialogHost, notify } from './ui/dialog';
 
 type Tab = 'chat' | 'today' | 'delivery' | 'collect' | 'more';
 const TABS: Record<Role, Tab[]> = {
@@ -49,16 +50,16 @@ export default function App() {
   }, []);
 
   if (!ready) return <div className="login muted">DBRoX…</div>;
-  if (!me) return <Login onIn={async (tenantId, userId) => {
+  if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow(); // first login on this phone: bring down this distributor's data
     const s = await db.staff.get(userId);
-    if (!s) { alert('Could not load your data. Check the internet and try again.'); return; }
+    if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     setFirm((await db.settings.toCollection().first())?.firmName ?? '');
     setSession(tenantId, userId);
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
     setMe(s); setTab(TABS[s.role][0]);
-  }} />;
+  }} /></>;
 
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
   const label: Record<Tab, string> = { chat: t('chat'), today: t('today'), delivery: t('delivery'), collect: t('collect'), more: t('more') };
@@ -78,6 +79,7 @@ export default function App() {
         {tab === 'collect' && <Collect />}
         {tab === 'more' && <More role={me.role} onLogout={logout} onLang={() => setLangTick(x => x + 1)} />}
       </main>
+      <DialogHost />
       <nav className="tabs">
         {TABS[me.role].map(k => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
