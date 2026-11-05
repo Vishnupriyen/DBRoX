@@ -122,7 +122,7 @@ export function Today({ role }: { role: Role }) {
       {isBoss && d.alerts.length > 0 && (
         <div className="card">
           <h3>{t('alerts')}</h3>
-          <div className="list">{d.alerts.map((a, i) => <div key={i} className="row"><span className={`badge ${a.level}`}>{a.level === 'red' ? '!' : '•'}</span><span>{a.text}</span></div>)}</div>
+          <div className="list">{d.alerts.map((a, i) => <div key={i} className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}><span className={`badge ${a.level}`}>{a.level === 'red' ? '!' : '•'}</span><span style={{ minWidth: 0 }}>{a.text}</span></div>)}</div>
         </div>
       )}
 
