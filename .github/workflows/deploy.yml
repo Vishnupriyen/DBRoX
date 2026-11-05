@@ -1,0 +1,56 @@
+# Deploys DBRoX to Google Cloud (Mumbai). Run it by hand from the Actions tab after the
+# one-time setup in DEPLOY.md (it needs the GCP_SA_KEY and GCP_PROJECT secrets).
+name: Deploy
+on:
+  workflow_dispatch:
+
+env:
+  REGION: asia-south1
+  SERVICE: dbrox-server
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with: { credentials_json: '${{ secrets.GCP_SA_KEY }}' }
+      - uses: google-github-actions/setup-gcloud@v2
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          source: server
+          flags: >-
+            --allow-unauthenticated
+            --add-cloudsql-instances=${{ secrets.GCP_PROJECT }}:asia-south1:dbrox-db
+            --min-instances=0 --max-instances=20 --concurrency=80 --memory=512Mi
+          secrets: |
+            DATABASE_URL=dbrox-database-url:latest
+            JWT_SECRET=dbrox-jwt-secret:latest
+            ANTHROPIC_API_KEY=dbrox-anthropic-key:latest
+          env_vars: |
+            NODE_ENV=production
+            AI_MODEL=claude-haiku-5-5
+
+  web:
+    needs: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci && npm run build
+        working-directory: app
+        env:
+          VITE_SERVER_URL: ${{ needs.server.outputs.url }}
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
+          projectId: ${{ secrets.GCP_PROJECT }}
+          channelId: live
+          entryPoint: app

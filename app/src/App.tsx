@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { db, setSession } from './core/db';
 import { seedDemo } from './core/seed';
-import { login, startAutoSync } from './core/sync';
+import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Today } from './ui/Today';
@@ -30,7 +30,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      await seedDemo();
+      if (!ENV_SERVER) await seedDemo(); // demo mode only; real distributors load their data from the server
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');
       if (saved) {
@@ -41,6 +41,8 @@ export default function App() {
       setReady(true);
       startAutoSync();
     })();
+    const kicked = () => { localStorage.removeItem('dbrox.token'); setMe(null); };
+    window.addEventListener('dbrox:logout', kicked);
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
@@ -48,7 +50,11 @@ export default function App() {
 
   if (!ready) return <div className="login muted">DBRoX…</div>;
   if (!me) return <Login onIn={async (tenantId, userId) => {
-    const s = (await db.staff.get(userId))!;
+    setSession(tenantId, userId);
+    if (ENV_SERVER) await syncNow(); // first login on this phone: bring down this distributor's data
+    const s = await db.staff.get(userId);
+    if (!s) { alert('Could not load your data. Check the internet and try again.'); return; }
+    setFirm((await db.settings.toCollection().first())?.firmName ?? '');
     setSession(tenantId, userId);
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
     setMe(s); setTab(TABS[s.role][0]);
@@ -88,7 +94,24 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
   const [demo, setDemo] = useState<Staff[]>([]);
-  useEffect(() => { db.staff.toArray().then(setDemo); }, []);
+  const [newFirm, setNewFirm] = useState<{ firmName: string; ownerName: string; gstin: string } | null>(null);
+  useEffect(() => { if (!ENV_SERVER) db.staff.toArray().then(setDemo); }, []);
+  if (newFirm) return (
+    <div className="login">
+      <h1>DB<span style={{ color: 'var(--ink)' }}>RoX</span></h1>
+      <div className="muted" style={{ marginBottom: 16 }}>Start your 60-day free trial</div>
+      <label className="muted">Firm name</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} />
+      <label className="muted">Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} />
+      <label className="muted">GSTIN</label><input value={newFirm.gstin} onChange={e => setNewFirm({ ...newFirm, gstin: e.target.value.toUpperCase() })} />
+      <label className="muted">{t('phone')}</label><input inputMode="numeric" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} />
+      <label className="muted">Choose a {t('pin')}</label><input inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+      {err && <div style={{ color: 'var(--red)', marginBottom: 8 }}>{err}</div>}
+      <button className="btn primary big" onClick={async () => {
+        try { setErr(''); const r = await signup({ ...newFirm, phone, pin }); onIn(r.tenantId, r.userId); } catch (e) { setErr((e as Error).message); }
+      }}>Start free trial</button>
+      <button className="btn" style={{ marginTop: 8, width: '100%' }} onClick={() => setNewFirm(null)}>← Log in instead</button>
+    </div>
+  );
   const go = async (p = phone, n = pin) => {
     setErr('');
     const r = await login(p, n);
@@ -111,6 +134,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
         <button onClick={() => go()}>→</button>
       </div>
       {err && <div className="em" style={{ color: 'var(--red)' }}>{err}</div>}
+      {ENV_SERVER && <button className="btn" style={{ width: '100%', marginTop: 12 }} onClick={() => setNewFirm({ firmName: '', ownerName: '', gstin: '' })}>New distributor? Start free trial</button>}
       {demo.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="muted" style={{ marginBottom: 6 }}>Demo logins (tap one):</div>

@@ -1,6 +1,6 @@
 // RoX Scan: photo / scanned PDF → structured data, via the DBRoX server (which holds the AI key).
 // The phone never holds the AI key. The AI only reads; code validates; a person approves.
-import { getSettings } from './db';
+import { server } from './sync';
 
 export type ScanKind = 'purchase' | 'expense' | 'order';
 
@@ -44,15 +44,15 @@ export async function looksBlurry(file: File): Promise<boolean> {
 }
 
 export async function scanFile(file: File, kind: ScanKind): Promise<ScanResult> {
-  const settings = await getSettings();
-  if (!settings.serverUrl) throw new NoServerError('not connected');
+  const url = await server();
+  if (!url) throw new NoServerError('not connected');
   const dataUrl = await fileToDataUrl(file);
   const token = localStorage.getItem('dbrox.token') ?? '';
-  const res = await fetch(`${settings.serverUrl.replace(/\/$/, '')}/v1/scan`, {
+  const res = await fetch(`${url}/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ kind, file: dataUrl, name: file.name }),
   });
-  if (!res.ok) throw new Error(`Scan failed (${res.status})`);
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? `Scan failed (${res.status})`); }
   return await res.json();
 }

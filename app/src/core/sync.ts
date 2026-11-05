@@ -8,8 +8,21 @@ const SYNC_TABLES = ['settings', 'staff', 'companies', 'products', 'shops', 'bat
 
 interface Change { table: string; id: string; updatedAt: string; data: Base }
 
-async function server(): Promise<string | null> {
+// Server address: set at build time (VITE_SERVER_URL) for real distributors, or typed in Settings.
+export const ENV_SERVER = (import.meta.env.VITE_SERVER_URL as string | undefined)?.replace(/\/$/, '') || '';
+export async function server(): Promise<string | null> {
+  if (ENV_SERVER) return ENV_SERVER;
   try { return (await getSettings()).serverUrl?.replace(/\/$/, '') || null; } catch { return null; }
+}
+
+export async function signup(body: { firmName: string; ownerName: string; phone: string; pin: string; gstin?: string; address?: string }) {
+  const url = await server();
+  if (!url) throw new Error('No server');
+  const r = await fetch(`${url}/v1/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Sign-up failed');
+  localStorage.setItem('dbrox.token', j.token);
+  return { tenantId: j.tenantId as string, userId: j.userId as string };
 }
 
 export async function login(phone: string, pin: string): Promise<{ tenantId: string; userId: string } | null> {
@@ -32,10 +45,21 @@ export async function login(phone: string, pin: string): Promise<{ tenantId: str
 
 let running = false;
 export async function syncNow(): Promise<string> {
+  let msg = '';
+  for (let i = 0; i < 25; i++) { // keep pulling while the server says there is more
+    const r = await syncOnce();
+    msg = r.msg;
+    if (!r.more) break;
+  }
+  return msg;
+}
+
+async function syncOnce(): Promise<{ msg: string; more: boolean }> {
+  const done = (msg: string, more = false) => ({ msg, more });
   const url = await server();
-  if (!url) return 'Not connected to a DBRoX server yet. Everything is saved safely on this phone.';
-  if (!navigator.onLine) return 'Offline — will sync when there is signal.';
-  if (running) return 'Sync already running.';
+  if (!url) return done('Not connected to a DBRoX server yet. Everything is saved safely on this phone.');
+  if (!navigator.onLine) return done('Offline — will sync when there is signal.');
+  if (running) return done('Sync already running.');
   running = true;
   try {
     const token = localStorage.getItem('dbrox.token') ?? '';
@@ -46,9 +70,9 @@ export async function syncNow(): Promise<string> {
       for (const d of dirty) changes.push({ table: t, id: d.id, updatedAt: d.updatedAt, data: { ...d, dirty: undefined } });
     }
     const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
-    if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); return 'Your access was removed or expired. Please log in again.'; }
-    if (!r.ok) return `Sync failed (${r.status}). Data is safe on this phone; will retry.`;
-    const res: { cursor: number; changes: Change[]; accepted: string[] } = await r.json();
+    if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Your access was removed or expired. Please log in again.'); }
+    if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);
+    const res: { cursor: number; changes: Change[]; accepted: string[]; more?: boolean } = await r.json();
     const accepted = new Set(res.accepted);
     await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
       for (const c of changes) {
@@ -62,9 +86,9 @@ export async function syncNow(): Promise<string> {
       }
     });
     await db.meta.put({ key: 'cursor', value: res.cursor });
-    return `Synced: sent ${accepted.size}, received ${res.changes.length}.`;
+    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.`, !!res.more);
   } catch (e) {
-    return `Sync paused: ${(e as Error).message}. Data is safe on this phone.`;
+    return done(`Sync paused: ${(e as Error).message}. Data is safe on this phone.`);
   } finally { running = false; }
 }
 

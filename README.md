@@ -33,3 +33,14 @@ godown 9000000004 / 4444 · delivery 9000000005 / 5555.
 - attach `app/tests/sbi_statement.xlsx` → "match payments"
 - "Murugan Stores 1 case surf, 24 good day" · "Murugan Stores paid 2000 cash" · "van 1 diesel 1500"
 - "who owes more than 1000" · "load sheet" · "tally export" · "gstr1" · "e-invoice" · "claim file"
+
+## Run the server (sync, login, AI photo reading)
+```bash
+cd server
+npm install
+DATABASE_URL=postgres://… JWT_SECRET=… ANTHROPIC_API_KEY=… npm run dev
+npm test           # starts a throwaway PostgreSQL and tests sign-up, login, sync, roles, access removal
+npm run loadtest   # SERVER=http://localhost:8080 TENANTS=100 PHONES=5
+```
+Build the phone app against a server with `VITE_SERVER_URL=https://… npm run build` (no demo data; sign-up screen shown).
+Going live on Google Cloud (Mumbai): see [DEPLOY.md](DEPLOY.md).
