@@ -8,7 +8,7 @@ import { bestProduct, findAmount, findShopInText, norm, parseItemLines, toPieces
 import {
   companyOptions, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
-import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows } from './readers';
+import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
 import { MODULES, type ModuleKey, type Product, type Role, type Scheme } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
@@ -45,6 +45,7 @@ const W = {
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
   claimFile: ['claim file', 'claim report', 'claims for', 'make claim', 'கிளைம்'],
   needsOk: ['needs ok', 'approval', 'waiting', 'ஒப்புதல்'],
+  scheme: ['scheme', 'offer', 'ஸ்கீம்', 'சலுகை'],
 };
 
 const ROLE_CAN: Record<Role, string[]> = {
@@ -77,6 +78,7 @@ Examples:
 • "5 Good Day damaged" · "Selvam return 2 Surf"
 • "who owes more than 10000" · "today sales" · "stock of surf"
 • "load sheet" · "near expiry" · "cash in hand"
+• "HUL Surf 5% off till 30 Nov" · "Good Day buy 24 get 2"
 • "tally export" · "gstr1 october" · "e-invoice" · "claim file"
 • (attach product or shop list Excel) "add products" / "add shops"`;
 
@@ -119,6 +121,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   const shops = await db.shops.toArray();
   const { shop, rest } = findShopInText(shops, textIn);
 
+  if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
   if (has(text, W.damage) && !has(text, W.outstanding)) { const r = need('claims', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
   if (shop && has(text, W.ret)) { if (!can(role, 'return')) return deny(); return returnProposal(shop.id, rest); }
@@ -528,6 +531,46 @@ async function newShopProposal(textIn: string): Promise<Reply> {
       columns: shopColumns(),
       rows: [{ name, owner: '', phone: '', gstin: '', area: '', beat: '', creditLimit: 0, creditDays: 7, cashOnly: 'no', type: 'retail' }],
       meta: {},
+    },
+  };
+}
+
+async function schemeProposal(textIn: string): Promise<Reply> {
+  const t = norm(textIn);
+  const companies = await db.companies.toArray();
+  const products = await db.products.toArray();
+  const company = companies.find(c => t.includes(norm(c.code)) || t.includes(norm(c.name).split(' ')[0]));
+  const pct = textIn.toLowerCase().match(/(\d+(?:\.\d+)?)\s*(?:%|percent|சதவீதம்)/)?.[1];
+  const bg = t.match(/buy\s*(\d+)\s*get\s*(\d+)/);
+  const stripped = t.replace(/scheme|offer|ஸ்கீம்|சலுகை|buy\s*\d+\s*get\s*\d+|\d+(\.\d+)?\s*(%|percent)|off|till.*|to \d.*/g, ' ')
+    .replace(company ? new RegExp(`${norm(company.code)}|${norm(company.name).split(' ')[0]}`, 'g') : /$^/, ' ').trim();
+  const prod = stripped ? bestProduct(products.filter(p => !company || p.companyId === company.id), stripped).product : undefined;
+  const till = textIn.match(/(?:till|to|until|வரை)\s+(\d{1,2}[/\-. ][0-9A-Za-z]{1,3}(?:[/\-. ]\d{2,4})?)/i)?.[1];
+  let to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  if (till) { const d = toIsoDate(/\d{2,4}$/.test(till) && till.split(/[/\-. ]/).length === 3 ? till : `${till} ${new Date().getFullYear()}`); if (d) to = d; }
+  const row: Row = {
+    companyId: company?.id ?? prod?.companyId ?? '', productId: prod?.id ?? '', name: textIn.slice(0, 40),
+    type: bg ? 'free' : 'pct', value: pct ? Number(pct) : 0, buyQty: bg ? Number(bg[1]) : 0, freeQty: bg ? Number(bg[2]) : 0,
+    from: today(), to, source: 'company', combine: 'add',
+  };
+  return {
+    text: 'Scheme ready. Company schemes are claimed back automatically every month.',
+    proposal: {
+      id: newId(), kind: 'schemes', title: 'Add scheme', fields: [],
+      columns: [
+        { key: 'companyId', label: 'Company', type: 'select', options: await companyOptions(), width: 120 },
+        { key: 'productId', label: 'Product (blank = all)', type: 'select', options: [{ value: '', label: 'All products' }, ...(await productOptions()).filter(o => o.value && o.value !== '__new')], width: 170 },
+        { key: 'name', label: 'Name', width: 150 },
+        { key: 'type', label: 'Type', type: 'select', width: 90, options: [{ value: 'pct', label: '% off' }, { value: 'free', label: 'Buy X get Y' }] },
+        { key: 'value', label: '%', type: 'number', width: 55 },
+        { key: 'buyQty', label: 'Buy (pcs)', type: 'number', width: 65 },
+        { key: 'freeQty', label: 'Free (pcs)', type: 'number', width: 65 },
+        { key: 'from', label: 'From', type: 'date', width: 120 },
+        { key: 'to', label: 'To', type: 'date', width: 120 },
+        { key: 'source', label: 'Given by', type: 'select', width: 100, options: [{ value: 'company', label: 'Company' }, { value: 'own', label: 'Our own' }] },
+        { key: 'combine', label: 'With other schemes', type: 'select', width: 100, options: [{ value: 'add', label: 'Add on' }, { value: 'replace', label: 'Replace' }] },
+      ],
+      rows: [row], meta: {},
     },
   };
 }

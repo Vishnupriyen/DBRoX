@@ -72,3 +72,16 @@ describe('RoX Engine', () => {
     expect(c.table!.rows.length).toBeGreaterThan(0);
   });
 });
+
+describe('schemes', () => {
+  it('understands a scheme sentence', async () => {
+    const r = await handle('HUL Surf 5% off till 30 Nov', []);
+    const row = r.proposal!.rows[0];
+    expect(row.type).toBe('pct');
+    expect(row.value).toBe(5);
+    expect(String(row.to)).toMatch(/-11-30$/);
+    const b = await handle('Britannia Good Day buy 24 get 2 scheme', []);
+    expect(b.proposal!.rows[0]).toMatchObject({ type: 'free', buyQty: 24, freeQty: 2 });
+    expect(hasErrors(await validate(b.proposal!))).toBe(false);
+  });
+});

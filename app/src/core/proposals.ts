@@ -19,7 +19,7 @@ export interface Col {
 
 export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
-  | 'products' | 'shops' | 'newshop' | 'view';
+  | 'products' | 'shops' | 'newshop' | 'schemes' | 'view';
 
 export interface Proposal {
   id: string;
@@ -189,6 +189,17 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
       });
       v.summary = `${p.rows.length} product(s)`;
+      break;
+    }
+    case 'schemes': {
+      p.rows.forEach((r, i) => {
+        if (!s(r.companyId)) err(v, i, 'companyId', 'Pick company');
+        if (!s(r.name)) err(v, i, 'name', 'Give the scheme a name');
+        if (s(r.type) === 'pct' && (n(r.value) <= 0 || n(r.value) > 50)) err(v, i, 'value', '% between 0 and 50');
+        if (s(r.type) === 'free' && (n(r.buyQty) <= 0 || n(r.freeQty) <= 0)) err(v, i, 'buyQty', 'Buy and free quantities needed');
+        if (!s(r.from) || !s(r.to) || s(r.from) > s(r.to)) err(v, i, 'to', 'End date must be after start date');
+      });
+      v.summary = `${p.rows.length} scheme(s) — applied automatically on every bill in these dates`;
       break;
     }
     case 'shops':
@@ -377,6 +388,17 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         }, 'product');
       }
       message = `${p.rows.length} product(s) saved.`;
+      break;
+    }
+    case 'schemes': {
+      for (const r of p.rows) {
+        cs.put('schemes', {
+          companyId: s(r.companyId), productId: s(r.productId) || undefined, name: s(r.name), type: s(r.type) || 'pct',
+          value: n(r.value), buyQty: n(r.buyQty) || undefined, freeQty: n(r.freeQty) || undefined,
+          from: s(r.from), to: s(r.to), source: s(r.source) || 'company', combine: s(r.combine) || 'add',
+        }, 'scheme');
+      }
+      message = `${p.rows.length} scheme(s) saved. They apply automatically and company schemes go into the monthly claim.`;
       break;
     }
     case 'shops':
