@@ -1,0 +1,112 @@
+// Demo distributor so the app can be tried before real data is loaded.
+// GST rates here are demo values — real rates come from the company purchase bill.
+import { ChangeSet, db, setSession, today } from './db';
+import { makeInvoices } from './billing';
+import { allocateOldestFirst } from './ledger';
+import type { Company, Order, Payment, Product, Settings, Shop, Staff, Van } from './types';
+
+export function gstinWithCheck(first14: string) {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let sum = 0;
+  for (let i = 0; i < 14; i++) { const v = chars.indexOf(first14[i]) * (i % 2 === 0 ? 1 : 2); sum += Math.floor(v / 36) + (v % 36); }
+  return first14 + chars[(36 - (sum % 36)) % 36];
+}
+
+const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+
+export async function seedDemo(tenantId = 'demo') {
+  if (await db.settings.count()) return;
+  setSession(tenantId, 'system');
+  const cs = new ChangeSet();
+  const settings = cs.put<Settings>('settings', {
+    firmName: 'Sri Murugan Distributors (Demo)', gstin: gstinWithCheck('33ABCDE1234F1Z'),
+    address: '12 Bazaar Street, Tittakudi, Cuddalore 606106', stateCode: '33', phone: '9876543210',
+    modules: { orders: true, billing: true, godown: true, delivery: true, collection: true, bank: true, accounts: true, claims: true, scan: true },
+    billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5,
+  });
+  const van = cs.put<Van>('vans', { name: 'Van 1', number: 'TN 31 AB 1234', kind: 'own' });
+  cs.put<Van>('vans', { name: 'Auto 2', number: 'TN 31 C 5678', kind: 'hired' });
+  const staff = (name: string, phone: string, role: Staff['role'], pin: string, extra: Partial<Staff> = {}) =>
+    cs.put<Staff>('staff', { name, phone, role, pin, active: true, ...extra });
+  const owner = staff('Vishnu (Owner)', '9000000001', 'owner', '1111');
+  staff('Priya (Office)', '9000000002', 'office', '2222');
+  const ravi = staff('Ravi (Salesman)', '9000000003', 'salesman', '3333');
+  staff('Mani (Godown)', '9000000004', 'godown', '4444');
+  staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id });
+
+  const co = (name: string, code: string, pan: string) => cs.put<Company>('companies', { name, code, gstin: gstinWithCheck(`33${pan}1Z`), nextBillNo: 1 });
+  const hul = co('Hindustan Unilever', 'HUL', 'AAACH1004N');
+  const itc = co('ITC Limited', 'ITC', 'AAACI5950L');
+  const brit = co('Britannia Industries', 'BRT', 'AAACB2894G');
+
+  const prod = (c: Company, name: string, nameTa: string, code: string, hsn: string, gst: number, mrp: number, rate: number, caseSize: number, aliases: string[], focus = false) =>
+    cs.put<Product>('products', { companyId: c.id, name, nameTa, code, hsn, gst, mrp, rate, purchaseRate: Math.round(rate * 0.93 * 100) / 100, caseSize, aliases, focus, active: true });
+  const P = [
+    prod(hul, 'Surf Excel Easy Wash 1kg', 'சர்ஃப் எக்செல் 1கி', '21834', '3402', 18, 140, 112, 12, ['surf', 'surf excel', 'surf 1kg'], true),
+    prod(hul, 'Lifebuoy Soap 125g', 'லைஃப்பாய் சோப் 125கி', '21110', '3401', 5, 38, 31, 72, ['lifebuoy', 'lifeboy']),
+    prod(hul, 'Clinic Plus Shampoo Sachet (16 pcs)', 'கிளினிக் பிளஸ் ஷாம்பு', '21455', '3305', 5, 32, 26.5, 48, ['clinic plus', 'clinic']),
+    prod(hul, 'Red Label Tea 250g', 'ரெட் லேபிள் டீ 250கி', '21901', '0902', 5, 145, 124, 40, ['red label', 'tea']),
+    prod(hul, 'Vim Bar 200g', 'விம் பார் 200கி', '21330', '3402', 18, 25, 20.5, 60, ['vim']),
+    prod(itc, 'Aashirvaad Atta 5kg', 'ஆசீர்வாத் அட்டா 5கி', 'A5K', '1101', 5, 290, 255, 4, ['aashirvaad', 'atta']),
+    prod(itc, 'Sunfeast Dark Fantasy 75g', 'சன்ஃபீஸ்ட் டார்க் ஃபேண்டஸி', 'SDF75', '1905', 5, 40, 33, 48, ['dark fantasy', 'sunfeast']),
+    prod(itc, 'Bingo Mad Angles 66g', 'பிங்கோ மேட் ஆங்கிள்ஸ்', 'BMA66', '2106', 5, 20, 16.2, 60, ['bingo', 'mad angles'], true),
+    prod(itc, 'Classmate Notebook 172 pages', 'கிளாஸ்மேட் நோட்டு', 'CM172', '4820', 18, 60, 48, 24, ['classmate', 'notebook']),
+    prod(brit, 'Good Day Cashew 75g', 'குட் டே முந்திரி 75கி', 'GDC75', '1905', 5, 20, 16.4, 96, ['good day', 'goodday']),
+    prod(brit, 'Marie Gold 250g', 'மேரி கோல்ட் 250கி', 'MG250', '1905', 5, 40, 33, 36, ['marie', 'marie gold']),
+    prod(brit, 'Britannia Cake Fruit 60g', 'பிரிட்டானியா கேக்', 'BCF60', '1905', 5, 15, 12.3, 72, ['cake', 'fruit cake']),
+  ];
+  // stock: two batches each, older one first
+  P.forEach((p, i) => {
+    cs.put('batches', { productId: p.id, batch: `B${100 + i}A`, expiry: inDays(25 + i * 9), mrp: p.mrp, qty: p.caseSize * 2, godown: 'Main' });
+    cs.put('batches', { productId: p.id, batch: `B${100 + i}B`, expiry: inDays(200 + i * 15), mrp: p.mrp, qty: p.caseSize * 10, godown: 'Main' });
+  });
+  cs.put('schemes', { companyId: hul.id, productId: P[0].id, name: 'HUL Surf 5% off', type: 'pct', value: 5, from: daysAgo(30), to: inDays(30), source: 'company', combine: 'add' });
+  cs.put('schemes', { companyId: brit.id, productId: P[9].id, name: 'Good Day buy 24 get 2', type: 'free', value: 0, buyQty: 24, freeQty: 2, from: daysAgo(30), to: inDays(30), source: 'company', combine: 'add' });
+  cs.put('schemes', { companyId: itc.id, productId: P[7].id, name: 'Our Bingo 2% push', type: 'pct', value: 2, from: daysAgo(10), to: inDays(20), source: 'own', combine: 'add' });
+
+  const shop = (name: string, area: string, beat: string, extra: Partial<Shop> = {}) =>
+    cs.put<Shop>('shops', { name, area, beat, creditLimit: 25000, creditDays: 7, cashOnly: false, type: 'retail', approved: true, aliases: [], salesmanId: ravi.id, ...extra });
+  const S = [
+    shop('Murugan Stores', 'Tittakudi', 'Monday', { owner: 'Murugan', phone: '9443000001', address: 'Main Road, Tittakudi 606106' }),
+    shop('Sri Lakshmi Traders', 'Pennadam', 'Monday', { gstin: gstinWithCheck('33AAKFS1234M1Z'), creditLimit: 60000, creditDays: 15, address: 'Bus Stand Road, Pennadam 606105', type: 'wholesale' }),
+    shop('Annai Super Market', 'Tittakudi', 'Tuesday', { gstin: gstinWithCheck('33BBNPA5678K1Z'), creditLimit: 50000, creditDays: 10, address: 'Vriddhachalam Road, Tittakudi 606106' }),
+    shop('Selvam Kirana', 'Pennadam', 'Tuesday', { phone: '9443000004' }),
+    shop('Ganapathi Stores', 'Avinangudi', 'Wednesday', { cashOnly: true, creditLimit: 0 }),
+    shop('Velan Provision', 'Thozhudur', 'Wednesday', { creditLimit: 15000 }),
+    shop('Kumar Mart', 'Tittakudi', 'Thursday'),
+    shop('Pennadam Wholesale Agency', 'Pennadam', 'Friday', { gstin: gstinWithCheck('33CCQPK9012L1Z'), type: 'subdistributor', creditLimit: 150000, creditDays: 21, address: 'Market Street, Pennadam 606105' }),
+  ];
+  await cs.commit('Demo setup');
+
+  // a few past bills and payments so dashboards have something to show
+  setSession(tenantId, owner.id);
+  const past = async (shopIdx: number, ago: number, lines: [number, number][], payFrac: number, mode: Payment['mode'] = 'cash') => {
+    const c2 = new ChangeSet();
+    const o = c2.put<Order>('orders', { shopId: S[shopIdx].id, salesmanId: ravi.id, source: 'salesman', lines: lines.map(([pi, q]) => ({ productId: P[pi].id, qty: q, rate: P[pi].rate })), date: daysAgo(ago), status: 'billed', issues: [], invoiceIds: [] });
+    const invs = await makeInvoices(c2, o, S[shopIdx]);
+    o.invoiceIds = invs.map(i => i.id);
+    for (const i of invs) c2.put('invoices', { ...i, deliveryStatus: 'delivered', vanId: van.id, delivery: { at: daysAgo(ago), by: 'demo', shortages: [] } });
+    await c2.commit('Demo bill');
+    if (payFrac > 0) {
+      const amt = Math.round(invs.reduce((a, i) => a + i.total, 0) * payFrac);
+      const { allocations, advance } = await allocateOldestFirst(S[shopIdx].id, amt);
+      const c3 = new ChangeSet();
+      c3.put<Payment>('payments', { shopId: S[shopIdx].id, amount: amt, mode, ref: mode === 'upi' ? '4321' + String(ago).padStart(8, '0') : '', date: daysAgo(ago), collectedBy: ravi.id, shopConfirmed: true, allocations, advance, settled: ago > 1, status: 'ok' });
+      await c3.commit('Demo payment');
+    }
+  };
+  await past(0, 12, [[0, 24], [1, 72], [9, 48]], 0.5);
+  await past(1, 9, [[5, 8], [6, 96], [10, 36]], 0);
+  await past(2, 5, [[0, 12], [3, 40], [7, 120]], 1, 'upi');
+  await past(3, 3, [[1, 36], [2, 48]], 0.3);
+  await past(5, 1, [[9, 96], [11, 72]], 1);
+  // today: one bill waiting for delivery
+  const c4 = new ChangeSet();
+  const o = c4.put<Order>('orders', { shopId: S[6].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[0].id, qty: 12, rate: P[0].rate }, { productId: P[7].id, qty: 60, rate: P[7].rate }], date: today(), status: 'billed', issues: [], invoiceIds: [] });
+  const invs = await makeInvoices(c4, o, S[6]);
+  for (const i of invs) c4.put('invoices', { ...i, vanId: van.id });
+  o.invoiceIds = invs.map(i => i.id);
+  await c4.commit('Demo today bill');
+  return settings;
+}

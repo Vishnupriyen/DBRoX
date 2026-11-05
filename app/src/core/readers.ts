@@ -1,0 +1,215 @@
+// xlsx is loaded only when a file is read or downloaded, so the app opens fast on cheap phones
+const xlsx = () => import('xlsx');
+import { norm } from './match';
+
+// Code reads Excel/CSV directly: exact and free. AI is only for photos and scanned PDFs.
+export async function readSheet(file: File): Promise<string[][]> {
+  const XLSX = await xlsx();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' });
+  return rows.map(r => r.map(c => String(c ?? '').trim()));
+}
+
+export function isSheet(file: File) {
+  return /\.(xlsx|xls|csv|ods)$/i.test(file.name) || /sheet|excel|csv/.test(file.type);
+}
+export function isImageOrPdf(file: File) {
+  return /^image\//.test(file.type) || /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+}
+
+type Synonyms = Record<string, string[]>;
+
+// Find the header row and map each wanted field to a column, whatever the layout.
+export function mapColumns(rows: string[][], wanted: Synonyms, required: string[]) {
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    const cells = rows[r].map(c => norm(c));
+    const map: Record<string, number> = {};
+    const used = new Set<number>();
+    for (const [field, syns] of Object.entries(wanted)) {
+      // exact header first, then whole-word match, then long-word contains
+      const tests: ((c: string) => boolean)[] = [
+        c => syns.includes(c),
+        c => syns.some(s => ` ${c} `.includes(` ${s} `)),
+        c => syns.some(s => s.length >= 5 && c.includes(s)),
+      ];
+      for (const test of tests) {
+        const i = cells.findIndex((c, idx) => c && !used.has(idx) && test(c));
+        if (i >= 0) { map[field] = i; used.add(i); break; }
+      }
+    }
+    if (required.every(f => f in map)) return { headerRow: r, map };
+  }
+  return null;
+}
+
+export const num = (s: string | undefined) => {
+  if (s == null) return 0;
+  const v = String(s).replace(/[₹,\s]/g, '').replace(/^\((.*)\)$/, '-$1').replace(/(cr|dr)$/i, '');
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+export function toIsoDate(s: string): string {
+  const t = s.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[/\-. ](\d{1,2}|[A-Za-z]{3})[/\-. ](\d{2,4})/);
+  if (m) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const mon = /\d/.test(m[2]) ? Number(m[2]) : months.indexOf(m[2].toLowerCase()) + 1;
+    let y = Number(m[3]); if (y < 100) y += 2000;
+    return `${y}-${String(mon).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
+  }
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
+// ---------- purchase bill lines ----------
+export interface PurchaseRow {
+  item: string; code: string; hsn: string; batch: string; expiry: string; mrp: number;
+  qty: number; free: number; rate: number; discount: number; gst: number; amount: number;
+}
+
+export function readPurchaseRows(rows: string[][]): PurchaseRow[] | null {
+  const m = mapColumns(rows, {
+    item: ['item', 'description', 'product', 'particulars', 'material', 'sku name', 'name'],
+    code: ['code', 'sku', 'item code', 'material code'],
+    hsn: ['hsn', 'hsn sac', 'hsn code'],
+    batch: ['batch', 'batch no', 'lot'],
+    expiry: ['exp', 'expiry', 'exp date', 'best before', 'bbd'],
+    mrp: ['mrp'],
+    qty: ['qty', 'quantity', 'billed qty', 'pcs', 'units'],
+    free: ['free', 'free qty', 'sch qty', 'scheme qty'],
+    rate: ['rate', 'price', 'ptr', 'unit price', 'basic rate'],
+    discount: ['disc', 'discount', 'scheme amt', 'sch disc', 'td'],
+    gst: ['gst', 'gst %', 'tax %', 'tax rate', 'igst', 'gst rate'],
+    amount: ['amount', 'taxable', 'value', 'net amount', 'total', 'taxable value'],
+  }, ['item', 'qty']);
+  if (!m) return null;
+  const { headerRow, map } = m;
+  const get = (row: string[], f: string) => (map[f] != null ? row[map[f]] ?? '' : '');
+  const out: PurchaseRow[] = [];
+  for (const row of rows.slice(headerRow + 1)) {
+    const item = get(row, 'item');
+    const qty = num(get(row, 'qty'));
+    if (!item || !qty || /^\s*(sub\s*|grand\s*)?total\b/i.test(item)) continue;
+    out.push({
+      item, code: get(row, 'code'), hsn: get(row, 'hsn'), batch: get(row, 'batch'),
+      expiry: toIsoDate(get(row, 'expiry')), mrp: num(get(row, 'mrp')), qty, free: num(get(row, 'free')),
+      rate: num(get(row, 'rate')), discount: num(get(row, 'discount')), gst: num(get(row, 'gst')),
+      amount: num(get(row, 'amount')),
+    });
+  }
+  return out;
+}
+
+// Bill number / date / supplier GSTIN / bill total from the text around the item table.
+export function readBillHeader(rows: string[][]) {
+  const text = rows.slice(0, 15).map(r => r.join(' ')).join('\n');
+  const billNo = text.match(/(?:invoice|bill|inv)\s*(?:no|number|#)\.?\s*[:\-]?\s*([A-Z0-9/\-]{3,20})/i)?.[1] ?? '';
+  const dateRaw = text.match(/(?:invoice|bill|inv)?\s*date\s*[:\-]?\s*([0-9]{1,2}[/\-.][0-9A-Za-z]{1,3}[/\-.][0-9]{2,4})/i)?.[1] ?? '';
+  const gstin = text.match(/\b(\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z])\b/)?.[1] ?? '';
+  let total = 0;
+  for (const r of rows) {
+    if (r.some(c => /^\s*(grand\s*)?total\b/i.test(c))) {
+      const nums = r.map(c => num(c)).filter(x => x > 0);
+      if (nums.length) total = nums[nums.length - 1];
+    }
+  }
+  return { billNo, date: dateRaw ? toIsoDate(dateRaw) : '', gstin, total };
+}
+
+// ---------- bank statements (any Indian bank layout with a header row) ----------
+export interface BankRow { date: string; narration: string; credit: number; debit: number; ref: string }
+
+export function readBankRows(rows: string[][]): BankRow[] | null {
+  const m = mapColumns(rows, {
+    date: ['txn date', 'transaction date', 'value date', 'date', 'tran date', 'posting date'],
+    narration: ['narration', 'description', 'particulars', 'remarks', 'details', 'transaction details'],
+    ref: ['ref no', 'chq ref', 'cheque no', 'chq no', 'utr', 'reference', 'ref'],
+    credit: ['credit', 'deposit', 'cr amount', 'deposits', 'cr'],
+    debit: ['debit', 'withdrawal', 'dr amount', 'withdrawals', 'dr'],
+    amount: ['amount', 'txn amount'],
+    crdr: ['cr dr', 'dr cr', 'type'],
+  }, ['date', 'narration']);
+  if (!m) return null;
+  const { headerRow, map } = m;
+  const get = (row: string[], f: string) => (map[f] != null ? row[map[f]] ?? '' : '');
+  const out: BankRow[] = [];
+  for (const row of rows.slice(headerRow + 1)) {
+    const date = toIsoDate(get(row, 'date'));
+    if (!date) continue;
+    let credit = num(get(row, 'credit'));
+    let debit = num(get(row, 'debit'));
+    if (!credit && !debit && map.amount != null) {
+      const a = num(get(row, 'amount'));
+      const t = norm(get(row, 'crdr') || get(row, 'amount'));
+      if (/dr|debit|withdraw/.test(t)) debit = Math.abs(a); else credit = Math.abs(a);
+    }
+    const narration = get(row, 'narration');
+    const refInText = narration.match(/\b(\d{12})\b/)?.[1] ?? '';
+    out.push({ date, narration, credit, debit, ref: get(row, 'ref') || refInText });
+  }
+  return out;
+}
+
+// ---------- master lists (onboarding: upload Excel, approve) ----------
+export function readProductRows(rows: string[][]) {
+  const m = mapColumns(rows, {
+    name: ['product', 'item', 'name', 'description', 'sku name'],
+    company: ['company', 'brand', 'manufacturer', 'principal'],
+    code: ['code', 'sku', 'item code'],
+    hsn: ['hsn'], gst: ['gst', 'tax'], mrp: ['mrp'], rate: ['rate', 'selling', 'price', 'ptr'],
+    purchase: ['purchase', 'cost', 'landing'], caseSize: ['case', 'pack', 'upc', 'case size', 'units per case'],
+    nameTa: ['tamil'],
+  }, ['name']);
+  if (!m) return null;
+  const g = (r: string[], f: string) => (m.map[f] != null ? r[m.map[f]] ?? '' : '');
+  return rows.slice(m.headerRow + 1).filter(r => g(r, 'name')).map(r => ({
+    name: g(r, 'name'), company: g(r, 'company'), code: g(r, 'code'), hsn: g(r, 'hsn'), gst: num(g(r, 'gst')),
+    mrp: num(g(r, 'mrp')), rate: num(g(r, 'rate')), purchase: num(g(r, 'purchase')),
+    caseSize: num(g(r, 'caseSize')) || 1, nameTa: g(r, 'nameTa'),
+  }));
+}
+
+export function readShopRows(rows: string[][]) {
+  const m = mapColumns(rows, {
+    name: ['shop', 'party', 'customer', 'retailer', 'outlet', 'name'],
+    owner: ['owner', 'contact person'], phone: ['phone', 'mobile', 'contact'], gstin: ['gstin', 'gst no', 'gst'],
+    area: ['area', 'town', 'village', 'city'], beat: ['beat', 'route', 'day'], creditLimit: ['credit limit', 'limit'],
+    creditDays: ['credit days', 'days'], address: ['address'],
+  }, ['name']);
+  if (!m) return null;
+  const g = (r: string[], f: string) => (m.map[f] != null ? r[m.map[f]] ?? '' : '');
+  return rows.slice(m.headerRow + 1).filter(r => g(r, 'name')).map(r => ({
+    name: g(r, 'name'), owner: g(r, 'owner'), phone: g(r, 'phone'), gstin: g(r, 'gstin').toUpperCase(),
+    area: g(r, 'area'), beat: g(r, 'beat'), creditLimit: num(g(r, 'creditLimit')),
+    creditDays: num(g(r, 'creditDays')) || 7, address: g(r, 'address'),
+  }));
+}
+
+// Excel out: any table the user sees can be downloaded.
+export async function downloadSheet(name: string, header: string[], rows: (string | number)[][]) {
+  const XLSX = await xlsx();
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  XLSX.writeFile(wb, `${name}.xlsx`);
+}
+
+export async function downloadWorkbook(name: string, sheets: { name: string; header: string[]; rows: (string | number)[][] }[]) {
+  const XLSX = await xlsx();
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s.header, ...s.rows]), s.name.slice(0, 31));
+  XLSX.writeFile(wb, `${name}.xlsx`);
+}
+
+export function downloadText(filename: string, text: string, type = 'application/json') {
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}

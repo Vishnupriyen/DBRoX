@@ -1,0 +1,75 @@
+// Our own sync layer (scale plan): phone ⇄ DBRoX server. Phones work offline; this runs when
+// there is signal. Server is swappable because the app only knows this small protocol.
+import { db, getSettings } from './db';
+import type { Base } from './types';
+
+const SYNC_TABLES = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices',
+  'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit'] as const;
+
+interface Change { table: string; id: string; updatedAt: string; data: Base }
+
+async function server(): Promise<string | null> {
+  try { return (await getSettings()).serverUrl?.replace(/\/$/, '') || null; } catch { return null; }
+}
+
+export async function login(phone: string, pin: string): Promise<{ tenantId: string; userId: string } | null> {
+  const url = await server();
+  if (url && navigator.onLine) {
+    try {
+      const r = await fetch(`${url}/v1/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone, pin }) });
+      if (r.ok) {
+        const j = await r.json();
+        localStorage.setItem('dbrox.token', j.token);
+        return { tenantId: j.tenantId, userId: j.userId };
+      }
+      if (r.status === 401) return null;
+    } catch { /* offline: fall back to the PIN kept on this phone */ }
+  }
+  const s = await db.staff.where('phone').equals(phone).first();
+  if (!s || !s.active || s.pin !== pin) return null;
+  return { tenantId: s.tenantId, userId: s.id };
+}
+
+let running = false;
+export async function syncNow(): Promise<string> {
+  const url = await server();
+  if (!url) return 'Not connected to a DBRoX server yet. Everything is saved safely on this phone.';
+  if (!navigator.onLine) return 'Offline — will sync when there is signal.';
+  if (running) return 'Sync already running.';
+  running = true;
+  try {
+    const token = localStorage.getItem('dbrox.token') ?? '';
+    const cursor = Number((await db.meta.get('cursor'))?.value ?? 0);
+    const changes: Change[] = [];
+    for (const t of SYNC_TABLES) {
+      const dirty = await db.table(t).where('dirty').equals(1).limit(500).toArray();
+      for (const d of dirty) changes.push({ table: t, id: d.id, updatedAt: d.updatedAt, data: { ...d, dirty: undefined } });
+    }
+    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
+    if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); return 'Your access was removed or expired. Please log in again.'; }
+    if (!r.ok) return `Sync failed (${r.status}). Data is safe on this phone; will retry.`;
+    const res: { cursor: number; changes: Change[]; accepted: string[] } = await r.json();
+    const accepted = new Set(res.accepted);
+    await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
+      for (const c of changes) {
+        if (!accepted.has(`${c.table}|${c.id}`)) continue;
+        const cur = await db.table(c.table).get(c.id);
+        if (cur && cur.updatedAt === c.updatedAt) await db.table(c.table).put({ ...cur, dirty: 0 });
+      }
+      for (const c of res.changes) {
+        const cur = await db.table(c.table).get(c.id);
+        if (!cur || (!cur.dirty && cur.updatedAt <= c.updatedAt)) await db.table(c.table).put({ ...c.data, dirty: 0 });
+      }
+    });
+    await db.meta.put({ key: 'cursor', value: res.cursor });
+    return `Synced: sent ${accepted.size}, received ${res.changes.length}.`;
+  } catch (e) {
+    return `Sync paused: ${(e as Error).message}. Data is safe on this phone.`;
+  } finally { running = false; }
+}
+
+export function startAutoSync() {
+  const tick = () => { void syncNow(); };
+  window.addEventListener('online', tick);
+  setInterval(tick, 30000); // target: owner sees data within 30 s when there is signal
+}
