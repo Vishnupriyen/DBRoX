@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
-  Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base,
+  Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -23,6 +23,8 @@ class RoxDB extends Dexie {
   claimEntries!: Table<ClaimEntry, string>;
   claims!: Table<Claim, string>;
   vans!: Table<Van, string>;
+  visits!: Table<Visit, string>;
+  targets!: Table<Target, string>;
   audit!: Table<AuditEntry, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
@@ -49,6 +51,10 @@ class RoxDB extends Dexie {
       vans: common,
       audit: `${common}, batchId, at`,
       meta: 'key',
+    });
+    this.version(2).stores({
+      visits: `${common}, shopId, staffId, date`,
+      targets: `${common}, companyId, month`,
     });
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Paperclip, Mic, Send, Printer, Undo2 } from 'lucide-react';
 import { handle, type Reply } from '../core/engine';
 import { undoBatch } from '../core/db';
 import { getLang, t } from '../core/i18n';
@@ -79,12 +80,12 @@ export function Chat({ role }: { role: Role }) {
         {msgs.map(m => (
           <div key={m.id} className={`msg ${m.from} ${m.reply?.tone ?? ''} ${m.reply?.proposal || m.reply?.table ? 'wide' : ''}`}>
             {m.text}
-            {m.files?.map(f => <div key={f} className="att">📎 {f}</div>)}
+            {m.files?.map(f => <div key={f} className="att"><Paperclip size={12} style={{ verticalAlign: -2 }} /> {f}</div>)}
             {m.reply?.proposal && <div style={{ marginTop: 10 }}><ApproveTable proposal={m.reply.proposal} onDone={onDone(m.id)} /></div>}
             {m.reply?.table && <div style={{ marginTop: 10 }}><ReadTable table={m.reply.table} /></div>}
             {m.reply?.actions?.length ? <div className="row" style={{ marginTop: 8 }}>{m.reply.actions.map(a => <button key={a.label} className="btn primary small" onClick={() => a.run()}>{a.label}</button>)}</div> : null}
-            {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}>🖨 {i.number}</button>)}</div> : null}
-            {m.batchId && !m.undone && <div style={{ marginTop: 6 }}><button className="btn small" onClick={() => undo(m)}>↶ {t('undo')}</button></div>}
+            {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div> : null}
+            {m.batchId && !m.undone && <div style={{ marginTop: 6 }}><button className="btn small ghost" onClick={() => undo(m)}><Undo2 /> {t('undo')}</button></div>}
           </div>
         ))}
         {busy && <div className="msg bot muted">…</div>}
@@ -93,14 +94,14 @@ export function Chat({ role }: { role: Role }) {
       <div className="chips">
         {SUGGEST[role].map(s => <button key={s} className="chip" onClick={() => setText(s)}>{s}</button>)}
       </div>
-      {files.length > 0 && <div className="filechip">📎 {files.map(f => f.name).join(', ')} <button className="btn small" onClick={() => setFiles([])}>✕</button></div>}
+      {files.length > 0 && <div className="filechip"><Paperclip size={16} /> {files.map(f => f.name).join(', ')} <button className="btn small ghost" onClick={() => setFiles([])}>✕</button></div>}
       <div className="composer">
         <input ref={fileRef} type="file" hidden accept="image/*,.pdf,.xlsx,.xls,.csv" onChange={e => { setFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-        <button className="icon-btn" onClick={() => fileRef.current?.click()} aria-label={t('attach')}>📎</button>
+        <button className="icon-btn" onClick={() => fileRef.current?.click()} aria-label={t('attach')}><Paperclip /></button>
         <textarea rows={1} value={text} placeholder={t('typeHere')} onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
-        <button className={`icon-btn ${listening ? 'on' : ''}`} onClick={listen} aria-label="Voice">🎤</button>
-        <button className="icon-btn" style={{ background: 'var(--brand)', color: 'var(--brand-ink)', borderColor: 'var(--brand)' }} onClick={() => send()} aria-label={t('send')}>➤</button>
+        <button className={`icon-btn ${listening ? 'rec' : ''}`} onClick={listen} aria-label="Voice"><Mic /></button>
+        <button className="icon-btn gold" onClick={() => send()} aria-label={t('send')}><Send /></button>
       </div>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowLeft, Camera, Check, Store } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
 import { allocateOldestFirst, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
@@ -26,20 +27,20 @@ export function Collect() {
   const list = shops.filter(s => !q || norm(s.name).includes(norm(q)) || norm(s.area).includes(norm(q)));
   return (
     <div>
-      <h3 style={{ margin: '4px 0 12px' }}>{t('collect')}</h3>
+      <div className="sechead"><h3>{t('collect')}</h3></div>
       {waiting.length > 0 && (
         <div className="card">
           <h3>Waiting for shop ✓ ({waiting.length})</h3>
           {waiting.map(p => <WaitingRow key={p.id} p={p} onDone={() => setTick(x => x + 1)} />)}
         </div>
       )}
-      <input className="pill" style={{ width: '100%', padding: 10, marginBottom: 10 }} placeholder="Search shop…" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="field" style={{ margin: '10px 0' }}><input placeholder="Search shop…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search shop" /></div>
       <div className="list">
         {list.map(s => (
-          <button key={s.id} className="item" style={{ textAlign: 'left', width: '100%' }} onClick={() => setSel(s)}>
-            <div className="avatar">{s.name[0]}</div>
-            <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.area}</div></div>
-            <div style={{ textAlign: 'right' }}><b>{inr(s.due)}</b>{s.overdue > 0 && <div><span className="badge red">{s.overdue} days late</span></div>}</div>
+          <button key={s.id} className="item tap" onClick={() => setSel(s)}>
+            <div className={`avatar ${s.overdue > 0 ? 'bad' : ''}`}><Store size={22} /></div>
+            <div className="grow"><div className="t">{s.name}</div><div className="s">{s.area}</div></div>
+            <div style={{ textAlign: 'right' }}><div className="amt num">{inr(s.due)}</div>{s.overdue > 0 && <span className="badge bad">{s.overdue} days late</span>}</div>
           </button>
         ))}
         {!list.length && <div className="card muted">{t('noItems')}</div>}
@@ -62,7 +63,7 @@ function WaitingRow({ p, onDone }: { p: Payment; onDone: () => void }) {
   );
 }
 
-function CollectShop({ shop, onClose }: { shop: Shop & { due: number }; onClose: () => void }) {
+export function CollectShop({ shop, onClose }: { shop: Shop & { due: number }; onClose: () => void }) {
   const [amount, setAmount] = useState(Math.round(shop.due));
   const [mode, setMode] = useState<Payment['mode']>('cash');
   const [ref, setRef] = useState('');
@@ -81,25 +82,30 @@ function CollectShop({ shop, onClose }: { shop: Shop & { due: number }; onClose:
     setDone(true);
   };
 
-  if (done) return <div className="card" style={{ textAlign: 'center' }}><div style={{ fontSize: 64 }}>✅</div><h3>{inr(amount)} · {shop.name}</h3><button className="btn big primary" onClick={onClose}>OK</button></div>;
+  if (done) return (
+    <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
+      <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
+      <h2>{inr(amount)}</h2><div className="muted">{shop.name} · {t('received')}</div>
+      <button className="btn big primary block" onClick={onClose}>OK</button>
+    </div>
+  );
   return (
-    <div>
-      <div className="row" style={{ marginBottom: 8 }}><button className="btn small" onClick={onClose}>←</button><h3 className="grow" style={{ margin: 0 }}>{shop.name}</h3></div>
-      <div className="card">
-        <div className="muted">{t('outstanding')} {inr(shop.due)}</div>
-        <div className="field" style={{ margin: '10px 0' }}><label>{t('amount')} ₹</label>
-          <input type="number" inputMode="decimal" style={{ fontSize: 28, padding: 10 }} value={amount || ''} onChange={e => setAmount(Number(e.target.value))} /></div>
-        <div className="row" style={{ marginBottom: 10 }}>
-          {(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={`btn ${mode === m ? 'primary' : ''}`} onClick={() => setMode(m)}>{t(m)}</button>)}
+    <div className="stack">
+      <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={onClose} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{shop.name}</div><div className="muted">{t('outstanding')} {inr(shop.due)}</div></div></div>
+      <div className="card stack">
+        <div className="field"><label>{t('amount')}</label>
+          <input className="bigamount" type="number" inputMode="decimal" value={amount || ''} onChange={e => setAmount(Number(e.target.value))} aria-label={t('amount')} /></div>
+        <div className="segmented">
+          {(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{t(m)}</button>)}
         </div>
-        {mode !== 'cash' && <div className="field" style={{ marginBottom: 10 }}><label>UPI / cheque no</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>}
-        <p className="muted">Oldest bills are cleared first. {t('shopConfirm')}</p>
-        <label className="btn" style={{ display: 'inline-block', marginBottom: 10 }}>
-          📷 {photo ? 'Photo taken ✓' : t('takePhoto')}
+        {mode !== 'cash' && <div className="field"><label>UPI / cheque no</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>}
+        <p className="muted" style={{ margin: 0, textAlign: 'center' }}>Oldest bills are cleared first. {t('shopConfirm')}</p>
+        <label className="btn">
+          <Camera /> {photo ? 'Photo taken ✓' : t('takePhoto')}
           <input type="file" accept="image/*" capture="user" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setPhoto(await fileToDataUrl(f, 640, 0.6)); }} />
         </label>
-        <button className="btn huge-ok" onClick={() => { speak(`${amount} ரூபாய் கொடுக்கிறீர்களா? சரி என்றால் அழுத்துங்கள்.`); void save(true); }} aria-label="Shop confirms payment">✓</button>
-        <button className="btn" style={{ marginTop: 10 }} onClick={() => save(false)}>Owner not here — wait for shop ✓</button>
+        <button className="btn ok-huge" onClick={() => { speak(`${amount} ரூபாய் கொடுக்கிறீர்களா? சரி என்றால் அழுத்துங்கள்.`); void save(true); }} aria-label="Shop confirms payment"><Check size={84} /></button>
+        <button className="btn" onClick={() => save(false)}>Owner not here — wait for shop ✓</button>
       </div>
     </div>
   );

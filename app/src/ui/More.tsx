@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X } from 'lucide-react';
 import { ChangeSet, db, getSettings } from '../core/db';
 import { getLang, inr, setLang, t } from '../core/i18n';
 import { norm } from '../core/match';
@@ -21,24 +22,24 @@ export function More({ role, onLogout, onLang }: { role: Role; onLogout: () => v
   if (page === 'claims') return <>{back}<Claims /></>;
   return (
     <div className="list">
-      <button className="item" onClick={() => { setLang(getLang() === 'en' ? 'ta' : 'en'); onLang(); }}>🌐 <span className="grow">தமிழ் / English</span><span className="badge">{getLang() === 'en' ? 'English' : 'தமிழ்'}</span></button>
-      {boss && <button className="item" onClick={() => setPage('bills')}>🧾 <span className="grow">{t('bills')}</span></button>}
-      {boss && <button className="item" onClick={() => setPage('claims')}>📑 <span className="grow">Claims tracker</span></button>}
-      {boss && <button className="item" onClick={() => setPage('modules')}>🧩 <span className="grow">{t('modules')}</span></button>}
-      {boss && <button className="item" onClick={() => setPage('staff')}>👥 <span className="grow">Staff & access</span></button>}
-      {boss && <button className="item" onClick={() => setPage('settings')}>⚙️ <span className="grow">{t('settings')}</span></button>}
+      <button className="item" onClick={() => { setLang(getLang() === 'en' ? 'ta' : 'en'); onLang(); }}><Languages /> <span className="grow">தமிழ் / English</span><span className="badge">{getLang() === 'en' ? 'English' : 'தமிழ்'}</span></button>
+      {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
+      {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
+      {boss && <button className="item" onClick={() => setPage('modules')}><Blocks /> <span className="grow">{t('modules')}</span></button>}
+      {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
+      {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
         downloadText(`DBRoX-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(dump));
-      }}>💾 <span className="grow">Download full backup (all my data)</span></button>}
-      <button className="item" onClick={async () => notify('Sync', await syncNow())}>🔄 <span className="grow">Sync now</span></button>
-      <button className="item" onClick={onLogout}>🚪 <span className="grow">{t('logout')}</span></button>
+      }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
+      <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
+      <button className="item" onClick={onLogout}><LogOut /> <span className="grow">{t('logout')}</span></button>
       {role === 'owner' && <button className="item" style={{ color: 'var(--red)' }} onClick={async () => {
         if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
-      }}>🗑 <span className="grow">Reset demo data on this phone</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.1</div>
+      }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.2</div>
     </div>
   );
 }
@@ -160,15 +161,15 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   const shown = list.filter(i => !q || norm(i.number).includes(norm(q)) || norm(i.shopName).includes(norm(q)));
   return (
     <div>
-      <input className="pill" style={{ width: '100%', padding: 10, marginBottom: 10 }} placeholder="Search bill or shop…" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="field" style={{ marginBottom: 10 }}><input placeholder="Search bill or shop…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search" /></div>
       <div className="list">
         {shown.map(i => (
           <div key={i.id} className="item">
-            <div className="grow"><div className="t">{i.number} {i.cancelled && <span className="badge red">Cancelled</span>}</div>
-              <div className="muted">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
-            <b>{inr(i.total)}</b>
-            <button className="btn small" onClick={() => setPrinting(i)}>🖨</button>
-            {canCancel && !i.cancelled && <button className="btn small danger" onClick={() => cancel(i)}>✕</button>}
+            <div className="grow"><div className="t">{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
+              <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
+            <span className="amt num">{inr(i.total)}</span>
+            <button className="btn small" onClick={() => setPrinting(i)} aria-label="Print"><Printer /></button>
+            {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /></button>}
           </div>
         ))}
       </div>

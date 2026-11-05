@@ -89,6 +89,12 @@ export interface Shop extends Base {
   type: 'retail' | 'wholesale' | 'subdistributor';
   approved: boolean;
   aliases: string[];
+  lat?: number;
+  lng?: number;
+  photo?: string;
+  priceMode?: 'company' | 'distributor';
+  tradeDiscountPct?: number;
+  creditMode?: 'days' | 'limit' | 'bill_to_bill' | 'none';
 }
 
 export interface Batch extends Base {
@@ -118,6 +124,8 @@ export interface OrderLine { productId: string; qty: number; rate: number }
 
 export interface Order extends Base {
   shopId: string;
+  offRoute?: boolean;
+  visitId?: string;
   salesmanId?: string;
   source: 'salesman' | 'phone' | 'photo' | 'office';
   lines: OrderLine[];
@@ -256,6 +264,24 @@ export interface Claim extends Base {
   note?: string;
 }
 
+export interface Visit extends Base {
+  shopId: string;
+  staffId: string;
+  date: string;
+  at: string;
+  lat?: number;
+  lng?: number;
+  farFromShop?: boolean;
+  outcome?: 'order' | 'no_order' | 'closed' | 'payment_only';
+}
+
+export interface Target extends Base {
+  companyId: string;
+  month: string;
+  kind: 'sales' | 'purchase' | 'shops' | 'lines';
+  value: number;
+}
+
 export interface Van extends Base {
   name: string;
   number: string;
@@ -278,4 +304,4 @@ export interface AuditEntry extends Base {
 export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
-  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit';
+  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets';

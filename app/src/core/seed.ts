@@ -67,16 +67,19 @@ export async function seedDemo(tenantId = 'demo') {
 
   const shop = (name: string, area: string, beat: string, extra: Partial<Shop> = {}) =>
     cs.put<Shop>('shops', { name, area, beat, creditLimit: 25000, creditDays: 7, cashOnly: false, type: 'retail', approved: true, aliases: [], salesmanId: ravi.id, ...extra });
+  const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
   const S = [
-    shop('Murugan Stores', 'Tittakudi', 'Monday', { owner: 'Murugan', phone: '9443000001', address: 'Main Road, Tittakudi 606106' }),
-    shop('Sri Lakshmi Traders', 'Pennadam', 'Monday', { gstin: gstinWithCheck('33AAKFS1234M1Z'), creditLimit: 60000, creditDays: 15, address: 'Bus Stand Road, Pennadam 606105', type: 'wholesale' }),
+    shop('Murugan Stores', 'Tittakudi', todayName, { owner: 'Murugan', phone: '9443000001', address: 'Main Road, Tittakudi 606106' }),
+    shop('Sri Lakshmi Traders', 'Pennadam', todayName, { gstin: gstinWithCheck('33AAKFS1234M1Z'), creditLimit: 60000, creditDays: 15, address: 'Bus Stand Road, Pennadam 606105', type: 'wholesale' }),
     shop('Annai Super Market', 'Tittakudi', 'Tuesday', { gstin: gstinWithCheck('33BBNPA5678K1Z'), creditLimit: 50000, creditDays: 10, address: 'Vriddhachalam Road, Tittakudi 606106' }),
-    shop('Selvam Kirana', 'Pennadam', 'Tuesday', { phone: '9443000004' }),
+    shop('Selvam Kirana', 'Pennadam', todayName, { phone: '9443000004' }),
     shop('Ganapathi Stores', 'Avinangudi', 'Wednesday', { cashOnly: true, creditLimit: 0 }),
     shop('Velan Provision', 'Thozhudur', 'Wednesday', { creditLimit: 15000 }),
-    shop('Kumar Mart', 'Tittakudi', 'Thursday'),
+    shop('Kumar Mart', 'Tittakudi', todayName),
     shop('Pennadam Wholesale Agency', 'Pennadam', 'Friday', { gstin: gstinWithCheck('33CCQPK9012L1Z'), type: 'subdistributor', creditLimit: 150000, creditDays: 21, address: 'Market Street, Pennadam 606105' }),
   ];
+  cs.put('targets', { companyId: hul.id, month: today().slice(0, 7), kind: 'sales', value: 250000 });
+  cs.put('targets', { companyId: brit.id, month: today().slice(0, 7), kind: 'sales', value: 120000 });
   await cs.commit('Demo setup');
 
   // a few past bills and payments so dashboards have something to show

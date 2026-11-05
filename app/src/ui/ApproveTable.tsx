@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Check, Download, Plus, X } from 'lucide-react';
 import { commit, hasErrors, validate, type Proposal, type Row, type Validation } from '../core/proposals';
 import { refreshOrderRow } from '../core/engine';
 import { downloadSheet } from '../core/readers';
@@ -111,13 +112,13 @@ export function ApproveTable({ proposal, onDone }: Props) {
                     </td>
                   );
                 })}
-                {!fixedRows && <td><button className="btn small danger" onClick={() => removeRow(ri)} aria-label="Remove row">✕</button></td>}
+                {!fixedRows && <td><button className="btn small ghost danger" onClick={() => removeRow(ri)} aria-label="Remove row"><X /></button></td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {!fixedRows && <button className="btn small" style={{ marginTop: 8 }} onClick={addRow}>+ Row</button>}
+      {!fixedRows && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={addRow}><Plus /> Row</button>}
       {v && Object.keys(v.errors).length > 0 && (
         <ul className="errs">
           {Object.entries(v.errors).slice(0, 6).flatMap(([ri, cols]) => Object.values(cols).map((m, k) => <li key={`${ri}-${k}`}>Row {Number(ri) + 1}: {m}</li>))}
@@ -126,13 +127,13 @@ export function ApproveTable({ proposal, onDone }: Props) {
       {v && v.warnings.length > 0 && <ul className="warns">{v.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       {v?.summary && <div className="summary">{v.summary}</div>}
       <div className="row">
-        <button className="btn primary" disabled={bad || busy || !p.rows.length} onClick={approve}>{busy ? '…' : t('approve')}</button>
+        <button className="btn primary" disabled={bad || busy || !p.rows.length} onClick={approve}><Check /> {busy ? '…' : t('approve').replace(' ✓', '')}</button>
         <button className="btn" onClick={() => { setClosed('Cancelled'); onDone(null); }}>{t('cancel')}</button>
         <span className="grow" />
         <button className="btn small" onClick={() => downloadSheet(p.title, p.columns.map(c => c.label), p.rows.map(r => p.columns.map(c => {
           const val = r[c.key];
           return c.type === 'select' ? (c.options?.find(o => o.value === val)?.label ?? String(val ?? '')) : (val ?? '');
-        })))}>{t('download')}</button>
+        })))}><Download /> {t('download')}</button>
       </div>
       <div className="muted" style={{ marginTop: 6 }}>{bad ? t('fixRed') : t('allGood')}</div>
     </div>
@@ -151,7 +152,7 @@ export function ReadTable({ table }: { table: { columns: string[]; rows: (string
           </tbody>
         </table>
       </div>
-      {table.rows.length > 0 && <button className="btn small" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}>{t('download')}</button>}
+      {table.rows.length > 0 && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> {t('download')}</button>}
     </div>
   );
 }

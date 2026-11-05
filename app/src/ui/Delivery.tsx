@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Camera, Check, Store, ArrowLeft, PackageX } from 'lucide-react';
+import { Pack } from './Pack';
 import { ChangeSet, db, nowIso, session, today } from '../core/db';
 import { allocateOldestFirst, r2, shopOutstanding } from '../core/ledger';
 import { inr, speak, t } from '../core/i18n';
@@ -28,13 +30,13 @@ export function Delivery() {
   if (open) return <StopView stop={open} onClose={() => { setOpen(null); setTick(x => x + 1); }} />;
   return (
     <div>
-      <h3 style={{ margin: '4px 0 12px' }}>{t('delivery')} · {stops.length} {t('shop')}</h3>
+      <div className="sechead"><h3>{t('delivery')} · {stops.length} {t('shop')}</h3></div>
       <div className="list">
         {stops.map(s => (
-          <button key={s.shop.id} className="item" style={{ textAlign: 'left', width: '100%' }} onClick={() => setOpen(s)}>
-            <div className="avatar">{s.shop.name[0]}</div>
-            <div className="grow"><div className="t">{s.shop.name}</div><div className="muted">{s.shop.area} · {s.invoices.length} {t('bills')}</div></div>
-            <b>{inr(s.invoices.reduce((a, i) => a + i.total, 0))}</b>
+          <button key={s.shop.id} className="item tap" onClick={() => setOpen(s)}>
+            <div className="avatar"><Store size={22} /></div>
+            <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {t('bills')}</div></div>
+            <span className="amt num">{inr(s.invoices.reduce((a, i) => a + i.total, 0))}</span>
           </button>
         ))}
         {!stops.length && <div className="card muted">{t('noItems')}</div>}
@@ -121,75 +123,74 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   };
 
   if (step === 'done') return (
-    <div className="card" style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 64 }}>✅</div>
-      <h3>{stop.shop.name}</h3>
-      <button className="btn big primary" onClick={onClose}>Next shop →</button>
+    <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
+      <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
+      <h2>{stop.shop.name}</h2>
+      <button className="btn big primary block" onClick={onClose}>Next shop →</button>
     </div>
   );
 
   if (step === 'pay') return (
     <div>
-      <h3>{t('collect')} · {stop.shop.name}</h3>
-      <div className="card">
-        <div className="muted">Today's goods {inr(delivered)} · Old balance {inr(Math.max(0, oldBal))}</div>
-        <div className="field" style={{ margin: '10px 0' }}><label>{t('amount')} ₹</label>
-          <input type="number" inputMode="decimal" style={{ fontSize: 28, padding: 10 }} value={pay.amount || ''} onChange={e => setPay({ ...pay, amount: Number(e.target.value) })} /></div>
-        <div className="row" style={{ marginBottom: 10 }}>
-          {(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={`btn ${pay.mode === m ? 'primary' : ''}`} onClick={() => setPay({ ...pay, mode: m })}>{t(m)}</button>)}
+      <div className="sechead"><h3>{t('collect')} · {stop.shop.name}</h3></div>
+      <div className="card stack">
+        <div className="row" style={{ justifyContent: 'space-between' }}><span className="muted">Today's goods</span><b className="num">{inr(delivered)}</b></div>
+        <div className="row" style={{ justifyContent: 'space-between' }}><span className="muted">Old balance</span><b className="num">{inr(Math.max(0, oldBal))}</b></div>
+        <div className="field"><label>{t('amount')}</label>
+          <input className="bigamount" type="number" inputMode="decimal" value={pay.amount || ''} onChange={e => setPay({ ...pay, amount: Number(e.target.value) })} aria-label={t('amount')} /></div>
+        <div className="segmented">
+          {(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={pay.mode === m ? 'on' : ''} onClick={() => setPay({ ...pay, mode: m })}>{t(m)}</button>)}
         </div>
-        {pay.mode !== 'cash' && <div className="field" style={{ marginBottom: 10 }}><label>UPI / cheque no</label><input value={pay.ref} onChange={e => setPay({ ...pay, ref: e.target.value })} /></div>}
-        <p className="muted">{t('shopConfirm')}</p>
-        <button className="btn huge-ok" onClick={() => savePayment(true)} aria-label="Shop confirms payment">✓</button>
-        <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn" onClick={() => savePayment(false)}>Owner not here — wait for shop ✓</button>
-          <button className="btn" onClick={() => { setPay({ ...pay, amount: 0 }); setStep('done'); }}>No payment today</button>
-        </div>
+        {pay.mode !== 'cash' && <div className="field"><label>UPI / cheque no</label><input value={pay.ref} onChange={e => setPay({ ...pay, ref: e.target.value })} /></div>}
+        <p className="muted" style={{ textAlign: 'center', margin: 0 }}>{t('shopConfirm')}</p>
+        <button className="btn ok-huge" onClick={() => savePayment(true)} aria-label="Shop confirms payment"><Check size={84} /></button>
+        <button className="btn" onClick={() => savePayment(false)}>Owner not here — wait for shop ✓</button>
+        <button className="btn ghost" onClick={() => { setPay({ ...pay, amount: 0 }); setStep('done'); }}>No payment today</button>
       </div>
     </div>
   );
 
   if (step === 'confirm') return (
     <div>
-      <h3>{stop.shop.name}</h3>
-      <div className="card" style={{ textAlign: 'center' }}>
-        <div className="muted">Goods delivered</div>
-        <div style={{ fontSize: 40, fontWeight: 800 }}>{inr(delivered)}</div>
-        {shortValue > 0 && <div className="badge yellow">Short / return {inr(shortValue)} → credit note</div>}
-        <p>{t('shopConfirm')}</p>
-        <label className="btn" style={{ display: 'inline-block', marginBottom: 12 }}>
-          📷 {photo ? 'Photo taken ✓' : t('takePhoto')}
+      <div className="sechead"><h3>{stop.shop.name}</h3></div>
+      <div className="card stack" style={{ textAlign: 'center' }}>
+        <div className="eyebrow">Goods delivered</div>
+        <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
+        {shortValue > 0 && <div><span className="badge warn">Short / return {inr(shortValue)} → credit note</span></div>}
+        <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
+        <label className="btn">
+          <Camera /> {photo ? 'Photo taken ✓' : t('takePhoto')}
           <input type="file" accept="image/*" capture="user" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setPhoto(await fileToDataUrl(f, 640, 0.6)); }} />
         </label>
-        <button className="btn huge-ok" onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery">✓</button>
-        <button className="btn" style={{ marginTop: 10 }} onClick={() => setStep('items')}>← Back</button>
+        <button className="btn ok-huge" onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
+        <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> Back</button>
       </div>
     </div>
   );
 
   return (
     <div>
-      <div className="row" style={{ marginBottom: 8 }}>
-        <button className="btn small" onClick={onClose}>←</button>
-        <h3 style={{ margin: 0 }} className="grow">{stop.shop.name}</h3>
-        <b>{inr(billTotal)}</b>
+      <div className="row" style={{ marginBottom: 8, flexWrap: 'nowrap' }}>
+        <button className="icon-btn" onClick={onClose} aria-label="Back"><ArrowLeft /></button>
+        <div className="grow"><div className="h">{stop.shop.name}</div><div className="muted">{stop.shop.area}</div></div>
+        <span className="amt num">{inr(billTotal)}</span>
       </div>
       {stop.invoices.map(inv => (
         <div className="card" key={inv.id}>
-          <div className="muted" style={{ marginBottom: 6 }}>{inv.number}</div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>{inv.number}</div>
           <div className="list">
             {inv.lines.map(l => {
               const p = products.get(l.productId);
               const s = short[key(inv, l.productId)];
               return (
                 <div className="item" key={l.productId}>
-                  <div className="avatar">{(p?.name ?? '?')[0]}</div>
+                  {p ? <Pack product={p} /> : <div className="avatar">?</div>}
                   <div className="grow">
                     <div className="t">{p?.nameTa || l.name}</div>
-                    <div className="muted">{l.name} · MRP {l.mrp}</div>
+                    <div className="s">{l.name} · MRP {l.mrp}</div>
                     <div className="row" style={{ marginTop: 4 }}>
-                      <span className="badge green">{l.qty + l.freeQty} pcs{l.freeQty ? ` (${l.freeQty} free)` : ''}</span>
-                      {s?.qty ? <span className="badge red">−{s.qty} {REASONS.find(r => r.value === s.reason)?.label}</span> : null}
+                      <span className="badge navy">{l.qty + l.freeQty} pcs{l.freeQty ? ` (${l.freeQty} free)` : ''}</span>
+                      {s?.qty ? <span className="badge bad">−{s.qty} {REASONS.find(r => r.value === s.reason)?.label}</span> : null}
                     </div>
                   </div>
                   <button className="btn small" onClick={async () => {
@@ -206,8 +207,8 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
           </div>
         </div>
       ))}
-      <button className="btn big primary" onClick={toConfirm}>{t('delivered')}</button>
-      <button className="btn big" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown and a credit note is made.', 'Return all')) void confirmDelivery(true); }}>{t('returnAll')}</button>
+      <button className="btn big primary block" onClick={toConfirm}><Check /> {t('delivered')}</button>
+      <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown and a credit note is made.', 'Return all')) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
     </div>
   );
 }

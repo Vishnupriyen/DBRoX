@@ -4,7 +4,7 @@ import { db, getSettings } from './db';
 import type { Base } from './types';
 
 const SYNC_TABLES = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices',
-  'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit'] as const;
+  'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit', 'visits', 'targets'] as const;
 
 interface Change { table: string; id: string; updatedAt: string; data: Base }
 

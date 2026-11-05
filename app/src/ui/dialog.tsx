@@ -33,13 +33,13 @@ export function DialogHost() {
   const close = (v: string | null) => { cur.resolve(v); setQ(x => x.slice(1)); setVal(q[1]?.value ?? ''); };
   const choices = cur.choices ?? [{ label: 'Cancel', value: '' }, { label: 'OK', value: '__input', tone: 'primary' as const }];
   return (
-    <div role="dialog" aria-modal="true" aria-label={cur.title} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 100, display: 'grid', placeItems: 'end center', padding: 12 }}
+    <div role="dialog" aria-modal="true" aria-label={cur.title} className="dialog-wrap"
       onClick={e => { if (e.target === e.currentTarget) close(null); }}>
-      <div className="card" style={{ width: '100%', maxWidth: 480, marginBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+      <div className="dialog">
         <h3>{cur.title}</h3>
         {cur.message && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{cur.message}</p>}
         {cur.input && (
-          <input id="dialog-input" autoFocus className="pill" style={{ width: '100%', padding: 12, fontSize: 18, marginBottom: 12, borderRadius: 10 }}
+          <input id="dialog-input" autoFocus style={{ width: '100%', padding: 12, fontSize: 20, marginBottom: 12, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--paper)' }}
             inputMode={cur.input === 'number' ? 'decimal' : 'text'} value={val} onChange={e => setVal(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') close(val); }} />
         )}
