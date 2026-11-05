@@ -1,46 +1,93 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Check, Store, ArrowLeft, PackageX } from 'lucide-react';
+import { Camera, Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
+import { endTrip, startTrip, trackPoint } from '../core/pipeline';
 import { Pack } from './Pack';
 import { ChangeSet, db, nowIso, session, today } from '../core/db';
 import { allocateOldestFirst, r2, shopOutstanding } from '../core/ledger';
 import { inr, speak, t } from '../core/i18n';
 import { fileToDataUrl } from '../core/scan';
-import type { CreditNote, Invoice, Payment, Product, Shop } from '../core/types';
+import type { CreditNote, Invoice, Payment, Product, Shop, Trip } from '../core/types';
 import { ask, askText, confirmBox } from './dialog';
 
 interface Stop { shop: Shop; invoices: Invoice[] }
 
-// RoX Delivery: big buttons only. Delivered ✓ · Short · Return. Shop confirms with one tap + Tamil voice.
+// RoX Delivery: the driver's trip. Start trip → stops in order → Delivered ✓ / Short / Return → end trip.
+// While the trip is out, the phone sends its location every 30 s so the owner sees the van live.
 export function Delivery() {
+  const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [open, setOpen] = useState<Stop | null>(null);
   const [tick, setTick] = useState(0);
+  const [ending, setEnding] = useState(false);
   useEffect(() => {
     (async () => {
       const me = await db.staff.get(session().userId);
-      const invs = (await db.invoices.where('deliveryStatus').equals('pending').toArray())
-        .filter(i => !i.cancelled && (me?.role !== 'delivery' || !me.vanId || !i.vanId || i.vanId === me.vanId));
-      const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
-      const by = new Map<string, Invoice[]>();
-      for (const i of invs) by.set(i.shopId, [...(by.get(i.shopId) ?? []), i]);
-      setStops([...by.entries()].map(([id, invoices]) => ({ shop: shops.get(id)!, invoices })));
+      const trips = (await db.trips.where('date').equals(today()).toArray()).filter(x => x.status !== 'done');
+      const mine = trips.find(x => me?.role !== 'delivery' || x.driverId === me.id || (me.vanId && x.vanId === me.vanId)) ?? trips[0] ?? null;
+      setTrip(mine);
+      if (!mine) { setStops([]); return; }
+      const invs = (await db.invoices.where('tripId').equals(mine.id).toArray()).filter(i => !i.cancelled);
+      const shops = new Map((await db.shops.toArray()).map(x => [x.id, x]));
+      setStops(mine.stops.map(sid => ({ shop: shops.get(sid)!, invoices: invs.filter(i => i.shopId === sid) })).filter(x => x.invoices.length));
     })();
   }, [tick]);
+  // live location while out
+  useEffect(() => {
+    if (!trip || trip.status !== 'out' || !navigator.geolocation) return;
+    const send = () => navigator.geolocation.getCurrentPosition(p => { void trackPoint(trip.id, p.coords.latitude, p.coords.longitude); }, () => {}, { maximumAge: 20000, timeout: 8000 });
+    send(); const id = setInterval(send, 30000);
+    return () => clearInterval(id);
+  }, [trip]);
 
   if (open) return <StopView stop={open} onClose={() => { setOpen(null); setTick(x => x + 1); }} />;
+  const left = stops.filter(x => x.invoices.some(i => ['planned', 'out'].includes(i.deliveryStatus)));
+  const done = stops.length - left.length;
+
+  if (ending && trip) return <EndTrip trip={trip} stops={left} onDone={() => { setEnding(false); setTick(x => x + 1); }} />;
   return (
-    <div>
-      <div className="sechead"><h3>{t('delivery')} · {stops.length} {t('shop')}</h3></div>
-      <div className="list">
-        {stops.map(s => (
-          <button key={s.shop.id} className="item tap" onClick={() => setOpen(s)}>
-            <div className="avatar"><Store size={22} /></div>
-            <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {t('bills')}</div></div>
-            <span className="amt num">{inr(s.invoices.reduce((a, i) => a + i.total, 0))}</span>
-          </button>
-        ))}
+    <div className="stack">
+      <div className="kpi navy">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
+          {trip && trip.status === 'out' && <span className="badge gold"><Navigation size={12} /> live</span>}
+        </div>
+      </div>
+      {trip && trip.status !== 'out' && <button className="btn primary big block" disabled={trip.status === 'planned'} onClick={async () => { await startTrip(trip.id); setTick(x => x + 1); }}><Navigation /> {trip.status === 'planned' ? 'Waiting for godown to load' : 'Start trip'}</button>}
+      <div className="route">
+        {stops.map((s, k) => {
+          const st = s.invoices[0].deliveryStatus;
+          const fin = ['delivered', 'partial', 'returned'].includes(st);
+          return (
+            <button key={s.shop.id} className={`stop item tap ${fin ? 'done' : left[0]?.shop.id === s.shop.id && trip?.status === 'out' ? 'now' : ''}`} disabled={fin || trip?.status !== 'out'} style={{ opacity: fin ? .6 : 1 }} onClick={() => setOpen(s)}>
+              <div className={`avatar ${fin ? 'ok' : ''}`}>{fin ? <Check size={22} /> : <span>{k + 1}</span>}</div>
+              <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {t('bills')}{s.shop.phone ? ` · ${s.shop.phone}` : ''}</div></div>
+              <span className="amt num">{inr(s.invoices.reduce((a, i) => a + i.total, 0))}</span>
+            </button>
+          );
+        })}
         {!stops.length && <div className="card muted">{t('noItems')}</div>}
       </div>
+      {trip?.status === 'out' && <button className="btn big block" onClick={() => setEnding(true)}><Flag /> End trip{left.length ? ` (${left.length} not delivered)` : ''}</button>}
+    </div>
+  );
+}
+
+function EndTrip({ trip, stops, onDone }: { trip: Trip; stops: Stop[]; onDone: () => void }) {
+  const [what, setWhat] = useState<Record<string, 'godown' | 'van' | 'next'>>({});
+  return (
+    <div className="stack">
+      <div className="sechead"><h3>End trip</h3></div>
+      {stops.map(s => (
+        <div key={s.shop.id} className="card">
+          <b>{s.shop.name}</b> <span className="muted">· not delivered. Goods are:</span>
+          <div className="segmented" style={{ marginTop: 8 }}>
+            {([['godown', 'Back in godown'], ['van', 'Kept in van'], ['next', 'Next visit']] as const).map(([k, l]) => <button key={k} className={(what[s.invoices[0].id] ?? 'next') === k ? 'on' : ''} onClick={() => setWhat(w => { const n = { ...w }; for (const i of s.invoices) n[i.id] = k; return n; })}>{l}</button>)}
+          </div>
+        </div>
+      ))}
+      {!stops.length && <div className="card ok" style={{ background: 'var(--ok-soft)' }}>Every stop done. 🎉</div>}
+      <button className="btn primary big block" onClick={async () => { await endTrip(trip.id, what); onDone(); }}><Check /> Trip over — back at godown</button>
+      <button className="btn ghost block" onClick={onDone}>Cancel</button>
     </div>
   );
 }

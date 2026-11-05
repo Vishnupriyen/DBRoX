@@ -15,8 +15,15 @@ export function gstinWithCheck(first14: string) {
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
+const SEED_VERSION = 'v0.3b';
 export async function seedDemo(tenantId = 'demo') {
-  if (await db.settings.count()) return;
+  const ls = typeof localStorage === 'undefined' ? null : localStorage;
+  if (await db.settings.count()) {
+    if (!ls || ls.getItem('dbrox.seed') === SEED_VERSION) return;
+    // older demo on this phone: start fresh so every stage of the pipeline has something to show
+    await db.delete(); ls.removeItem('dbrox.session'); ls.setItem('dbrox.seed', SEED_VERSION); location.reload(); return;
+  }
+  ls?.setItem('dbrox.seed', SEED_VERSION);
   setSession(tenantId, 'system');
   const cs = new ChangeSet();
   const settings = cs.put<Settings>('settings', {
@@ -33,7 +40,8 @@ export async function seedDemo(tenantId = 'demo') {
   staff('Priya (Office)', '9000000002', 'office', '2222');
   const ravi = staff('Ravi (Salesman)', '9000000003', 'salesman', '3333');
   staff('Mani (Godown)', '9000000004', 'godown', '4444');
-  staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id });
+  const karthik = staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id });
+  van.driverId = karthik.id;
 
   const co = (name: string, code: string, pan: string) => cs.put<Company>('companies', { name, code, gstin: gstinWithCheck(`33${pan}1Z`), nextBillNo: 1 });
   const hul = co('Hindustan Unilever', 'HUL', 'AAACH1004N');
@@ -104,12 +112,17 @@ export async function seedDemo(tenantId = 'demo') {
   await past(2, 5, [[0, 12], [3, 40], [7, 120]], 1, 'upi');
   await past(3, 3, [[1, 36], [2, 48]], 0.3);
   await past(5, 1, [[9, 96], [11, 72]], 1);
-  // today: one bill waiting for delivery
+  // today: the pipeline has something at every stage so each role's screen has work waiting
   const c4 = new ChangeSet();
+  // approved & billed, waiting for the delivery plan
   const o = c4.put<Order>('orders', { shopId: S[6].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[0].id, qty: 12, rate: P[0].rate }, { productId: P[7].id, qty: 60, rate: P[7].rate }], date: today(), status: 'billed', issues: [], invoiceIds: [] });
   const invs = await makeInvoices(c4, o, S[6]);
   for (const i of invs) c4.put('invoices', { ...i, vanId: van.id });
   o.invoiceIds = invs.map(i => i.id);
-  await c4.commit('Demo today bill');
+  // packed by godown, waiting for the owner's approval
+  c4.put<Order>('orders', { shopId: S[1].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[5].id, qty: 24, rate: P[5].rate }, { productId: P[9].id, qty: 48, rate: P[9].rate }], date: today(), status: 'picked', issues: [], invoiceIds: [], picked: [{ productId: P[5].id, qty: 24 }, { productId: P[9].id, qty: 48 }], pickedBy: 'demo', pickedAt: new Date().toISOString() });
+  // just booked by the salesman, waiting at the godown
+  c4.put<Order>('orders', { shopId: S[2].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[1].id, qty: 36, rate: P[1].rate }, { productId: P[3].id, qty: 20, rate: P[3].rate }], date: today(), status: 'new', issues: [], invoiceIds: [] });
+  await c4.commit('Demo today pipeline');
   return settings;
 }

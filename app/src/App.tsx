@@ -1,39 +1,42 @@
 import { useEffect, useState } from 'react';
-import { MessageSquareText, Sunrise, Route, Truck, IndianRupee, Menu, PackageOpen, Delete, ArrowRight } from 'lucide-react';
+import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
 import { db, setSession } from './core/db';
 import { seedDemo } from './core/seed';
 import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
+import { Home, type Page } from './ui/Home';
 import { Morning } from './ui/Morning';
 import { Beat } from './ui/Beat';
 import { Pick } from './ui/Pick';
+import { PickOrders } from './ui/PickOrders';
+import { Approve } from './ui/Approve';
+import { Plan } from './ui/Plan';
+import { Live } from './ui/Live';
+import { DayClose } from './ui/DayClose';
 import { Delivery } from './ui/Delivery';
 import { Collect } from './ui/Collect';
+import { MyDay } from './ui/MyDay';
+import { LiteShops, LitePlan, LiteDelivery, LiteCollect, LiteExport } from './ui/Lite';
 import { More } from './ui/More';
 import { DialogHost, notify } from './ui/dialog';
-import type { Role, Staff } from './core/types';
+import type { Staff } from './core/types';
 
-type Tab = 'chat' | 'morning' | 'beat' | 'pick' | 'delivery' | 'collect' | 'more';
-const TABS: Record<Role, Tab[]> = {
-  owner: ['morning', 'chat', 'delivery', 'collect', 'more'],
-  office: ['chat', 'morning', 'pick', 'delivery', 'more'],
-  salesman: ['beat', 'chat', 'collect', 'more'],
-  godown: ['pick', 'chat', 'more'],
-  delivery: ['delivery', 'collect', 'chat', 'more'],
-};
-const ICON: Record<Tab, React.ReactNode> = {
-  chat: <MessageSquareText />, morning: <Sunrise />, beat: <Route />, pick: <PackageOpen />, delivery: <Truck />, collect: <IndianRupee />, more: <Menu />,
-};
-const LABEL: Record<Tab, [string, string]> = {
-  chat: ['Chat', 'அரட்டை'], morning: ['Morning', 'காலை'], beat: ['Beat', 'பீட்'], pick: ['Load', 'லோடு'], delivery: ['Delivery', 'டெலிவரி'], collect: ['Collect', 'வசூல்'], more: ['More', 'மேலும்'],
+// Page titles shown in the header when inside a page (Home shows the firm name instead).
+const TITLE: Partial<Record<Page, [string, string]>> = {
+  approve: ['Approve orders', 'ஆர்டர் ஒப்புதல்'], plan: ['Delivery plan', 'டெலிவரி திட்டம்'], live: ['Live vans', 'வண்டிகள் இப்போது'], collect: ['Collect', 'வசூல்'],
+  cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], stock: ['Stock alerts', 'ஸ்டாக் எச்சரிக்கை'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'],
+  reports: ['Reports', 'அறிக்கை'], bills: ['Bills', 'பில்கள்'], pick: ['Pick orders', 'ஆர்டர் எடு'], load: ['Load vans', 'வண்டி ஏற்று'], trip: ['My trip', 'என் டிரிப்'],
+  beat: ["Today's beat", 'இன்றைய பீட்'], myday: ['My day', 'என் நாள்'], 'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'],
+  'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
 };
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState<Staff | null>(null);
   const [firm, setFirm] = useState('');
-  const [tab, setTab] = useState<Tab>('chat');
+  const [page, setPage] = useState<Page>('home');
+  const [rox, setRox] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [langTick, setLangTick] = useState(0);
   const lang = getLang();
@@ -46,7 +49,7 @@ export default function App() {
       if (saved) {
         const { tenantId, userId } = JSON.parse(saved);
         const s = await db.staff.get(userId);
-        if (s?.active) { setSession(tenantId, userId); setMe(s); setTab(TABS[s.role][0]); }
+        if (s?.active) { setSession(tenantId, userId); setMe(s); }
       }
       setReady(true);
       startAutoSync();
@@ -68,36 +71,67 @@ export default function App() {
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     setFirm((await db.settings.toCollection().first())?.firmName ?? '');
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
-    setMe(s); setTab(TABS[s.role][0]);
+    setMe(s); setPage('home');
   }} lang={lang} onLang={toggleLang} /></>;
 
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
+  const home = () => setPage('home');
+  const title = TITLE[page]?.[lang === 'ta' ? 1 : 0];
+
+  const body = () => {
+    switch (page) {
+      case 'home': return <Home role={me.role} go={setPage} />;
+      case 'approve': return <Approve />;
+      case 'plan': return <Plan onDone={home} />;
+      case 'live': return <Live />;
+      case 'collect': return <Collect />;
+      case 'cash': return <Morning only="cash" />;
+      case 'stock': return <Morning only="stock" />;
+      case 'claims': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="claims" />;
+      case 'dayclose': return <DayClose />;
+      case 'reports': return <Morning />;
+      case 'bills': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="bills" />;
+      case 'pick': return <PickOrders />;
+      case 'load': return <Pick />;
+      case 'trip': return <Delivery />;
+      case 'beat': return <Beat lang={lang} />;
+      case 'myday': return <MyDay />;
+      case 'lite-shops': return <LiteShops />;
+      case 'lite-plan': return <LitePlan onDone={home} />;
+      case 'lite-delivery': return <LiteDelivery />;
+      case 'lite-collect': return <LiteCollect />;
+      case 'lite-export': return <LiteExport />;
+      case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} />;
+    }
+  };
+
   return (
     <div className="app" key={langTick}>
       <header className="top">
-        <div className="wordmark">DB<em>RoX</em></div>
-        <div className="firm">{firm}</div>
+        {page === 'home' ? <div className="wordmark">DB<em>RoX</em></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
+        <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
         <button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
-      <main className={`main ${tab === 'chat' ? 'flush' : ''}`}>
-        {tab === 'chat' && <Chat role={me.role} />}
-        {tab === 'morning' && <Morning />}
-        {tab === 'beat' && <Beat lang={lang} />}
-        {tab === 'pick' && <Pick />}
-        {tab === 'delivery' && <Delivery />}
-        {tab === 'collect' && <Collect />}
-        {tab === 'more' && <More role={me.role} onLogout={logout} onLang={toggleLang} />}
-      </main>
+      <main className="main" key={page}>{body()}</main>
       <DialogHost />
+
+      {/* RoX Engine: one floating button on every screen, for every role. Type or speak; it proposes, you approve. */}
+      <button className="fab" onClick={() => setRox(true)} aria-label="RoX Engine"><span className="fab-mark">RoX</span></button>
+      {rox && (
+        <div className="sheet-wrap" onClick={() => setRox(false)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
+            <div className="sheet-head"><span className="fab-mark small">RoX</span><b className="grow">RoX Engine</b><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
+            <div className="sheet-body"><Chat role={me.role} /></div>
+          </div>
+        </div>
+      )}
+
       <nav className="tabs">
-        {TABS[me.role].map(k => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-            <span className="ic">{ICON[k]}</span>{LABEL[k][lang === 'ta' ? 1 : 0]}
-          </button>
-        ))}
+        <button className={page === 'home' ? 'on' : ''} onClick={home}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
+        <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{lang === 'ta' ? 'மேலும்' : 'More'}</button>
       </nav>
     </div>
   );

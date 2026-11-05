@@ -21,24 +21,25 @@ interface Data {
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Owner's morning view (4.13): yesterday's sales & profit → money to collect → cash with staff → stock alerts.
-export function Morning() {
+export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
   const [d, setD] = useState<Data | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => { load().then(setD); }, [tick]);
   if (!d) return <div className="muted">…</div>;
   const refresh = () => setTick(x => x + 1);
   const delta = d.y.prevSales ? Math.round((d.y.sales - d.y.prevSales) / d.y.prevSales * 100) : 0;
+  const show = (k: 'cash' | 'stock' | 'rest') => !only || only === k;
 
   return (
     <div className="stack">
-      <div className="kpis">
+      {show('rest') && <div className="kpis">
         <div className="kpi navy"><div className="v">{inr(d.y.sales)}</div><div className="l">{L("Yesterday's sales", 'நேற்றைய விற்பனை')} · {d.y.bills} {L('bills', 'பில்')}</div>{d.y.prevSales > 0 && <div className={`d ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% vs day before</div>}</div>
         <div className="kpi navy"><div className="v">{inr(d.y.profit)}</div><div className="l">{L('Gross profit', 'லாபம்')} · {d.y.margin}%</div><div className="d" style={{ color: 'var(--on-navy-2)' }}>{L('after schemes & discounts', 'ஸ்கீம், தள்ளுபடி கழித்து')}</div></div>
         <div className="kpi"><div className="v">{inr(d.collect.dueToday)}</div><div className="l">{L('To collect today', 'இன்று வசூல்')}</div></div>
         <div className="kpi"><div className="v" style={{ color: d.collect.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(d.collect.overdue)}</div><div className="l">{L('Overdue in market', 'தாமத பாக்கி')}</div></div>
-      </div>
+      </div>}
 
-      {d.needsOk.length > 0 && (
+      {show('rest') && d.needsOk.length > 0 && (
         <section className="card">
           <div className="sechead"><h3><AlertTriangle size={18} style={{ verticalAlign: -3, color: 'var(--marigold)' }} /> {L('Needs your OK', 'உங்கள் ஒப்புதல்')} · {d.needsOk.length}</h3></div>
           <div className="list">
@@ -56,7 +57,7 @@ export function Morning() {
         </section>
       )}
 
-      <section className="card">
+      {show('rest') && <section className="card">
         <div className="sechead"><h3><CalendarClock size={18} style={{ verticalAlign: -3 }} /> {L('Money to collect', 'வசூல் செய்ய வேண்டியது')}</h3></div>
         {d.collect.shops.length ? (
           <div className="list">
@@ -69,9 +70,9 @@ export function Morning() {
             ))}
           </div>
         ) : <div className="muted">{L('Nothing overdue. 🎉', 'தாமதம் எதுவும் இல்லை 🎉')}</div>}
-      </section>
+      </section>}
 
-      <section className="card">
+      {show('cash') && <section className="card">
         <div className="sechead"><h3><Banknote size={18} style={{ verticalAlign: -3 }} /> {L('Cash with staff', 'ஊழியர்களிடம் பணம்')}</h3></div>
         {d.cash.length ? d.cash.map(c => (
           <div key={c.staffId} className="row" style={{ flexWrap: 'nowrap', padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
@@ -84,9 +85,9 @@ export function Morning() {
             }}>{L('Received', 'பெற்றேன்')}</button>
           </div>
         )) : <div className="muted">{L('All cash handed over.', 'எல்லா பணமும் ஒப்படைக்கப்பட்டது.')}</div>}
-      </section>
+      </section>}
 
-      <section className="card">
+      {show('stock') && <section className="card">
         <div className="sechead"><h3><Boxes size={18} style={{ verticalAlign: -3 }} /> {L('Stock alerts', 'ஸ்டாக் எச்சரிக்கை')}</h3></div>
         <div className="stack" style={{ gap: 8 }}>
           {d.stock.out.length > 0 && <div className="alert bad"><AlertTriangle /><div><b>{L('Out of stock', 'ஸ்டாக் இல்லை')}:</b> {d.stock.out.join(', ')}</div></div>}
@@ -94,9 +95,9 @@ export function Morning() {
           {d.stock.over.map(e => <div key={e.name} className="alert" style={{ background: 'var(--info-soft)' }}><TrendingUp style={{ color: 'var(--navy)' }} /><div><b>{e.name}</b> · {e.days} {L('days of stock', 'நாட்கள் ஸ்டாக்')} — {L('overstock', 'அதிக ஸ்டாக்')}</div></div>)}
           {!d.stock.out.length && !d.stock.expiring.length && !d.stock.over.length && <div className="muted">{L('Stock looks fine.', 'ஸ்டாக் சரியாக உள்ளது.')}</div>}
         </div>
-      </section>
+      </section>}
 
-      {d.targets.length > 0 && (
+      {show('rest') && d.targets.length > 0 && (
         <section className="card">
           <div className="sechead"><h3><Target size={18} style={{ verticalAlign: -3 }} /> {L('Company targets this month', 'இந்த மாத இலக்கு')}</h3></div>
           <div className="stack" style={{ gap: 10 }}>
@@ -114,14 +115,14 @@ export function Morning() {
         </section>
       )}
 
-      {d.vans.length > 0 && (
+      {show('rest') && d.vans.length > 0 && (
         <section className="card">
           <div className="sechead"><h3><Truck size={18} style={{ verticalAlign: -3 }} /> {L('Vans today', 'இன்றைய வண்டிகள்')}</h3></div>
           {d.vans.map(v => <div key={v.name} className="row" style={{ justifyContent: 'space-between', minHeight: 36 }}><b>{v.name}</b><span><span className="badge ok">{v.delivered} {L('delivered', 'டெலிவரி')}</span> <span className="badge">{v.pending} {L('pending', 'நிலுவை')}</span></span></div>)}
         </section>
       )}
 
-      <section className="card">
+      {show('rest') && <section className="card">
         <div className="sechead"><h3>{L('Recent changes', 'சமீபத்திய மாற்றங்கள்')}</h3></div>
         <div className="list">
           {d.recent.map(a => (
@@ -131,7 +132,7 @@ export function Morning() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
     </div>
   );
 }

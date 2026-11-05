@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Truck, PackageOpen, AlertTriangle } from 'lucide-react';
-import { db } from '../core/db';
+import { db, today } from '../core/db';
+import { tripLoaded } from '../core/pipeline';
 import { getLang, inr } from '../core/i18n';
-import type { Invoice, Product, Van } from '../core/types';
+import type { Invoice, Product, Trip, Van } from '../core/types';
 import { Pack } from './Pack';
 
 interface Line { product: Product; qty: number; batches: { batch: string; expiry: string; qty: number }[]; shops: { name: string; qty: number }[] }
@@ -12,7 +13,9 @@ const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 // cases + pieces, tick every line before the van leaves.
 export function Pick() {
   const [vans, setVans] = useState<Van[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [vanId, setVanId] = useState<string>('');
+  const [tick, setTick] = useState(0);
   const [invs, setInvs] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [shops, setShops] = useState<Map<string, string>>(new Map());
@@ -21,16 +24,20 @@ export function Pick() {
 
   useEffect(() => {
     (async () => {
-      const vs = (await db.vans.toArray()).sort((a, b) => a.name.localeCompare(b.name)); setVans(vs);
-      const pend = (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled);
+      const ts = (await db.trips.where('date').equals(today()).toArray()).filter(t => t.status === 'planned' || t.status === 'loaded');
+      setTrips(ts);
+      const all = await db.vans.toArray();
+      const vs = all.filter(v => ts.some(t => t.vanId === v.id)).sort((a, b) => a.name.localeCompare(b.name)); setVans(vs);
+      const pend = (await db.invoices.where('deliveryStatus').equals('planned').toArray()).filter(i => !i.cancelled);
       setInvs(pend);
-      if (!vanId && vs.length) { const busiest = vs.map(v => ({ v, n: pend.filter(i => i.vanId === v.id || !i.vanId).length })).sort((a, b) => b.n - a.n)[0]; setVanId(busiest.v.id); }
+      if (!vanId && vs.length) { const busiest = vs.map(v => ({ v, n: pend.filter(i => i.vanId === v.id).length })).sort((a, b) => b.n - a.n)[0]; setVanId(busiest.v.id); }
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
       setShops(new Map((await db.shops.toArray()).map(s => [s.id, s.name])));
     })();
-  }, [vanId]);
+  }, [vanId, tick]);
 
-  const mine = useMemo(() => invs.filter(i => !i.vanId || i.vanId === vanId), [invs, vanId]);
+  const trip = trips.find(t => t.vanId === vanId);
+  const mine = useMemo(() => invs.filter(i => i.tripId === trip?.id).sort((a, b) => (a.stopNo ?? 0) - (b.stopNo ?? 0)), [invs, trip]);
   const lines = useMemo(() => {
     const m = new Map<string, Line>();
     for (const i of mine) for (const l of i.lines) {
@@ -84,15 +91,15 @@ export function Pick() {
               </button>
             );
           })}
-          {!lines.length && <div className="card muted">{L('Nothing to load for this van.', 'இந்த வண்டிக்கு ஏற்ற எதுவும் இல்லை.')}</div>}
+          {!lines.length && <div className="card muted">{L('No trip planned for this van yet. The owner confirms the delivery plan first.', 'இந்த வண்டிக்கு டிரிப் இன்னும் இல்லை.')}</div>}
         </div>
       ) : (
         <div className="stack">
-          {[...new Set(mine.map(i => i.shopId))].map(sid => {
+          {[...new Set(mine.map(i => i.shopId))].map((sid, k) => {
             const sInv = mine.filter(i => i.shopId === sid);
             return (
               <div key={sid} className="card">
-                <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 17 }}>{shops.get(sid)}</b><span className="muted">{sInv.map(i => i.number).join(', ')}</span></div>
+                <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 17 }}><span className="badge navy">{k + 1}</span> {shops.get(sid)}</b><span className="muted">{sInv.map(i => i.number).join(', ')}</span></div>
                 <div className="stack" style={{ gap: 6, marginTop: 8 }}>
                   {sInv.flatMap(i => i.lines).map((l, k) => { const p = products.get(l.productId)!; return <div key={k} className="row" style={{ flexWrap: 'nowrap' }}><Pack product={p} /><span className="grow">{p.nameTa ?? p.name}</span><b className="num">{l.qty + l.freeQty} pcs</b></div>; })}
                 </div>
@@ -105,7 +112,9 @@ export function Pick() {
       {lines.length > 0 && (
         <div className="sticky-foot">
           {!allDone && <div className="muted grow"><AlertTriangle size={16} style={{ verticalAlign: -3 }} /> {L('Tick every line before the van leaves', 'வண்டி கிளம்பும் முன் எல்லா வரிகளையும் டிக் செய்யவும்')}</div>}
-          <button className="btn primary big grow" disabled={!allDone}><Truck /> {L('Van loaded', 'வண்டி ஏற்றப்பட்டது')}</button>
+          {trip?.status === 'loaded'
+            ? <span className="badge ok" style={{ fontSize: 15, padding: '8px 14px' }}><Check size={16} /> {L('Loaded — waiting for driver', 'ஏற்றப்பட்டது')}</span>
+            : <button className="btn primary big grow" disabled={!allDone} onClick={async () => { if (trip) { await tripLoaded(trip.id); setTick(x => x + 1); } }}><Truck /> {L('Van loaded', 'வண்டி ஏற்றப்பட்டது')}</button>}
         </div>
       )}
     </div>

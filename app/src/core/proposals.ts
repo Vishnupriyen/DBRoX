@@ -1,7 +1,8 @@
 // A Proposal is what the RoX Engine prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today } from './db';
-import { checkOrder, makeInvoices, pickBatches, placeOrder } from './billing';
+import { checkOrder, makeInvoices, pickBatches } from './billing';
+import { bookOrder } from './pipeline';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
 import type { Batch, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Shop } from './types';
@@ -224,11 +225,12 @@ export const hasErrors = (v: Validation) => Object.keys(v.errors).length > 0 || 
 // ---------------------------------------------------------------------------------------------
 // COMMIT — the only place data is written. One ChangeSet = one undo.
 // ---------------------------------------------------------------------------------------------
-export async function commit(p: Proposal): Promise<{ message: string; batchId: string; invoices?: Invoice[] }> {
+export async function commit(p: Proposal): Promise<{ message: string; batchId: string; invoices?: Invoice[]; orderId?: string }> {
   const cs = new ChangeSet();
   const products = new Map((await db.products.toArray()).map(x => [x.id, x]));
   let message = '';
   let invoices: Invoice[] | undefined;
+  let orderId: string | undefined;
   switch (p.kind) {
     case 'purchase': {
       const companyId = s(fieldValue(p, 'companyId'));
@@ -305,21 +307,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'order': {
       const shop = (await db.shops.get(s(fieldValue(p, 'shopId'))))!;
       const lines = p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) }));
-      const me = await db.staff.get(session().userId);
-      const settings = await getSettings();
-      const autoBill = settings.modules.billing;
-      if (me?.role === 'owner' && autoBill) {
-        // owner's ✓ is the approval: bill even if checks raised issues
-        const order = cs.put<Order>('orders', { shopId: shop.id, salesmanId: me.id, source: 'office', lines, date: today(), status: 'billed', issues: [], invoiceIds: [] }, 'order (owner)');
-        invoices = await makeInvoices(cs, order, shop);
-        order.invoiceIds = invoices.map(i => i.id);
-      } else {
-        const res = await placeOrder(cs, shop, lines, me?.role === 'salesman' ? 'salesman' : 'office', session().userId, autoBill);
-        invoices = res.invoices;
-      }
-      message = invoices.length
-        ? `Billed: ${invoices.map(i => `${i.number} ₹${i.total}`).join(', ')}`
-        : `Order saved for ${shop.name}. It needs the owner's OK before billing.`;
+      const order = await bookOrder(cs, shop, lines, session().userId, { source: 'office' });
+      orderId = order.id;
+      message = `Order for ${shop.name} sent to the godown for picking.` + (order.issues.length ? ` Flagged for you: ${order.issues.join('; ')}.` : '');
       break;
     }
     case 'payment': {
@@ -423,7 +413,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       throw new Error('Nothing to approve');
   }
   const batchId = await cs.commit(p.title);
-  return { message, batchId, invoices };
+  return { message, batchId, invoices, orderId };
 }
 
 // Bill an order that was waiting for the owner's OK.

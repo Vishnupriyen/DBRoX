@@ -5,6 +5,7 @@ import { seedDemo } from '../src/core/seed';
 import { handle } from '../src/core/engine';
 import { commit, validate, hasErrors } from '../src/core/proposals';
 import { invoiceBalances, validGstin } from '../src/core/ledger';
+import { pickOrder, approvePicked, suggestPick } from '../src/core/pipeline';
 
 beforeAll(async () => {
   await seedDemo();
@@ -21,7 +22,16 @@ describe('RoX Engine', () => {
     expect(hasErrors(v)).toBe(false);
     const surfId = r.proposal!.rows[0].productId as string;
     const live = (await db.batches.where('productId').equals(surfId).toArray()).filter(b => b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
-    const res = await commit(r.proposal!);
+    const booked = await commit(r.proposal!);
+    // pipeline: booked → godown packs what it has → owner approves → bills
+    const o = (await db.orders.get(booked.orderId!))!;
+    expect(o.status).toBe('new');
+    const pick = await suggestPick(o);
+    expect(pick.every(x => x.available === x.ordered)).toBe(true);
+    await pickOrder(o.id, pick.map(x => ({ productId: x.productId, qty: x.available })));
+    expect((await db.orders.get(o.id))!.status).toBe('picked');
+    const res = await approvePicked(o.id);
+    expect((await db.orders.get(o.id))!.status).toBe('billed');
     expect(res.invoices!.length).toBe(2); // one bill per company (HUL, Britannia)
     const hul = res.invoices!.find(i => i.number.startsWith('HUL'))!;
     const line = hul.lines[0];

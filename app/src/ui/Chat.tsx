@@ -11,11 +11,11 @@ import { notify } from './dialog';
 interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[] }
 
 const SUGGEST: Record<Role, string[]> = {
-  owner: ['today sales', 'who owes more than 5000', 'cash in hand', 'needs ok', 'load sheet', 'tally export', 'claim file', 'help'],
+  owner: ['today sales', 'who owes more than 5000', 'cash in hand', 'tally export', 'claim file', 'help'],
   office: ['today sales', 'outstanding', 'load sheet', 'gstr1', 'e-invoice', 'help'],
   salesman: ['Murugan Stores 1 case Surf, 24 Good Day', 'Selvam Kirana paid 500 cash', 'new shop', 'outstanding', 'help'],
   godown: ['load sheet', 'near expiry', 'stock of surf', '5 Good Day damaged', 'help'],
-  delivery: ['outstanding', 'help'],
+  delivery: ['Kumar Mart outstanding', 'help'],
 };
 
 let seq = 1;

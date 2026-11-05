@@ -4,17 +4,19 @@ import { ChangeSet, db, getSettings } from '../core/db';
 import { getLang, inr, setLang, t } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
-import { syncNow } from '../core/sync';
+import { ENV_SERVER, syncNow } from '../core/sync';
 import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff } from '../core/types';
 import { PrintBill } from './PrintBill';
 import { askText, confirmBox, notify } from './dialog';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
-export function More({ role, onLogout, onLang }: { role: Role; onLogout: () => void; onLang: () => void }) {
-  const [page, setPage] = useState<Page>('menu');
+export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' }) {
+  const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   const back = <button className="btn small" style={{ marginBottom: 10 }} onClick={() => setPage('menu')}>← {t('more')}</button>;
+  if (page === 'bills' && initial === 'bills') return <Bills canCancel={boss} />;
+  if (page === 'claims' && initial === 'claims') return <Claims />;
   if (page === 'modules') return <>{back}<Modules editable={role === 'owner'} /></>;
   if (page === 'settings') return <>{back}<SettingsPage editable={role === 'owner'} /></>;
   if (page === 'staff') return <>{back}<StaffPage editable={role === 'owner'} /></>;
@@ -25,7 +27,6 @@ export function More({ role, onLogout, onLang }: { role: Role; onLogout: () => v
       <button className="item" onClick={() => { setLang(getLang() === 'en' ? 'ta' : 'en'); onLang(); }}><Languages /> <span className="grow">தமிழ் / English</span><span className="badge">{getLang() === 'en' ? 'English' : 'தமிழ்'}</span></button>
       {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
-      {boss && <button className="item" onClick={() => setPage('modules')}><Blocks /> <span className="grow">{t('modules')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
       {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {
@@ -39,7 +40,8 @@ export function More({ role, onLogout, onLang }: { role: Role; onLogout: () => v
         if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
       }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.2</div>
+      {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (DBRoX side — never shown to a distributor)</span></button>}
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.3</div>
     </div>
   );
 }
@@ -58,6 +60,10 @@ function Modules({ editable }: { editable: boolean }) {
     <div className="card">
       <h3>{t('modules')}</h3>
       <div className="muted" style={{ marginBottom: 6 }}>{on} on · plan ₹{price}/month (proposed pricing)</div>
+      <div className="row" style={{ marginBottom: 8 }}>
+        <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, true])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'all modules'); await cs.commit('Plan'); setS(next); }}>All modules</button>
+        <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, m.key === 'delivery' || m.key === 'collection'])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'delivery+collection'); await cs.commit('Plan'); setS(next); }}>Delivery + Collection only</button>
+      </div>
       {MODULES.map(m => (
         <div key={m.key} className="toggle">
           <span>{m.name}</span>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Repeat, Search, Flame, Gift, AlertTriangle, Check } from 'lucide-react';
-import { ChangeSet, db, getSettings, session, today } from '../core/db';
-import { activeSchemes, applySchemes, placeOrder, stockOf } from '../core/billing';
+import { ChangeSet, db, session, today } from '../core/db';
+import { activeSchemes, applySchemes, stockOf } from '../core/billing';
+import { bookOrder } from '../core/pipeline';
 import { r2, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { getLang, inr, t } from '../core/i18n';
@@ -26,6 +27,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
   const [usual, setUsual] = useState<Set<string>>(new Set());
   const [lastOrder, setLastOrder] = useState<{ productId: string; qty: number }[]>([]);
   const [result, setResult] = useState<{ text: string; invoices: Invoice[]; needsOk: boolean } | null>(null);
+  const [issuesText, setIssuesText] = useState('');
   const [printing, setPrinting] = useState<Invoice | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -78,17 +80,15 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
   const confirm = async () => {
     setBusy(true);
     try {
-      const settings = await getSettings();
       const cs = new ChangeSet();
       const ls = Object.values(lines).map(l => ({ productId: l.product.id, qty: pieces(l), rate: l.product.rate }));
-      const res = await placeOrder(cs, shop, ls, 'salesman', session().userId, settings.modules.billing);
-      res.order.visitId = visit?.id;
-      res.order.offRoute = shop.salesmanId !== session().userId;
+      const order = await bookOrder(cs, shop, ls, session().userId, { visitId: visit?.id, offRoute: shop.salesmanId !== session().userId });
       if (visit) cs.put('visits', { ...visit, outcome: 'order' }, 'visit outcome');
       await cs.commit('Salesman order');
+      setIssuesText(order.issues.join('; '));
       setResult({
-        text: res.invoices.length ? (lang === 'ta' ? 'பில் தயார்' : 'Billed') : (lang === 'ta' ? 'ஆர்டர் சேமிக்கப்பட்டது. உரிமையாளர் ஒப்புதல் தேவை.' : 'Order saved. Waiting for owner OK.'),
-        invoices: res.invoices, needsOk: res.order.status === 'needs_ok',
+        text: lang === 'ta' ? 'ஆர்டர் கிடங்கிற்கு சென்றது' : 'Order sent to godown',
+        invoices: [], needsOk: order.issues.length > 0,
       });
     } finally { setBusy(false); }
   };
@@ -98,6 +98,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
       <div className={`avatar ${result.needsOk ? 'bad' : 'ok'}`} style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}>{result.needsOk ? <AlertTriangle size={48} /> : <Check size={56} />}</div>
       <h2>{result.text}</h2>
       <div className="muted">{shop.name} · {totals.items} items · {inr(totals.amount)}</div>
+      {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{lang === 'ta' ? 'உரிமையாளர் பார்ப்பார்: ' : 'The owner will see: '}{issuesText}</div></div>}
       {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}>{i.number} · {inr(i.total)}</button>)}</div>}
       <button className="btn big primary block" onClick={onClose}>{lang === 'ta' ? 'அடுத்த கடை' : 'Next shop'} →</button>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}

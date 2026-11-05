@@ -129,10 +129,14 @@ export interface Order extends Base {
   salesmanId?: string;
   source: 'salesman' | 'phone' | 'photo' | 'office';
   lines: OrderLine[];
-  status: 'needs_ok' | 'billed' | 'cancelled';
+  // pipeline: new → picked (godown) → billed (owner approved) ; cancelled at any point
+  status: 'new' | 'picked' | 'needs_ok' | 'billed' | 'cancelled';
   issues: string[];
   date: string;
   invoiceIds: string[];
+  picked?: { productId: string; qty: number }[]; // what the godown actually packed
+  pickedBy?: string;
+  pickedAt?: string;
 }
 
 export interface InvoiceLine {
@@ -172,7 +176,10 @@ export interface Invoice extends Base {
   total: number;
   schemeSaving: number;
   vanId?: string;
-  deliveryStatus: 'pending' | 'delivered' | 'partial' | 'returned';
+  tripId?: string;
+  stopNo?: number;
+  // pending → planned (on a trip) → out (van left) → delivered / partial / returned / undelivered
+  deliveryStatus: 'pending' | 'planned' | 'out' | 'delivered' | 'partial' | 'returned' | 'undelivered';
   delivery?: {
     at: string; by: string; photo?: string; lat?: number; lng?: number;
     shortages: { productId: string; qty: number; reason: string }[];
@@ -264,6 +271,40 @@ export interface Claim extends Base {
   note?: string;
 }
 
+export interface Trip extends Base {
+  vanId: string;
+  driverId?: string;
+  date: string;
+  status: 'planned' | 'loaded' | 'out' | 'done';
+  stops: string[]; // shopIds in order
+  startedAt?: string;
+  endedAt?: string;
+  track: { at: string; lat: number; lng: number }[];
+}
+
+export interface DayClose extends Base {
+  date: string;
+  closedBy: string;
+  summary: Record<string, unknown>;
+}
+
+export interface DayPlan extends Base {
+  date: string;
+  shopIds: string[]; // standalone delivery: today's chosen shops in route order
+}
+
+export interface LiteEntry extends Base {
+  date: string;
+  shopId: string;
+  kind: 'delivered' | 'closed' | 'refused' | 'payment';
+  amount?: number;
+  mode?: 'cash' | 'upi' | 'cheque';
+  ref?: string;
+  photo?: string;
+  by: string;
+  shopConfirmed?: boolean;
+}
+
 export interface Visit extends Base {
   shopId: string;
   staffId: string;
@@ -304,4 +345,4 @@ export interface AuditEntry extends Base {
 export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
-  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets';
+  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries';
