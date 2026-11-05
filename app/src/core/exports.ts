@@ -138,7 +138,21 @@ export async function exportEinvoice(month: string): Promise<Reply> {
       ValDtls: { AssVal: i.taxable, CgstVal: i.cgst, SgstVal: i.sgst, IgstVal: i.igst, RndOffAmt: i.roundOff, TotInvVal: i.total },
     };
   });
-  const warn = [!sellerPin ? 'Your firm address has no 6-digit PIN code (Settings).' : '', missing.length ? `PIN code missing in address for: ${[...new Set(missing)].join(', ')}.` : ''].filter(Boolean).join(' ');
+  // Checks from the e-invoice schema: HSN 6 or 8 digits, bill no ≤16 chars (no leading 0, / or -), names ≥3 letters
+  const shortHsn = new Set<string>();
+  const badNo: string[] = [];
+  for (const i of invs) {
+    for (const l of i.lines) if (!/^(\d{6}|\d{8})$/.test(l.hsn)) shortHsn.add(`${l.name} (${l.hsn || 'blank'})`);
+    if (!/^[a-zA-Z1-9][a-zA-Z0-9/-]{0,15}$/.test(i.number)) badNo.push(i.number);
+  }
+  const shortNames = invs.map(i => shops.get(i.shopId)!).filter(x => x.name.trim().length < 3 || (x.area || '').trim().length < 3).map(x => x.name);
+  const warn = [
+    !sellerPin ? 'Your firm address has no 6-digit PIN code (More → Settings).' : '',
+    missing.length ? `PIN code missing in address for: ${[...new Set(missing)].join(', ')}.` : '',
+    shortHsn.size ? `HSN must be 6 or 8 digits for e-invoice: ${[...shortHsn].slice(0, 8).join(', ')}${shortHsn.size > 8 ? '…' : ''}.` : '',
+    badNo.length ? `Bill numbers the portal will reject: ${badNo.slice(0, 5).join(', ')}.` : '',
+    shortNames.length ? `Shop name or area too short (min 3 letters): ${[...new Set(shortNames)].join(', ')}.` : '',
+  ].filter(Boolean).join('\n⚠ ');
   return {
     text: `${docs.length} B2B bill(s) for ${month} in the government e-invoice format. Upload this file in the free bulk tool on the e-invoice portal, then download the IRN file.` + (warn ? `\n⚠ ${warn}` : ''),
     tone: warn ? 'warn' : 'ok',

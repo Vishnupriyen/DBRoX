@@ -187,6 +187,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (n(r.rate) <= 0) err(v, i, 'rate', 'Selling rate missing');
         if (![0, 5, 12, 18, 28, 40].includes(n(r.gst))) err(v, i, 'gst', 'GST % should be 0/5/12/18/28/40');
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
+        else if (!/^(\d{6}|\d{8})$/.test(s(r.hsn))) v.warnings.push(`Row ${i + 1}: e-invoice needs a 6 or 8 digit HSN`);
       });
       v.summary = `${p.rows.length} product(s)`;
       break;

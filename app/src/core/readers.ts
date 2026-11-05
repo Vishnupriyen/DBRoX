@@ -6,10 +6,18 @@ import { norm } from './match';
 export async function readSheet(file: File): Promise<string[][]> {
   const XLSX = await xlsx();
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  let wb;
+  try { wb = XLSX.read(buf, { type: 'array', cellDates: true }); }
+  catch (e) {
+    if (/password|encrypt|CFB|ECMA-376/i.test(String((e as Error).message))) {
+      throw new Error('This file is password-protected (SBI and some banks do this). Open it once, save a copy without the password, and send that — or download the statement as CSV.');
+    }
+    throw e;
+  }
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' });
-  return rows.map(r => r.map(c => String(c ?? '').trim()));
+  // Some banks write cells as ="05 Nov 2026" (Canara) or put line breaks inside the narration (SBI)
+  return rows.map(r => r.map(c => String(c ?? '').replace(/^=\s*"?|"$/g, '').replace(/\s*[\r\n]+\s*/g, ' ').trim()));
 }
 
 export function isSheet(file: File) {
@@ -53,10 +61,20 @@ export const num = (s: string | undefined) => {
 
 export function toIsoDate(s: string): string {
   const t = s.trim();
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  // expiry printed as month + year only: 09/27, 09/2027, SEP-27, Sep 2027 → last day of that month
+  const my = t.match(/^(\d{1,2}|[A-Za-z]{3})[/\-. ]?(\d{2}|\d{4})$/);
+  if (my) {
+    const mon = /\d/.test(my[1]) ? Number(my[1]) : months.indexOf(my[1].toLowerCase()) + 1;
+    let y = Number(my[2]); if (y < 100) y += 2000;
+    if (mon >= 1 && mon <= 12) {
+      const last = new Date(Date.UTC(y, mon, 0)).getUTCDate();
+      return `${y}-${String(mon).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+    }
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
   const m = t.match(/^(\d{1,2})[/\-. ](\d{1,2}|[A-Za-z]{3})[/\-. ](\d{2,4})/);
   if (m) {
-    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     const mon = /\d/.test(m[2]) ? Number(m[2]) : months.indexOf(m[2].toLowerCase()) + 1;
     let y = Number(m[3]); if (y < 100) y += 2000;
     return `${y}-${String(mon).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
@@ -92,11 +110,14 @@ export function readPurchaseRows(rows: string[][]): PurchaseRow[] | null {
   const out: PurchaseRow[] = [];
   for (const row of rows.slice(headerRow + 1)) {
     const item = get(row, 'item');
-    const qty = num(get(row, 'qty'));
+    const qtyCell = get(row, 'qty');
+    const plus = qtyCell.match(/^\s*(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)\s*$/); // "10+1" = 10 billed + 1 free
+    const qty = plus ? Number(plus[1]) : num(qtyCell);
     if (!item || !qty || /^\s*(sub\s*|grand\s*)?total\b/i.test(item)) continue;
     out.push({
       item, code: get(row, 'code'), hsn: get(row, 'hsn'), batch: get(row, 'batch'),
       expiry: toIsoDate(get(row, 'expiry')), mrp: num(get(row, 'mrp')), qty, free: num(get(row, 'free')),
+      ...(plus ? { free: Number(plus[2]) } : {}),
       rate: num(get(row, 'rate')), discount: num(get(row, 'discount')), gst: num(get(row, 'gst')),
       amount: num(get(row, 'amount')),
     });
