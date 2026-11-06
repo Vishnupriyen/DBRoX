@@ -40,6 +40,7 @@ export interface Settings extends Base {
   backupApproverId?: string;
   billPrefix?: string;      // one running bill series for the distributor (locked spec 15.1)
   nextBillNo?: number;
+  nextCnNo?: number;        // credit-note counter when there is no server
   checkInBy?: string;       // 'HH:MM' — check-in after this is "late"
   grnPhoto?: boolean;       // second delivery photo (signed bill / GRN); owner can switch off
   upiId?: string;           // shown as QR at collection

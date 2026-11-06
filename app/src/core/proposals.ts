@@ -1,7 +1,7 @@
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today } from './db';
-import { checkOrder, makeInvoices, pickBatches } from './billing';
+import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches } from './billing';
 import { bookOrder } from './pipeline';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
@@ -350,20 +350,21 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       const byInvoice = new Map<string, Row[]>();
       for (const r of p.rows) byInvoice.set(s(r.invoiceId), [...(byInvoice.get(s(r.invoiceId)) ?? []), r]);
       const batches = await db.batches.toArray();
-      const cnCount = await db.creditNotes.count();
+      const cnNos = await creditNoteNumbers(cs, byInvoice.size);
       let i = 0;
       for (const [invoiceId, rows] of byInvoice) {
         const inv = (await db.invoices.get(invoiceId))!;
         const lines = rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), amount: n(r.amount), restock: s(r.restock) !== 'no' }));
-        for (const l of lines.filter(x => x.restock)) {
-          const line = inv.lines.find(x => x.productId === l.productId);
-          const bid = line?.batches[0]?.batchId;
-          const b = batches.find(x => x.id === bid);
-          if (b) { b.qty += l.qty; cs.put('batches', { ...b }, 'return to stock'); }
+        // returned pieces come off the bill's batches (so a later cancel can't restock them again); good ones go back to stock
+        for (const l of lines) {
+          const line = inv.lines.find(x => x.productId === l.productId); if (!line) continue;
+          let left = l.qty;
+          for (const lb of line.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (l.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'return to stock'); } } }
         }
+        cs.put('invoices', { ...inv }, 'returned pieces off the bill');
         const companyId = inv.companyId;
         cs.put<CreditNote>('creditNotes', {
-          number: `CN/${today().slice(2, 4)}/${String(cnCount + ++i).padStart(5, '0')}`, invoiceId, shopId, companyId,
+          number: cnNos[i++], invoiceId, shopId, companyId,
           date: today(), reason: s(fieldValue(p, 'reason')) || 'Return', lines, total: r2(lines.reduce((a, l) => a + l.amount, 0)),
         }, 'credit note');
       }

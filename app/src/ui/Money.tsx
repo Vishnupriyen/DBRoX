@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Phone, AlertTriangle, Landmark, MessageSquareText, Download, FileCheck2, ChevronRight, Wallet } from 'lucide-react';
-import { ChangeSet, db, today, activeShops } from '../core/db';
+import { ChangeSet, db, today, activeShops, ymd } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
@@ -250,7 +250,7 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     const turnover = (await db.invoices.toArray()).filter(i => !i.cancelled).reduce((a, i) => a + i.total, 0);
     if (turnover > 50000000) flags.push({ text: L('Turnover crossed ₹5 crore — e-invoicing is mandatory', 'விற்றுமுதல் ₹5 கோடி — e-invoice கட்டாயம்'), tone: 'bad' });
     const next = new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 11); const daysLeft = Math.ceil((next.getTime() - Date.now()) / 86400000);
-    setD({ sales: r2(invs.reduce((a, i) => a + i.taxable, 0)), tax: r2(invs.reduce((a, i) => a + i.cgst + i.sgst + i.igst, 0)), bills: invs.length, flags, due: next.toISOString().slice(0, 10), daysLeft });
+    setD({ sales: r2(invs.reduce((a, i) => a + i.taxable, 0)), tax: r2(invs.reduce((a, i) => a + i.cgst + i.sgst + i.igst, 0)), bills: invs.length, flags, due: ymd(next), daysLeft });
   })(); }, []);
   if (!d) return null;
   const run = async (f: () => Promise<{ text: string }>) => { const r = await f(); void notify('GST', r.text); };

@@ -139,8 +139,10 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         const qty = Math.min(s.qty, l.qty);
         const reason = REASONS.find(r => r.value === s.reason) ?? REASONS[0];
         shortages.push({ productId: l.productId, qty, reason: reason.label });
-        if (reason.restock) { const b = batches.find(x => x.id === l.batches[0]?.batchId); if (b) { b.qty += qty; cs.put('batches', { ...b }, 'back to stock'); } }
-        else cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: shopPhoto }, 'transit damage');
+        // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
+        let left = qty;
+        for (const lb of l.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (reason.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'back to stock'); } } }
+        if (!reason.restock) cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: shopPhoto }, 'transit damage');
       }
       const diff = shortages.length || excess.length;
       // shop location fills itself from the first delivery

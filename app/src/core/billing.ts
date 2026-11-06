@@ -1,3 +1,4 @@
+import { nextNumbers } from './sync';
 import { ChangeSet, db, getSettings, today } from './db';
 import { isB2B, r2, shopOutstanding } from './ledger';
 import type { Batch, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Shop } from './types';
@@ -77,7 +78,21 @@ export async function checkOrder(shop: Shop, lines: OrderLine[]): Promise<OrderC
 }
 
 // ---------- making bills (one per company) ----------
-function finYear(date: string) {
+// Credit-note numbers: CN/<financial year>/<running no>. From the server when there is one (never a duplicate across
+// phones); otherwise from a counter in settings that only moves forward.
+export async function creditNoteNumbers(cs: ChangeSet, count: number): Promise<string[]> {
+  const fy = finYear(today());
+  let first: number | null = null;
+  try { first = (await nextNumbers('cn', count))?.first ?? null; } catch { first = null; }
+  if (first === null) {
+    const settings = await getSettings();
+    first = settings.nextCnNo ?? (await db.creditNotes.count()) + 1;
+    cs.put('settings', { ...settings, nextCnNo: first + count }, 'credit note number');
+  }
+  return Array.from({ length: count }, (_, i) => `CN/${fy}/${String(first! + i).padStart(5, '0')}`);
+}
+
+export function finYear(date: string) {
   const [y, m] = date.split('-').map(Number);
   const start = m >= 4 ? y : y - 1;
   return `${String(start).slice(2)}-${String(start + 1).slice(2)}`;
@@ -88,7 +103,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
   const batches = await db.batches.toArray();
-  const date = order.date || today();
+  const date = today(); // a bill is dated the day it is made, never the order's day (closed days, GST period, number order)
   const byCompany = new Map<string, OrderLine[]>();
   for (const l of order.lines) {
     const p = products.get(l.productId);

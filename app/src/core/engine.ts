@@ -1,7 +1,7 @@
 // TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, Tamil + English). The AI is only used to
 // read photos, never to decide money.
-import { ChangeSet, db, getSettings, newId, session, today } from './db';
+import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { applySchemes, activeSchemes, stockOf } from './billing';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
 import { bestProduct, findAmount, findShopInText, norm, parseItemLines, toPieces } from './match';
@@ -221,7 +221,7 @@ function monthIn(t: string): string {
     }
   }
   if (/last month|போன மாதம்/.test(t)) { d.setMonth(d.getMonth() - 1); }
-  return d.toISOString().slice(0, 7);
+  return ymd(d).slice(0, 7);
 }
 function modeIn(t: string): 'cash' | 'upi' | 'cheque' {
   if (/upi|gpay|phonepe|paytm|google pay/.test(t)) return 'upi';
@@ -602,7 +602,7 @@ async function schemeProposal(textIn: string): Promise<Reply> {
     .replace(company ? new RegExp(`${norm(company.code)}|${norm(company.name).split(' ')[0]}`, 'g') : /$^/, ' ').trim();
   const prod = stripped ? bestProduct(products.filter(p => !company || p.companyId === company.id), stripped).product : undefined;
   const till = textIn.match(/(?:till|to|until|வரை)\s+(\d{1,2}[/\-. ][0-9A-Za-z]{1,3}(?:[/\-. ]\d{2,4})?)/i)?.[1];
-  let to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  let to = daysFrom(30);
   if (till) { const d = toIsoDate(/\d{2,4}$/.test(till) && till.split(/[/\-. ]/).length === 3 ? till : `${till} ${new Date().getFullYear()}`); if (d) to = d; }
   const row: Row = {
     companyId: company?.id ?? prod?.companyId ?? '', productId: prod?.id ?? '', name: textIn.slice(0, 40),
@@ -760,7 +760,7 @@ export async function loadSheet(): Promise<Reply> {
 
 async function nearExpiry(): Promise<Reply> {
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-  const limit = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+  const limit = daysFrom(60);
   const rows = (await db.batches.toArray()).filter(b => b.qty > 0 && b.expiry <= limit).sort((a, b) => a.expiry.localeCompare(b.expiry))
     .map(b => [products.get(b.productId)?.name ?? '', b.batch, b.expiry, b.qty, b.expiry < today() ? 'EXPIRED' : 'Push sale']);
   return { text: rows.length ? `${rows.length} batch(es) expire within 60 days.` : 'Nothing expires in the next 60 days.', table: { name: 'Near expiry', columns: ['Product', 'Batch', 'Expiry', 'Pieces', 'Action'], rows } };
@@ -790,9 +790,9 @@ function parseDate(t: string): string | null {
   const m = t.match(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
   if (m) { const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : today().slice(0, 4); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  if (t.includes('tomorrow') || t.includes('நாளை')) return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (t.includes('tomorrow') || t.includes('நாளை')) return daysFrom(1);
   if (t.includes('today') || t.includes('இன்று')) return today();
-  for (let i = 0; i < 7; i++) if (t.includes(days[i])) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return new Date(Date.now() + diff * 86400000).toISOString().slice(0, 10); }
+  for (let i = 0; i < 7; i++) if (t.includes(days[i])) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return daysFrom(diff); }
   return null;
 }
 async function whom(t: string, role: Role): Promise<Staff | undefined> {

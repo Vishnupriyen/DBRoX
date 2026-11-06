@@ -88,9 +88,12 @@ export function Today() {
 
 // ---------- Salary sheet: fixed + batta × present − unpaid leave − advance instalment − cash shortfall. "Paid" posts the expense. ----------
 export function Salary() {
-  const [rows, setRows] = useState<{ s: Staff; present: number; unpaidLeave: number; batta: number; fixed: number; advance: number; shortfall: number; net: number; paid: boolean }[]>([]);
+  const [rows, setRows] = useState<{ s: Staff; present: number; unpaidLeave: number; batta: number; fixed: number; advance: number; shortfall: number; net: number; carry: number; paid: boolean; takes: { id: string; take: number }[] }[]>([]);
   const [tick, setTick] = useState(0);
-  const month = today().slice(0, 7);
+  // salary is usually paid in the first days of the next month, so last month is offered too
+  const cur = today().slice(0, 7);
+  const prev = (() => { const [y, m] = cur.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; })();
+  const [month, setMonth] = useState(Number(today().slice(8)) <= 10 ? prev : cur);
   useEffect(() => { (async () => {
     const staff = (await db.staff.toArray()).filter(s => s.active && s.role !== 'owner');
     const cis = (await db.checkIns.toArray()).filter(c => c.date.startsWith(month));
@@ -103,29 +106,36 @@ export function Salary() {
       const leaveDays = leaves.filter(l => l.staffId === s.id).reduce((a, l) => a + Math.max(1, Math.round((new Date(l.to).getTime() - new Date(l.from).getTime()) / 86400000) + 1), 0);
       const unpaidLeave = Math.max(0, leaveDays - 2); // 2 paid leave days a month
       const fixed = s.salary ?? 0; const batta = present * (s.batta ?? 0);
-      const mine = adv.filter(a => a.staffId === s.id);
-      const advance = mine.filter(a => a.kind !== 'shortfall').reduce((x, a) => x + Math.min(a.amount - (a.recovered ?? 0), Math.ceil(a.amount / (a.instalments || 1))), 0);
-      const shortfall = mine.filter(a => a.kind === 'shortfall').reduce((x, a) => x + a.amount - (a.recovered ?? 0), 0);
-      const net = Math.round(fixed - fixed * unpaidLeave / dim + batta - advance - shortfall);
-      return { s, present, unpaidLeave, batta, fixed, advance, shortfall, net, paid: paidExp.some(e => e.note === `Salary ${month} ${s.name}`) };
+      const gross = Math.max(0, Math.round(fixed - fixed * unpaidLeave / dim + batta));
+      // recoveries never take more than the salary: advance instalments first, then cash shortfalls; the rest carries to next month
+      let room = gross; let advance = 0, shortfall = 0, due = 0; const takes: { id: string; take: number }[] = [];
+      const mine = adv.filter(a => a.staffId === s.id).sort((a, b) => (a.kind === 'shortfall' ? 1 : 0) - (b.kind === 'shortfall' ? 1 : 0));
+      for (const a of mine) {
+        const owe = a.kind === 'shortfall' ? a.amount - (a.recovered ?? 0) : Math.min(a.amount - (a.recovered ?? 0), Math.ceil(a.amount / (a.instalments || 1)));
+        const take = Math.max(0, Math.min(owe, room)); room -= take; due += owe;
+        if (a.kind === 'shortfall') shortfall += take; else advance += take;
+        if (take > 0) takes.push({ id: a.id, take });
+      }
+      const net = gross - advance - shortfall;
+      return { s, present, unpaidLeave, batta, fixed, advance, shortfall, net, carry: due - advance - shortfall, takes, paid: paidExp.some(e => e.note === `Salary ${month} ${s.name}`) };
     }));
-  })(); }, [tick]);
+  })(); }, [tick, month]);
   const pay = async (r: typeof rows[0]) => {
     if (!await confirmBox(L(`Pay ${r.s.name} ${inr(r.net)}?`, `${r.s.name}க்கு ${inr(r.net)} கொடுக்கவா?`), L('Posts the salary as an expense and marks advances/shortfalls as recovered.', 'சம்பளம் செலவாக பதிவாகும்.'), L('Paid', 'கொடுத்தேன்'))) return;
     const cs = new ChangeSet();
     cs.put('expenses', { date: today(), category: 'salary', amount: r.net, note: `Salary ${month} ${r.s.name}`, approved: true }, 'salary paid');
-    for (const a of (await db.advances.toArray()).filter(a => a.staffId === r.s.id && a.status === 'approved' && (a.recovered ?? 0) < a.amount)) {
-      const take = a.kind === 'shortfall' ? a.amount - (a.recovered ?? 0) : Math.min(a.amount - (a.recovered ?? 0), Math.ceil(a.amount / (a.instalments || 1)));
+    for (const { id, take } of r.takes) {
+      const a = await db.advances.get(id); if (!a) continue;
       cs.put('advances', { ...a, recovered: (a.recovered ?? 0) + take }, 'recovered from salary');
     }
     await cs.commit('Salary paid'); setTick(x => x + 1);
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {L('Salary sheet', 'சம்பள பட்டியல்')} · {month}</h3><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {L('Salary sheet', 'சம்பள பட்டியல்')}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{m}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
       <table className="tbl"><thead><tr><th>{L('Name', 'பெயர்')}</th><th>{L('Days', 'நாள்')}</th><th>{L('Fixed', 'நிலை')}</th><th>{L('Batta', 'பட்டா')}</th><th>{L('Adv', 'அட்வா')}</th><th>{L('Short', 'குறை')}</th><th>{L('Net', 'நிகர')}</th><th></th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}{r.unpaidLeave ? <span className="muted"> −{r.unpaidLeave}</span> : null}</td><td className="num">{r.fixed || <span className="muted">{L('set', 'அமை')}</span>}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b></td><td>{r.paid ? <span className="badge ok">{L('paid', 'கொடுத்தது')}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{L('Paid', 'கொடுத்தேன்')}</button>}</td></tr>)}</tbody></table>
-      <div className="muted">{L('Set each person\'s salary and batta in Staff. 2 paid leave days a month; beyond that is deducted. Advances come back in the instalments set; cash shortfalls in full.', 'சம்பளம், பட்டா Staff-ல் அமைக்கவும்.')}</div>
+        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}{r.unpaidLeave ? <span className="muted"> −{r.unpaidLeave}</span> : null}</td><td className="num">{r.fixed || <span className="muted">{L('set', 'அமை')}</span>}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b>{r.carry > 0 ? <div className="muted" style={{ fontSize: 11 }}>{inr(r.carry)} {L('next month', 'அடுத்த மாதம்')}</div> : null}</td><td>{r.paid ? <span className="badge ok">{L('paid', 'கொடுத்தது')}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{L('Paid', 'கொடுத்தேன்')}</button>}</td></tr>)}</tbody></table>
+      <div className="muted">{L('Set each person\'s salary and batta in Staff. 2 paid leave days a month; beyond that is deducted. Advances come back in the instalments set, then cash shortfalls — never more than the salary; anything left carries to next month.', 'சம்பளம், பட்டா Staff-ல் அமைக்கவும்.')}</div>
     </div>
   );
 }

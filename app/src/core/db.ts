@@ -93,11 +93,14 @@ export function newId(): string {
 }
 
 export const nowIso = () => new Date().toISOString();
-export const today = () => {
-  const d = new Date();
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
-};
+// Dates are always the phone's local (Indian) calendar date, never UTC: between 00:00 and 05:30 IST
+// UTC is still on the previous day.
+export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const today = () => ymd(new Date());
+export const daysFrom = (n: number) => ymd(new Date(Date.now() + n * 86400000));
+export const thisMonth = () => today().slice(0, 7);
+/** last calendar day of a 'YYYY-MM' month */
+export const monthEnd = (ym: string) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
 
 let currentTenant = 'local';
 let currentUser = 'owner';
@@ -147,12 +150,21 @@ export class ChangeSet {
 
 // Undo one approval: put every record back the way it was before (never a hard delete
 // of history: the audit log keeps both versions).
+// Returns the number of records put back, 0 if it was already undone, or -1 if it can't be undone safely because
+// something later changed the same records (e.g. another bill took stock from the same batch).
 export async function undoBatch(batchId: string): Promise<number> {
   const entries = await db.audit.where('batchId').equals(batchId).toArray();
   if (!entries.length || entries.some(e => e.undone)) return 0;
   const tables = Array.from(new Set(entries.map(e => e.table)));
+  for (const e of entries) {
+    if (e.table === 'settings') continue; // the bill counter only moves forward; never re-issue a number
+    const cur = await db.table(e.table).get(e.recordId) as { updatedAt?: string } | undefined;
+    const after = e.after as { updatedAt?: string } | undefined;
+    if (cur && after && cur.updatedAt !== after.updatedAt) return -1;
+  }
   await db.transaction('rw', [...tables.map(t => db.table(t)), db.audit], async () => {
     for (const e of entries.slice().reverse()) {
+      if (e.table === 'settings') { await db.audit.put({ ...e, undone: true, updatedAt: nowIso(), dirty: 1 }); continue; }
       if (e.before) await db.table(e.table).put({ ...(e.before as object), updatedAt: nowIso(), dirty: 1 });
       else await db.table(e.table).delete(e.recordId);
       await db.audit.put({ ...e, undone: true, updatedAt: nowIso(), dirty: 1 });

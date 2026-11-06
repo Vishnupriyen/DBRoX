@@ -78,6 +78,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
   const undo = async (m: Msg) => {
     if (!m.batchId) return;
     const n = await undoBatch(m.batchId);
+    if (n < 0) { push({ from: 'bot', text: "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead.", reply: { text: '', tone: 'warn' } }); return; }
     setMsgs(x => x.map(y => y.id === m.id ? { ...y, undone: true } : y));
     push({ from: 'bot', text: n ? `${t('undone')} (${n} change${n > 1 ? 's' : ''} reversed).` : 'Already undone.' });
   };

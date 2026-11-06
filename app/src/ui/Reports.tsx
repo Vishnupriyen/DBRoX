@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Download, TrendingUp, TrendingDown, Percent, PackageX, Store, Building2, Users, MapPin, Undo2, Gift, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { db } from '../core/db';
+import { db, thisMonth, daysFrom } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { downloadWorkbook } from '../core/readers';
@@ -10,7 +10,7 @@ const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 type Col = { h: string; num?: boolean; money?: boolean };
 type Report = { key: string; icon: LucideIcon; en: string; ta: string; cols: Col[]; rows: (string | number)[][]; note?: string };
 
-const month = () => new Date().toISOString().slice(0, 7);
+const month = () => thisMonth();
 
 // One menu, every report the owner asked for; each is a table for the chosen period with Excel export.
 export function Reports() {
@@ -18,7 +18,7 @@ export function Reports() {
   const [reports, setReports] = useState<Report[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => { (async () => {
-    const since = period === 'month' ? month() + '-01' : new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const since = period === 'month' ? month() + '-01' : daysFrom(-90);
     const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
     const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
     const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));

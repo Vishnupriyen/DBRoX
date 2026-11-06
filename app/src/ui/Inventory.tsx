@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, Boxes, Camera, FileSpreadsheet, MessageSquareText, Split, Tag } from 'lucide-react';
-import { ChangeSet, db, session, today } from '../core/db';
+import { ChangeSet, db, session, today, monthEnd, ymd, daysFrom } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
@@ -9,8 +9,7 @@ import { askText, confirmBox } from './dialog';
 import type { Batch, Company, Product } from '../core/types';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
-const monthEnd = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).toISOString().slice(0, 10); };
-const months = () => { const out: string[] = []; const d = new Date(); for (let i = 0; i < 36; i++) { const x = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(x.toISOString().slice(0, 7)); } return out; };
+const months = () => { const out: string[] = []; const d = new Date(); for (let i = 0; i < 36; i++) { const x = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(ymd(x).slice(0, 7)); } return out; };
 const isOwner = async () => { const me = await db.staff.get(session().userId); return me?.role === 'owner' || me?.role === 'office'; };
 
 // ---------- Purchases / Stock in: photo or Excel go through TESRAX; manual entry here. Expiry month is mandatory. ----------
@@ -235,7 +234,7 @@ export function StockReports() {
   const [rows, setRows] = useState<{ name: string; qty: number; value: number; sold30: number; cover: number }[]>([]);
   useEffect(() => { (async () => {
     const ps = await db.products.toArray(); const bs = (await db.batches.toArray()).filter(b => b.qty > 0);
-    const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const since = daysFrom(-30);
     const sold = new Map<string, number>(); for (const i of (await db.invoices.toArray()).filter(i => !i.cancelled && i.date >= since)) for (const l of i.lines) sold.set(l.productId, (sold.get(l.productId) ?? 0) + l.qty);
     setRows(ps.map(p => { const q = bs.filter(b => b.productId === p.id).reduce((a, b) => a + b.qty, 0); const s = sold.get(p.id) ?? 0; return { name: p.name, qty: q, value: q * p.purchaseRate, sold30: s, cover: s ? Math.round(q / (s / 30)) : 999 }; }).sort((a, b) => b.sold30 - a.sold30));
   })(); }, []);

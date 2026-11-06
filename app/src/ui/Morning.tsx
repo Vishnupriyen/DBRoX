@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Banknote, Boxes, CalendarClock, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
-import { ChangeSet, db, today, undoBatch } from '../core/db';
+import { ChangeSet, db, today, undoBatch, daysFrom } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { inr, getLang } from '../core/i18n';
-import { confirmBox } from './dialog';
+import { confirmBox, notify } from './dialog';
 import type { AuditEntry, Order } from '../core/types';
 
 interface Data {
@@ -109,7 +109,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
           {d.recent.map(a => (
             <div key={a.id} className="row" style={{ flexWrap: 'nowrap', minHeight: 40 }}>
               <span className="grow"><b>{a.action.split(':')[0]}</b> <span className="muted">· {new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })} · {a.by === 'owner' ? 'owner' : ''}</span></span>
-              <button className="btn small" onClick={async () => { if (await confirmBox(L('Undo this whole action?', 'இதை திரும்பப் பெறவா?'), L('Everything this approval changed goes back.', 'மாற்றங்கள் அனைத்தும் பழைய நிலைக்கு.'), L('Undo', 'திரும்பப் பெறு'))) { await undoBatch(a.batchId); refresh(); } }}><Undo2 /> {L('Undo', 'திரும்ப')}</button>
+              <button className="btn small" onClick={async () => { if (await confirmBox(L('Undo this whole action?', 'இதை திரும்பப் பெறவா?'), L('Everything this approval changed goes back.', 'மாற்றங்கள் அனைத்தும் பழைய நிலைக்கு.'), L('Undo', 'திரும்பப் பெறு'))) { const n = await undoBatch(a.batchId); if (n < 0) await notify("Can't undo", "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead."); refresh(); } }}><Undo2 /> {L('Undo', 'திரும்ப')}</button>
             </div>
           ))}
         </div>
@@ -120,7 +120,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
 
 async function load(): Promise<Data> {
   const t = today();
-  const yday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const yday = daysFrom(-1);
   const invs = (await db.invoices.toArray()).filter(i => !i.cancelled);
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
@@ -149,7 +149,7 @@ async function load(): Promise<Data> {
   // stock
   const batches = await db.batches.toArray();
   const soldLast30 = new Map<string, number>();
-  for (const i of invs.filter(x => x.date >= new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))) for (const l of i.lines) soldLast30.set(l.productId, (soldLast30.get(l.productId) ?? 0) + l.qty);
+  for (const i of invs.filter(x => x.date >= daysFrom(-30))) for (const l of i.lines) soldLast30.set(l.productId, (soldLast30.get(l.productId) ?? 0) + l.qty);
   const out: string[] = []; const over: { name: string; days: number }[] = [];
   for (const p of products.values()) {
     const st = batches.filter(b => b.productId === p.id && b.expiry >= t).reduce((a, b) => a + b.qty, 0);

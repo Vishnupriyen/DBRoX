@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Banknote, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
-import { db } from '../core/db';
+import { db, today } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { ShopStatement } from './ShopStatement';
@@ -20,7 +20,7 @@ export function CashWithStaff() {
     const inv = new Map((await db.invoices.toArray()).map(i => [i.id, i.number]));
     const pays = (await db.payments.toArray()).filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const by = new Map<string, typeof pays>(); for (const p of pays) by.set(p.collectedBy, [...(by.get(p.collectedBy) ?? []), p]);
-    const t = new Date().toISOString().slice(0, 10);
+    const t = today();
     setGroups([...by.entries()].map(([id, list]) => ({ staffId: id, name: staff.get(id) ?? id, total: r2(list.reduce((a, p) => a + p.amount, 0)), older: r2(list.filter(p => p.date < t).reduce((a, p) => a + p.amount, 0)), pays: list.map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', bills: p.allocations.map(a => inv.get(a.invoiceId) ?? '').filter(Boolean).join(', ') })) })).sort((a, b) => b.total - a.total));
     setShortfalls((await db.advances.toArray()).filter(a => a.kind === 'shortfall' && a.status === 'approved' && (a.recovered ?? 0) < a.amount).map(a => ({ ...a, name: staff.get(a.staffId) ?? a.staffId })));
   })(); }, []);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Repeat, Search, Flame, Gift, AlertTriangle, Check } from 'lucide-react';
-import { ChangeSet, db, session, today } from '../core/db';
+import { ChangeSet, db, session, today, daysFrom } from '../core/db';
 import { activeSchemes, applySchemes, stockOf } from '../core/billing';
 import { bookOrder, updateMyOrder } from '../core/pipeline';
 import { askText } from './dialog';
@@ -50,7 +50,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
   }, [shop.id]);
 
   const nearExpiry = useMemo(() => new Set<string>(), []);
-  useEffect(() => { db.batches.toArray().then(bs => { const lim = new Date(Date.now() + 45 * 86400000).toISOString().slice(0, 10); for (const b of bs) if (b.qty > 0 && b.expiry <= lim) nearExpiry.add(b.productId); }); }, [nearExpiry]);
+  useEffect(() => { db.batches.toArray().then(bs => { const lim = daysFrom(45); for (const b of bs) if (b.qty > 0 && b.expiry <= lim) nearExpiry.add(b.productId); }); }, [nearExpiry]);
 
   const shown = useMemo(() => {
     let list = products;

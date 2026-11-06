@@ -1,8 +1,8 @@
 // The order chain, one step hands to the next:
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
-import { ChangeSet, db, nowIso, session, today } from './db';
-import { checkOrder, makeInvoices, pickBatches } from './billing';
+import { ChangeSet, db, nowIso, session, today, daysFrom } from './db';
+import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches } from './billing';
 import { r2 } from './ledger';
 import { nextNumbers } from './sync';
 import type { Invoice, Order, OrderLine, Shop, Trip, Van } from './types';
@@ -61,8 +61,15 @@ export async function suggestPick(o: Order) {
 }
 
 // ---- 3. owner approves → invoice from picked quantities (short lines cut, pending saved)
+const billing = new Set<string>(); // orders being billed right now (a double tap must not make two bills)
 export async function approvePicked(orderId: string) {
+  if (billing.has(orderId)) throw new Error('This order is already being billed.');
+  billing.add(orderId);
+  try { return await approvePickedOnce(orderId); } finally { billing.delete(orderId); }
+}
+async function approvePickedOnce(orderId: string) {
   const o = (await db.orders.get(orderId))!;
+  if (o.status !== 'picked') throw new Error(o.status === 'billed' ? 'This order is already billed.' : 'This order is not picked yet.');
   const shop = (await db.shops.get(o.shopId))!;
   const cs = new ChangeSet();
   // picker's quantities, batch and MRP go into the bill exactly as packed
@@ -183,11 +190,11 @@ export async function ownerEndTrip(tripId: string) {
 export async function endTrip(tripId: string, undelivered: Record<string, 'godown' | 'van' | 'next'>) {
   const t = (await db.trips.get(tripId))!;
   const cs = new ChangeSet();
-  const batches = await db.batches.toArray();
   for (const inv of await db.invoices.where('tripId').equals(tripId).toArray()) {
     if (inv.deliveryStatus !== 'out') continue;
     const what = undelivered[inv.id] ?? 'next';
-    if (what === 'godown') for (const l of inv.lines) for (const b of l.batches) { const x = batches.find(y => y.id === b.batchId); if (x) { x.qty += b.qty; cs.put('batches', { ...x }, 'back to godown'); } }
+    // stock is NOT added back: the goods are still reserved for this live bill. Stock returns only when the bill is
+    // cancelled or a credit note is made, so the same pieces can never be sold twice.
     // every undelivered bill goes back to the pool and is planned again tomorrow; where the goods are is in the audit line
     cs.put('invoices', { ...inv, deliveryStatus: 'pending', tripId: undefined, stopNo: undefined, vanId: what === 'van' ? inv.vanId : undefined }, `undelivered: goods ${what === 'godown' ? 'back in godown' : what === 'van' ? 'kept in van' : 'for next visit'}`);
   }
@@ -285,8 +292,8 @@ export async function settleDifference(invoiceId: string, action: 'modified' | '
     // extra pieces given from the van are billed: the bill is revised upward for excess; shortages get the credit note
     if (ex.length) { const qtys = inv.lines.map(l => l.qty + (ex.find(x => x.productId === l.productId)?.qty ?? 0)); Object.assign(inv, reviseInvoice(inv, qtys)); }
     if (cnLines.length) {
-      const n = await db.creditNotes.count();
-      cs.put('creditNotes', { number: `CN/${today().slice(2, 4)}/${String(n + 1).padStart(5, '0')}`, invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'Short at delivery', lines: cnLines, total: r2(cnLines.reduce((a, l) => a + l.amount, 0)) }, 'credit note');
+      const [cnNo] = await creditNoteNumbers(cs, 1);
+      cs.put('creditNotes', { number: cnNo, invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'Short at delivery', lines: cnLines, total: r2(cnLines.reduce((a, l) => a + l.amount, 0)) }, 'credit note');
     }
     cs.put('invoices', { ...inv, diffAction: 'credit_note' }, ex.length ? 'credit note + extra billed' : 'credit note chosen');
   }
@@ -317,7 +324,7 @@ export async function counts() {
   const trips = await db.trips.where('date').equals(today()).toArray();
   const pays = await db.payments.toArray();
   const batches = await db.batches.toArray();
-  const soon = new Date(Date.now() + 45 * 86400000).toISOString().slice(0, 10);
+  const soon = daysFrom(45);
   const products = await db.products.toArray();
   const outOfStock = products.filter(p => p.active && !batches.some(b => b.productId === p.id && b.qty > 0 && b.expiry >= today())).length;
   const claims = await db.claims.toArray();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
-import { ChangeSet, db, getSettings } from '../core/db';
+import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { getLang, inr, setLang, t } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
@@ -34,7 +34,7 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
-        downloadText(`Hanubix-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(dump));
+        downloadText(`Hanubix-backup-${today()}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">{t('logout')}</span></button>
@@ -241,7 +241,7 @@ function Claims() {
       <button className="btn small primary" style={{ marginBottom: 8 }} onClick={async () => {
         const cos = await db.companies.toArray(); if (!cos.length) return;
         const companyId = (await ask('Which company?', { choices: cos.map(c => ({ label: c.name, value: c.id })) })) as string; if (!companyId) return;
-        const month = await askText('Month (YYYY-MM)', new Date().toISOString().slice(0, 7)); if (!month) return;
+        const month = await askText('Month (YYYY-MM)', thisMonth()); if (!month) return;
         const open = (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month);
         const auto = open.reduce((a, e) => a + e.amount, 0);
         const amt = Number(await askText(`Claim amount ₹ (${open.length} entries this month total ${inr(auto)})`, String(auto || ''), 'number')); if (!amt) return;
