@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Camera, Check, Store } from 'lucide-react';
+import { PhotoButton } from './PhotoButton';
+import { ArrowLeft, Check, Store } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
 import { allocateOldestFirst, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { inr, speak, t } from '../core/i18n';
-import { fileToDataUrl } from '../core/scan';
 import type { Payment, Shop } from '../core/types';
 
 // RoX Collection: overdue shops first; shop confirms every payment with one ✓ + Tamil voice + photo.
@@ -100,10 +100,7 @@ export function CollectShop({ shop, onClose }: { shop: Shop & { due: number }; o
         </div>
         {mode !== 'cash' && <div className="field"><label>UPI / cheque no</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>}
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>Oldest bills are cleared first. {t('shopConfirm')}</p>
-        <label className="btn">
-          <Camera /> {photo ? 'Photo taken ✓' : t('takePhoto')}
-          <input type="file" accept="image/*" capture="user" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setPhoto(await fileToDataUrl(f, 640, 0.6)); }} />
-        </label>
+        <PhotoButton facing="user" onPhoto={setPhoto} />
         <button className="btn ok-huge" onClick={() => { speak(`${amount} ரூபாய் கொடுக்கிறீர்களா? சரி என்றால் அழுத்துங்கள்.`); void save(true); }} aria-label="Shop confirms payment"><Check size={84} /></button>
         <button className="btn" onClick={() => save(false)}>Owner not here — wait for shop ✓</button>
       </div>

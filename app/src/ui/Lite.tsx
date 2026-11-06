@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Upload, Check, Store, Camera, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
+import { PhotoButton } from './PhotoButton';
+import { Upload, Check, Store, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
 import { orderStops } from '../core/pipeline';
 import { getLang, inr, speak, t } from '../core/i18n';
 import { downloadWorkbook, isSheet, readSheet, readShopRows } from '../core/readers';
-import { fileToDataUrl } from '../core/scan';
 import { norm } from '../core/match';
 import type { DayPlan, LiteEntry, Shop } from '../core/types';
 
@@ -110,7 +110,7 @@ function LiteStop({ shop, onClose }: { shop: Shop; onClose: () => void }) {
     <div className="stack">
       <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={onClose} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{shop.name}</div><div className="muted">{shop.area}</div></div></div>
       <div className="card stack" style={{ textAlign: 'center' }}>
-        <label className="btn"><Camera /> {photo ? 'Photo taken ✓' : t('takePhoto')}<input type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setPhoto(await fileToDataUrl(f, 800, 0.6)); }} /></label>
+        <PhotoButton facing="environment" onPhoto={setPhoto} />
         <button className="btn ok-huge" onClick={() => save('delivered')} aria-label="Delivered"><Check size={84} /></button>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
           <button className="btn grow" onClick={() => save('closed')}><DoorClosed /> {L('Shop closed', 'கடை மூடி')}</button>

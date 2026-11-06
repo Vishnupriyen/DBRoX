@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
+import { PhotoButton } from './PhotoButton';
+import { Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
 import { endTrip, startTrip, trackPoint } from '../core/pipeline';
 import { Pack } from './Pack';
 import { ChangeSet, db, nowIso, session, today } from '../core/db';
 import { allocateOldestFirst, r2, shopOutstanding } from '../core/ledger';
 import { inr, speak, t } from '../core/i18n';
-import { fileToDataUrl } from '../core/scan';
 import type { CreditNote, Invoice, Payment, Product, Shop, Trip } from '../core/types';
 import { ask, askText, confirmBox } from './dialog';
 
@@ -205,10 +205,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
         {shortValue > 0 && <div><span className="badge warn">Short / return {inr(shortValue)} → credit note</span></div>}
         <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
-        <label className="btn">
-          <Camera /> {photo ? 'Photo taken ✓' : t('takePhoto')}
-          <input type="file" accept="image/*" capture="user" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setPhoto(await fileToDataUrl(f, 640, 0.6)); }} />
-        </label>
+        <PhotoButton facing="user" onPhoto={setPhoto} />
         <button className="btn ok-huge" onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
         <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> Back</button>
       </div>
