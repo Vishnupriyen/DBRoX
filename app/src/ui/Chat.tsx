@@ -20,7 +20,7 @@ const SUGGEST: Record<Role, string[]> = {
 
 let seq = 1;
 
-export function Chat({ role }: { role: Role }) {
+export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void }) {
   const [msgs, setMsgs] = useState<Msg[]>([{ id: seq++, from: 'bot', text: 'Vanakkam! Send a file or photo and say what to do, or just type. Say "help" for examples.' }]);
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -43,6 +43,7 @@ export function Chat({ role }: { role: Role }) {
     try {
       const reply = await handle(said, fs);
       push({ from: 'bot', text: reply.text, reply });
+      if (reply.go && onGo) setTimeout(() => onGo(reply.go!), 350);
     } catch (e) {
       push({ from: 'bot', text: `Something went wrong: ${(e as Error).message}`, reply: { text: '', tone: 'error' } });
     } finally { setBusy(false); }

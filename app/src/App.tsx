@@ -124,7 +124,7 @@ export default function App() {
         <div className="sheet-wrap" onClick={() => setRox(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <div className="sheet-head"><span className="fab-mark small">RoX</span><b className="grow">RoX Engine</b><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
-            <div className="sheet-body"><Chat role={me.role} /></div>
+            <div className="sheet-body"><Chat role={me.role} onGo={p => { setPage(p as Page); setRox(false); }} /></div>
           </div>
         </div>
       )}

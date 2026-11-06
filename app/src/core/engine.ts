@@ -19,6 +19,33 @@ export interface Reply {
   proposal?: Proposal;
   table?: { columns: string[]; rows: (string | number)[][]; name: string };
   actions?: { label: string; run: () => void | Promise<void> }[];
+  go?: string; // open this screen (Page id in the app shell)
+}
+
+// Screens RoX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
+const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
+  { page: 'approve', name: 'Approve orders', roles: ['owner', 'office'], words: ['approve', 'approval', 'needs ok', 'waiting for me', 'ஒப்புதல்'] },
+  { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan', 'டெலிவரி திட்டம்', 'திட்டம்'] },
+  { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'where is the van', 'where is van', 'track', 'tracking', 'வண்டி எங்கே'] },
+  { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'ஊழியர் பணம்'] },
+  { page: 'stock', name: 'Stock alerts', roles: ['owner', 'office', 'godown'], words: ['stock alert', 'stock alerts', 'out of stock', 'ஸ்டாக் எச்சரிக்கை'] },
+  { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'கிளைம்'] },
+  { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'close day', 'close the day', 'reconcile', 'reconciliation', 'நாள் முடி'] },
+  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['report', 'reports', 'morning', 'dashboard', 'அறிக்கை'] },
+  { page: 'bills', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list', 'பில்கள்'] },
+  { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection', 'வசூல்'] },
+  { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack', 'ஆர்டர் எடு'] },
+  { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading', 'லோடு', 'ஏற்று'] },
+  { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery', 'டிரிப்', 'டெலிவரி'] },
+  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'பீட்'] },
+  { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders', 'என் நாள்'] },
+];
+function screenFor(text: string, role: Role): Reply | null {
+  const hit = SCREENS.filter(s => s.words.some(w => text === w || text.startsWith(w + ' ') || text.endsWith(' ' + w) || text.includes(' ' + w + ' ') || (w.length > 5 && text.includes(w))))
+    .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))[0];
+  if (!hit) return null;
+  if (!hit.roles.includes(role)) return { text: `${hit.name} is the ${hit.roles[0] === 'owner' ? 'owner' : hit.roles[0]}'s screen. Ask them to open it.`, tone: 'warn' };
+  return { text: `Opening ${hit.name}.`, go: hit.page };
 }
 
 const has = (t: string, words: string[]) => words.some(w => t.includes(w));
@@ -59,7 +86,7 @@ const ROLE_CAN: Record<Role, string[]> = {
 function need(mod: ModuleKey, modules: Record<ModuleKey, boolean>): Reply | null {
   if (modules[mod]) return null;
   const name = MODULES.find(m => m.key === mod)!.name;
-  return { text: `This needs ${name}. Turn it on in More → Modules.`, tone: 'warn' };
+  return { text: `${name} is not in your plan yet. Call DBRoX to add it.`, tone: 'warn' };
 }
 
 function can(role: Role, what: string) { return ROLE_CAN[role].includes('*') || ROLE_CAN[role].includes(what); }
@@ -78,6 +105,7 @@ Examples:
 • "5 Good Day damaged" · "Selvam return 2 Surf"
 • "who owes more than 10000" · "today sales" · "stock of surf"
 • "load sheet" · "near expiry" · "cash in hand"
+• say a screen name to open it: "delivery plan", "approve", "live vans", "day close"
 • "HUL Surf 5% off till 30 Nov" · "Good Day buy 24 get 2"
 • "tally export" · "gstr1 october" · "e-invoice" · "claim file"
 • (attach product or shop list Excel) "add products" / "add shops"`;
@@ -133,9 +161,9 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (has(text, W.expense) && findAmount(text) != null && !shop) return expenseFromText(textIn);
 
   // ------------------------ questions ------------------------
-  if (has(text, W.needsOk)) return needsOkTable();
+  if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Approve orders.', go: 'approve' } : needsOkTable();
   if (has(text, W.cashHand)) return cashInHand();
-  if (has(text, W.loadSheet)) { const r = need('godown', mods); if (r) return r; return loadSheet(); }
+  if (has(text, W.loadSheet)) { const r = need('godown', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
   if (has(text, W.sales)) return salesToday();
@@ -151,6 +179,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (lines.length && !shop) {
     return { text: 'Which shop is this order for? Start with the shop name, e.g. "Murugan Stores 5 case Surf".', tone: 'warn' };
   }
+  const sc = screenFor(text, role); if (sc) return sc;
   return { text: `I didn't understand that yet.\n\n${HELP_TEXT}`, tone: 'warn' };
 }
 
