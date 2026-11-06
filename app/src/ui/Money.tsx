@@ -7,41 +7,47 @@ import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/
 import { downloadWorkbook } from '../core/readers';
 import { askText, notify } from './dialog';
 import type { BankLine, Expense, Payment } from '../core/types';
+import { ShopStatement } from './ShopStatement';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 const month = () => today().slice(0, 7);
 
 // ---------- Outstanding by shop and age ----------
 export function Outstanding() {
+  const [open, setOpen] = useState<string | null>(null);
   const [rows, setRows] = useState<{ id: string; name: string; phone?: string; area: string; total: number; b0: number; b8: number; b16: number; b31: number; days: number; limit: number }[]>([]);
   useEffect(() => { (async () => {
     const shops = await activeShops(); const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
     setRows(shops.map(s => { const mine = bal.filter(b => b.invoice.shopId === s.id); const age = (b: typeof mine[0]) => Math.floor((Date.now() - new Date(b.invoice.date).getTime()) / 86400000); const sum = (f: (d: number) => boolean) => r2(mine.filter(b => f(age(b))).reduce((a, b) => a + b.balance, 0)); return { id: s.id, name: s.name, phone: s.phone, area: s.area, total: r2(mine.reduce((a, b) => a + b.balance, 0)), b0: sum(d => d <= 7), b8: sum(d => d > 7 && d <= 15), b16: sum(d => d > 15 && d <= 30), b31: sum(d => d > 30), days: Math.max(0, ...mine.map(age)), limit: s.creditLimit }; }).filter(r => r.total > 0.5).sort((a, b) => b.days - a.days || b.total - a.total));
   })(); }, []);
   const tot = (k: 'b0' | 'b8' | 'b16' | 'b31') => r2(rows.reduce((a, r) => a + r[k], 0));
+  if (open) return <ShopStatement shopId={open} onBack={() => setOpen(null)} />;
   return (
     <div className="stack">
       <div className="kpi navy"><div className="v">{inr(rows.reduce((a, r) => a + r.total, 0))}</div><div className="l">{L('in the market', 'மார்க்கெட்டில்')} · {rows.length} {L('shops', 'கடைகள்')}</div></div>
       <div className="kpis"><div className="kpi"><div className="v">{inr(tot('b0'))}</div><div className="l">0–7 {L('days', 'நாள்')}</div></div><div className="kpi"><div className="v">{inr(tot('b8'))}</div><div className="l">8–15</div></div><div className="kpi"><div className="v" style={{ color: 'var(--warn)' }}>{inr(tot('b16'))}</div><div className="l">16–30</div></div><div className="kpi"><div className="v" style={{ color: 'var(--bad)' }}>{inr(tot('b31'))}</div><div className="l">30+</div></div></div>
-      <div className="list">{rows.map(r => <div key={r.id} className="item"><div className={`avatar ${r.days > 30 ? 'bad' : r.days > 15 ? 'gold' : ''}`}>{r.name[0]}</div><div className="grow"><div className="t">{r.name}</div><div className="s">{r.area} · {L('oldest', 'பழைய')} {r.days}d{r.limit && r.total > r.limit ? ' · ' : ''}{r.limit > 0 && r.total > r.limit && <span className="badge bad">{L('over limit', 'வரம்பு மீறல்')}</span>}</div></div><span className="amt num">{inr(r.total)}</span>{r.phone && <a className="btn small" href={`tel:${r.phone}`} aria-label="Call"><Phone size={16} /></a>}</div>)}</div>
+      <div className="list">{rows.map(r => <button key={r.id} className="item tap" onClick={() => setOpen(r.id)}><div className={`avatar ${r.days > 30 ? 'bad' : r.days > 15 ? 'gold' : ''}`}>{r.name[0]}</div><div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.name}</div><div className="s">{r.area} · {L('oldest', 'பழைய')} {r.days}d{r.limit && r.total > r.limit ? ' · ' : ''}{r.limit > 0 && r.total > r.limit && <span className="badge bad">{L('over limit', 'வரம்பு மீறல்')}</span>}</div></div><span className="amt num">{inr(r.total)}</span>{r.phone && <a className="btn small" href={`tel:${r.phone}`} onClick={e => e.stopPropagation()} aria-label="Call"><Phone size={16} /></a>}</button>)}</div>
+      <div className="muted">{L('Tap a shop for its full statement.', 'கடையை தட்டினால் முழு கணக்கு.')}</div>
     </div>
   );
 }
 
 // ---------- Cheques & UPI: today's non-cash, references, cleared/bounced; duplicate alerts ----------
 export function Cheques() {
-  const [rows, setRows] = useState<(Payment & { shop: string; by: string })[]>([]);
+  const [rows, setRows] = useState<(Payment & { shop: string; by: string; bills: string })[]>([]);
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name])); setRows((await db.payments.toArray()).filter(p => p.mode !== 'cash' && p.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40).map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', by: staff.get(p.collectedBy) ?? '' }))); })(); }, [tick]);
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name])); const inv = new Map((await db.invoices.toArray()).map(i => [i.id, i.number])); setRows((await db.payments.toArray()).filter(p => p.mode !== 'cash' && p.status !== 'cancelled').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60).map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', by: staff.get(p.collectedBy) ?? '', bills: p.allocations.map(a => inv.get(a.invoiceId) ?? '').filter(Boolean).join(', ') }))); })(); }, [tick]);
   const dup = (p: Payment) => rows.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount && q.date === p.date);
   const setRef = async (p: Payment) => { const r = await askText(L('Reference number', 'குறிப்பு எண்'), p.ref ?? ''); if (!r) return; const cs = new ChangeSet(); cs.put('payments', { ...p, ref: r }, 'reference'); await cs.commit('Reference'); setTick(x => x + 1); };
   const bounce = async (p: Payment) => { const cs = new ChangeSet(); cs.put('payments', { ...p, status: 'bounced' }, 'cheque bounced'); await cs.commit('Bounced'); setTick(x => x + 1); };
+  if (open) return <ShopStatement shopId={open} onBack={() => setOpen(null)} />;
   return (
     <div className="stack">
       <div className="list">
         {rows.map(p => <div key={p.id} className="item" style={{ flexWrap: 'wrap' }}>
           <div className={`avatar ${p.status === 'bounced' ? 'bad' : !p.ref && !p.confirmPhoto ? 'gold' : 'ok'}`}>{p.mode === 'upi' ? 'U' : 'C'}</div>
-          <div className="grow"><div className="t">{p.shop} · {inr(p.amount)}</div><div className="s">{p.date} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{L('no reference', 'குறிப்பு இல்லை')}</span>} · {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{L('bounced', 'திரும்பியது')}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {L('same amount twice', 'இரண்டு முறை')}</span>}</div></div>
+          <div className="grow"><div className="t"><button className="link" style={{ fontSize: 15, fontWeight: 700, padding: 0 }} onClick={() => setOpen(p.shopId)}>{p.shop}</button> · {inr(p.amount)}</div><div className="s">{p.date} {p.createdAt.slice(11, 16)} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{L('no reference', 'குறிப்பு இல்லை')}</span>} · {L('bills', 'பில்')} {p.bills || '—'} · {L('by', 'வசூல்')} {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{L('bounced', 'திரும்பியது')}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {L('same amount twice', 'இரண்டு முறை')}</span>}</div></div>
           {!p.ref && <button className="btn small" onClick={() => setRef(p)}>{L('Add ref', 'குறிப்பு')}</button>}
           {p.mode === 'cheque' && p.status !== 'bounced' && <button className="btn small" onClick={() => bounce(p)}><X size={14} /> {L('Bounced', 'திரும்பியது')}</button>}
           {p.confirmPhoto && <img src={p.confirmPhoto} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />}

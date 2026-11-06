@@ -203,8 +203,9 @@ export function Damages() {
     <div className="stack">
       <div className="card stack">
         {!sel ? <>
-          <div className="field"><input placeholder={L('Which product?', 'எந்த பொருள்?')} value={q} onChange={e => setQ(e.target.value)} aria-label="Product" /></div>
-          {q && <div className="list">{products.filter(p => p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 6).map(p => <button key={p.id} className="item tap" onClick={() => setSel(p)}><Pack product={p} /><span className="grow">{p.name}</span></button>)}</div>}
+          <div className="eyebrow">{L('Add a damage — pick the product', 'சேதம் சேர் — பொருளை தேர்வு செய்')}</div>
+          <div className="field"><input placeholder={L('Search product…', 'பொருள் தேடு…')} value={q} onChange={e => setQ(e.target.value)} aria-label="Product" /></div>
+          <div className="list">{products.filter(p => p.active && (!q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.nameTa ?? '').includes(q))).slice(0, q ? 8 : 12).map(p => <button key={p.id} className="item tap" onClick={() => setSel(p)}><Pack product={p} /><span className="grow">{p.name}</span><span className="muted">{p.nameTa}</span></button>)}</div>
         </> : <>
           <div className="row" style={{ flexWrap: 'nowrap' }}><Pack product={sel} size="lg" /><div className="grow"><b>{sel.name}</b></div><button className="link" onClick={() => setSel(null)}>{L('change', 'மாற்று')}</button></div>
           <div className="segmented">{(['damage', 'expiry', 'transit'] as const).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{k === 'damage' ? L('Damaged / leak', 'சேதம்') : k === 'expiry' ? L('Expired', 'காலாவதி') : L('In van', 'வண்டியில்')}</button>)}</div>

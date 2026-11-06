@@ -12,7 +12,7 @@ import { StockIn, StockPosition, Damages, Ageing, StockReports } from './ui/Inve
 import { DeliveryStatus, TripReports, PrintLoad } from './ui/DeliveryReports';
 import { Outstanding, Cheques, Bank, Expenses, PnL, Position, ExportPage, Gst } from './ui/Money';
 import { CheckInGate, Today, Salary } from './ui/Payroll';
-import { Morning } from './ui/Morning';
+import { CashWithStaff } from './ui/CashWithStaff';
 import { Beat } from './ui/Beat';
 import { BeatBuilder } from './ui/BeatBuilder';
 import { Pick } from './ui/Pick';
@@ -132,7 +132,7 @@ export default function App() {
       case 'pick': return <PickOrders />;
       case 'collect': return <Collect />;
       case 'outstanding': return <Outstanding />;
-      case 'cash': return <Morning only="cash" />;
+      case 'cash': return <CashWithStaff />;
       case 'cheques': return <Cheques />;
       case 'bank': return <Bank onRox={openRox} />;
       case 'expenses': return <Expenses onRox={openRox} />;

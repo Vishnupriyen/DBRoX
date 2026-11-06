@@ -356,3 +356,8 @@ table.grid tr:last-child td { border-bottom: 0; }
 .tbl th, .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
 .tbl th { font-size: 12px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bill-head { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-size: 13px; }
+.bill-tbl input { padding: 4px 6px; font-size: 14px; }
+.bill-totals { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.bill-totals > div { display: flex; justify-content: space-between; }
+.bill-totals .grand { font-size: 18px; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 4px; }

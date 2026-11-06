@@ -8,7 +8,7 @@ import { ENV_SERVER, syncNow } from '../core/sync';
 import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
 import { PrintBill } from './PrintBill';
 import { ask, askText, confirmBox, notify } from './dialog';
-import { editInvoice } from '../core/pipeline';
+import { BillEditor } from './BillEditor';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
@@ -184,7 +184,6 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   const [q, setQ] = useState('');
   const [printing, setPrinting] = useState<Invoice | null>(null);
   const [editing, setEditing] = useState<Invoice | null>(null);
-  const [qtys, setQtys] = useState<number[]>([]);
   const load = async () => {
     const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
     setList((await db.invoices.orderBy('date').reverse().limit(300).toArray()).map(i => ({ ...i, shopName: shops.get(i.shopId) ?? '' })));
@@ -209,25 +208,14 @@ function Bills({ canCancel }: { canCancel: boolean }) {
             <div className="grow"><div className="t">{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
               <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
             <span className="amt num">{inr(i.total)}</span>
-            {canCancel && !i.cancelled && !i.printedAt && i.deliveryStatus === 'pending' && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
+            {canCancel && !i.cancelled && !i.printedAt && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
             <button className="btn small" onClick={() => setPrinting(i)} aria-label="Print"><Printer /></button>
             {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /></button>}
           </div>
         ))}
       </div>
       {printing && <PrintBill invoice={printing} onClose={async () => { if (!printing.printedAt) { const cs = new ChangeSet(); cs.put('invoices', { ...printing, printedAt: new Date().toISOString() }, 'printed'); await cs.commit('Bill printed'); } setPrinting(null); load(); }} />}
-      {editing && (
-        <div className="sheet-wrap" onClick={() => setEditing(null)}>
-          <div className="sheet" onClick={e => e.stopPropagation()} style={{ height: 'auto', maxHeight: '86vh' }}>
-            <div className="sheet-head"><b className="grow">{t('edit')} {editing.number}</b><button className="icon-btn" onClick={() => setEditing(null)} aria-label="Close"><X /></button></div>
-            <div className="stack" style={{ padding: 14, overflowY: 'auto' }}>
-              <div className="muted">Same bill number. Allowed until the bill is printed. Set a line to 0 to remove it.</div>
-              {editing.lines.map((l, i) => <div key={i} className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><span className="grow">{l.name}{l.mrp ? <span className="muted"> · MRP {l.mrp}</span> : null}</span><input type="number" style={{ width: 90 }} value={qtys[i] ?? l.qty} onChange={e => setQtys(q => { const n = [...editing.lines.map((x, k) => q[k] ?? x.qty)]; n[i] = Math.max(0, Number(e.target.value)); return n; })} aria-label={`Quantity ${l.name}`} /></div>)}
-              <button className="btn primary big block" onClick={async () => { try { await editInvoice(editing.id, editing.lines.map((l, i) => qtys[i] ?? l.qty)); setEditing(null); setQtys([]); load(); } catch (e) { void notify('Edit', (e as Error).message); } }}>Save bill</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {editing && <BillEditor invoice={editing} onClose={saved => { setEditing(null); if (saved) load(); }} />}
     </div>
   );
 }
