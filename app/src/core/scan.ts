@@ -1,4 +1,4 @@
-// RoX Scan: photo / scanned PDF → structured data, via the DBRoX server (which holds the AI key).
+// TESRAX Scan: photo / scanned PDF → structured data, via the Hanubix server (which holds the AI key).
 // The phone never holds the AI key. The AI only reads; code validates; a person approves.
 import { server } from './sync';
 

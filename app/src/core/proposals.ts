@@ -1,4 +1,4 @@
-// A Proposal is what the RoX Engine prepares for a person to check: a header + an Excel-style table.
+// A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today } from './db';
 import { checkOrder, makeInvoices, pickBatches } from './billing';

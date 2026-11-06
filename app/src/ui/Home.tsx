@@ -169,7 +169,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
   const hits = q.trim() ? all.filter(t => `${t.en} ${t.ta}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
   return (
     <div className={`home n${list.length}`}>
-      {!open && <label className="home-search"><Search size={18} /><input value={q} onChange={e => setQ(e.target.value)} placeholder={L('Search a screen or ask RoX…', 'திரை தேடு அல்லது RoX-இடம் கேள்…')} /></label>}
+      {!open && <label className="home-search"><Search size={18} /><input value={q} onChange={e => setQ(e.target.value)} placeholder={L('Search a screen or ask TESRAX…', 'திரை தேடு அல்லது TESRAX-இடம் கேள்…')} /></label>}
       {!open && hits.length > 0 && <div className="home-results">{hits.map(h => <button key={h.page} className="item tap" onClick={() => { setQ(''); go(h.page!); }}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{label(h)}</div>{h.mod && <div className="s">{h.mod}</div>}</div></button>)}</div>}
       {!open && !q && morning && (
         <div className="morning">

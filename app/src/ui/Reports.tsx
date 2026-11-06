@@ -62,10 +62,10 @@ export function Reports() {
   })(); }, [period]);
 
   const cur = reports.find(r => r.key === open);
-  const exportAll = () => downloadWorkbook(`DBRoX-reports-${month()}`, reports.map(r => ({ name: r.en, header: r.cols.map(c => c.h), rows: r.rows })));
+  const exportAll = () => downloadWorkbook(`Hanubix-reports-${month()}`, reports.map(r => ({ name: r.en, header: r.cols.map(c => c.h), rows: r.rows })));
   if (cur) return (
     <div className="stack">
-      <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{L(cur.en, cur.ta)}</div><div className="muted">{period === 'month' ? L('This month', 'இந்த மாதம்') : L('Last 90 days', 'கடந்த 90 நாள்')}</div></div><button className="btn small" onClick={() => downloadWorkbook(`DBRoX-${cur.key}-${month()}`, [{ name: cur.en, header: cur.cols.map(c => c.h), rows: cur.rows }])}><Download size={16} /> Excel</button></div>
+      <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{L(cur.en, cur.ta)}</div><div className="muted">{period === 'month' ? L('This month', 'இந்த மாதம்') : L('Last 90 days', 'கடந்த 90 நாள்')}</div></div><button className="btn small" onClick={() => downloadWorkbook(`Hanubix-${cur.key}-${month()}`, [{ name: cur.en, header: cur.cols.map(c => c.h), rows: cur.rows }])}><Download size={16} /> Excel</button></div>
       {cur.note && <div className="muted">{cur.note}</div>}
       <table className="tbl"><thead><tr>{cur.cols.map((c, i) => <th key={i}>{c.h}</th>)}</tr></thead>
         <tbody>{cur.rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} className={cur.cols[j].num ? 'num' : ''}>{typeof v === 'number' && cur.cols[j].money ? inr(v) : v}</td>)}</tr>)}</tbody></table>
@@ -81,7 +81,7 @@ export function Reports() {
       <div className="list">
         {reports.map(r => <button key={r.key} className="item tap" onClick={() => setOpen(r.key)}><div className="avatar"><r.icon size={18} /></div><div className="grow" style={{ textAlign: 'left' }}><div className="t">{L(r.en, r.ta)}</div><div className="s">{r.rows.length} {L('rows', 'வரிகள்')}</div></div></button>)}
       </div>
-      <div className="muted"><Zap size={14} style={{ verticalAlign: -2 }} /> {L('Or just ask RoX: "fast movers", "shop-wise sales", "dead stock".', 'RoX-இடம் கேளுங்கள்: "fast movers", "dead stock".')}</div>
+      <div className="muted"><Zap size={14} style={{ verticalAlign: -2 }} /> {L('Or just ask TESRAX: "fast movers", "shop-wise sales", "dead stock".', 'TESRAX-இடம் கேளுங்கள்: "fast movers", "dead stock".')}</div>
     </div>
   );
 }

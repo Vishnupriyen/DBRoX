@@ -7,6 +7,8 @@ import { ApproveTable, ReadTable } from './ApproveTable';
 import { PrintBill } from './PrintBill';
 import type { Invoice, Role } from '../core/types';
 import { notify } from './dialog';
+import { TesraxCore, type CoreState } from './TesraxCore';
+import { sound } from '../core/sound';
 
 interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[] }
 
@@ -20,8 +22,10 @@ const SUGGEST: Record<Role, string[]> = {
 
 let seq = 1;
 
-export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string) => void; onState?: (s: 'idle' | 'listening' | 'thinking' | 'ready') => void }) {
-  const [msgs, setMsgs] = useState<Msg[]>([{ id: seq++, from: 'bot', text: 'Vanakkam! Send a file or photo and say what to do, or just type. Say "help" for examples.' }]);
+export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void }) {
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [ready, setReady] = useState(false);
+  const [pulse, setPulse] = useState(0);
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -31,7 +35,6 @@ export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
-  useEffect(() => { onState?.(busy ? 'thinking' : listening ? 'listening' : 'idle'); }, [busy, listening]);
 
   const push = (m: Omit<Msg, 'id'>) => setMsgs(x => [...x, { ...m, id: seq++ }]);
 
@@ -44,9 +47,11 @@ export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string
     try {
       const reply = await handle(said, fs);
       push({ from: 'bot', text: reply.text, reply });
-      setBusy(false); onState?.('ready'); setTimeout(() => onState?.('idle'), 1400);
+      setBusy(false);
+      if (reply.tone === 'warn' || reply.tone === 'error') sound.warn(); else { sound.done(); setReady(true); setTimeout(() => setReady(false), 1600); }
       if (reply.go && onGo) setTimeout(() => onGo(reply.go!), 350);
     } catch (e) {
+      sound.warn();
       push({ from: 'bot', text: `Something went wrong: ${(e as Error).message}`, reply: { text: '', tone: 'error' } });
     } finally { setBusy(false); }
   };
@@ -77,9 +82,21 @@ export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string
     push({ from: 'bot', text: n ? `${t('undone')} (${n} change${n > 1 ? 's' : ''} reversed).` : 'Already undone.' });
   };
 
+  const fresh = msgs.length === 0 && !busy;
+  const state: CoreState = busy ? 'thinking' : ready ? 'ready' : (listening || text.length > 0) ? 'listening' : 'idle';
+  const ta = getLang() === 'ta';
+  const status = busy ? (ta ? 'செய்கிறேன்…' : 'Working on it…') : ready ? (ta ? 'முடிந்தது' : 'Done') : listening ? (ta ? 'கேட்கிறேன்…' : 'Listening…') : '';
   return (
-    <div className="chat">
-      <div className="msgs">
+    <div className={`chat engine-chat ${fresh ? 'fresh' : 'talking'}`}>
+      <div className="stage">
+        <TesraxCore state={state} size={fresh ? 176 : 56} pulse={pulse} />
+        {fresh
+          ? <div className="say">{ta ? 'என்ன செய்யலாம்?' : 'What shall we do?'}<span className="ta">{ta ? 'டைப் செய்யுங்கள், பேசுங்கள் அல்லது போட்டோ அனுப்புங்கள்' : 'Type, speak or send a photo. I prepare it, you approve.'}</span></div>
+          : <div className="status">{status || (ta ? 'அடுத்து?' : 'Anything else?')}</div>}
+      </div>
+      {fresh
+        ? <div className="hero-chips">{SUGGEST[role].filter(s => s !== 'help').map(s => <button key={s} className="chip" onClick={() => { setText(s); setPulse(p => p + 1); }}>{s}</button>)}</div>
+        : <div className="msgs">
         {msgs.map(m => (
           <div key={m.id} className={`msg ${m.from} ${m.reply?.tone ?? ''} ${m.reply?.proposal || m.reply?.table ? 'wide' : ''}`}>
             {m.text}
@@ -91,20 +108,21 @@ export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string
             {m.batchId && !m.undone && <div style={{ marginTop: 6 }}><button className="btn small ghost" onClick={() => undo(m)}><Undo2 /> {t('undo')}</button></div>}
           </div>
         ))}
-        {busy && <div className="msg bot muted">…</div>}
+        {busy && <div className="msg bot typing"><i /><i /><i /></div>}
         <div ref={endRef} />
-      </div>
-      <div className="chips">
-        {SUGGEST[role].map(s => <button key={s} className="chip" onClick={() => setText(s)}>{s}</button>)}
-      </div>
+      </div>}
+      {!fresh && <div className="chips">
+        {SUGGEST[role].map(s => <button key={s} className="chip" onClick={() => { setText(s); setPulse(p => p + 1); }}>{s}</button>)}
+      </div>}
       {files.length > 0 && <div className="filechip"><Paperclip size={16} /> {files.map(f => f.name).join(', ')} <button className="btn small ghost" onClick={() => setFiles([])}>✕</button></div>}
       <div className="composer">
-        <input ref={fileRef} type="file" hidden accept="image/*,.pdf,.xlsx,.xls,.csv" onChange={e => { setFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+        <input ref={fileRef} type="file" hidden accept="image/*,.pdf,.xlsx,.xls,.csv" onChange={e => { setFiles(Array.from(e.target.files ?? [])); e.target.value = ''; setPulse(p => p + 1); }} />
         <button className="icon-btn" onClick={() => fileRef.current?.click()} aria-label={t('attach')}><Paperclip /></button>
-        <textarea rows={1} value={text} placeholder={t('typeHere')} onChange={e => setText(e.target.value)}
+        <textarea rows={1} value={text} placeholder={ta ? 'டைப் / பேசு…' : 'Type or speak…'} onChange={e => { setText(e.target.value); setPulse(p => p + 1); sound.key(); }}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
-        <button className={`icon-btn ${listening ? 'rec' : ''}`} onClick={listen} aria-label="Voice"><Mic /></button>
-        <button className="icon-btn gold" onClick={() => send()} aria-label={t('send')}><Send /></button>
+        {text.trim() || files.length
+          ? <button className="icon-btn gold" onClick={() => send()} aria-label={t('send')}><Send /></button>
+          : <button className={`icon-btn gold ${listening ? 'rec' : ''}`} onClick={listen} aria-label="Voice"><Mic /></button>}
       </div>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
     </div>

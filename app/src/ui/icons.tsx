@@ -1,13 +1,13 @@
-// DBRoX icon set — bold solid glyphs with one accent detail, drawn for us. Ink = currentColor, accent = --accent.
+// Hanubix icon set — bold solid glyphs with one accent detail, drawn for us. Ink = currentColor, accent = --accent.
 import type React from 'react';
-// Used for the module tiles, the header mark and RoX. Sub-screens use the same style via <Glyph/> wrappers.
+// Used for the module tiles, the header mark and TESRAX. Sub-screens use the same style via <Glyph/> wrappers.
 import type { CSSProperties } from 'react';
 
 type P = { size?: number; style?: CSSProperties; className?: string };
 const S = ({ size = 28, children, style, className }: P & { children: React.ReactNode }) => (
   <svg viewBox="0 0 48 48" width={size} height={size} style={style} className={className} aria-hidden="true">{children}</svg>
 );
-const A = 'var(--accent)';
+const A = 'url(#hg)';
 
 export const RoxMark = ({ size = 28, style, className }: P) => (
   <S size={size} style={style} className={className}>
@@ -41,7 +41,7 @@ export const IcPayroll = (p: P) => (
   <S {...p}><path fill="currentColor" d="M8 10h32a3 3 0 0 1 3 3v27a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3zm9-5h4v8h-4zm10 0h4v8h-4zM18 22h12v2.5h-3.2c.3.6.5 1.2.6 1.9H30V29h-2.7c-.6 2.6-2.8 4.1-5.8 4.4L28 40h-3.6l-6.8-7v-2.2h2.5c2 0 3.2-.6 3.7-1.8H18v-2.6h5.8c-.5-1-1.7-1.5-3.3-1.5H18z" /><path fill={A} d="M20 15h8v3h-8z" /></S>
 );
 export const IcDayClose = (p: P) => (
-  <S {...p}><path fill="currentColor" d="M24 5a19 19 0 1 1-13.4 32.4l3.5-3.5A14 14 0 1 0 38 24h5A19 19 0 0 1 24 43 19 19 0 0 1 24 5z" /><path fill="currentColor" d="M15 24l3.2-3.2 4.3 4.3 9.3-9.3L35 19 22.5 31.5z" /><path fill={A} d="M37 8l3 3-6 6-3-3z" /></S>
+  <S {...p}><path fill="currentColor" fillRule="evenodd" d="M27 4a20 20 0 1 0 17 30.5A17 17 0 0 1 27 4z" /><path fill={A} d="M22 25l3-3 4 4 9-9 3 3-12 12z" /></S>
 );
 export const IcMore = (p: P) => (
   <S {...p}><circle cx="12" cy="24" r="4.5" fill="currentColor" /><circle cx="24" cy="24" r="4.5" fill="currentColor" /><circle cx="36" cy="24" r="4.5" fill={A} /></S>

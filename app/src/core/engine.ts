@@ -1,4 +1,4 @@
-// RoX Engine: turns "send + say" into a Proposal (table to approve) or an answer.
+// TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, Tamil + English). The AI is only used to
 // read photos, never to decide money.
 import { ChangeSet, db, getSettings, newId, session, today } from './db';
@@ -22,7 +22,7 @@ export interface Reply {
   go?: string; // open this screen (Page id in the app shell)
 }
 
-// Screens RoX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
+// Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
   { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approval', 'needs ok', 'waiting for me', 'new orders', 'ஒப்புதல்', 'வந்த ஆர்டர்'] },
   { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'சரிபார்'] },
@@ -109,7 +109,7 @@ const ROLE_CAN: Record<Role, string[]> = {
 function need(mod: ModuleKey, modules: Record<ModuleKey, boolean>): Reply | null {
   if (modules[mod]) return null;
   const name = MODULES.find(m => m.key === mod)!.name;
-  return { text: `${name} is not in your plan yet. Call DBRoX to add it.`, tone: 'warn' };
+  return { text: `${name} is not in your plan yet. Call Hanubix to add it.`, tone: 'warn' };
 }
 
 function can(role: Role, what: string) { return ROLE_CAN[role].includes('*') || ROLE_CAN[role].includes(what); }
@@ -253,7 +253,7 @@ async function purchaseProposal(file: File): Promise<Reply> {
       Object.assign(fields, { billNo: res.billNo ?? '', date: res.date ?? today(), supplierGstin: res.supplierGstin ?? '', billTotal: res.total ?? 0 });
     } catch (e) {
       if (e instanceof NoServerError) {
-        note = 'Photo reading needs the DBRoX server, which is not connected yet. Type the items below, or send the bill as Excel.';
+        note = 'Photo reading needs the Hanubix server, which is not connected yet. Type the items below, or send the bill as Excel.';
         rows = [emptyPurchaseRow()];
       } else return { text: `Could not read the photo: ${(e as Error).message}`, tone: 'error' };
     }
@@ -417,7 +417,7 @@ async function orderFromPhoto(file: File, _text: string): Promise<Reply> {
     if (!shop) return { text: `I read: ${itemText}. Which shop is it for? Type: "<shop name> ${itemText}"`, tone: 'warn' };
     return orderProposal(shop.id, itemText);
   } catch (e) {
-    if (e instanceof NoServerError) return { text: 'Reading a diary photo needs the DBRoX server, which is not connected yet. Type the order instead, e.g. "Murugan Stores 5 case Surf".', tone: 'warn' };
+    if (e instanceof NoServerError) return { text: 'Reading a diary photo needs the Hanubix server, which is not connected yet. Type the order instead, e.g. "Murugan Stores 5 case Surf".', tone: 'warn' };
     return { text: `Could not read the photo: ${(e as Error).message}`, tone: 'error' };
   }
 }

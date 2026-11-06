@@ -58,14 +58,14 @@ export function Cheques() {
   );
 }
 
-// ---------- Bank: statement comes through RoX chat; this shows what's matched and what isn't ----------
+// ---------- Bank: statement comes through TESRAX chat; this shows what's matched and what isn't ----------
 export function Bank({ onRox }: { onRox?: () => void }) {
   const [lines, setLines] = useState<(BankLine & { shop?: string })[]>([]);
   useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); setLines((await db.bankLines.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map(b => ({ ...b, shop: b.shopId ? shops.get(b.shopId) : undefined }))); })(); }, []);
   const un = lines.filter(l => l.status === 'unmatched');
   return (
     <div className="stack">
-      <button className="btn primary big block" onClick={onRox}><MessageSquareText /> {L('Drop the statement in RoX → "match this"', 'ஸ்டேட்மென்ட்டை RoX-ல் போடுங்கள் → "match this"')}</button>
+      <button className="btn primary big block" onClick={onRox}><MessageSquareText /> {L('Drop the statement in TESRAX → "match this"', 'ஸ்டேட்மென்ட்டை TESRAX-ல் போடுங்கள் → "match this"')}</button>
       <div className="muted">{L('Upload daily or weekly — only new lines are matched; the same line is never counted twice.', 'தினமும் அல்லது வாரம் ஒருமுறை — புதிய வரிகள் மட்டும்.')}</div>
       <div className="kpis"><div className="kpi"><div className="v">{lines.filter(l => l.status === 'matched').length}</div><div className="l">{L('matched', 'பொருந்தியது')}</div></div><div className="kpi"><div className="v" style={{ color: un.length ? 'var(--warn)' : undefined }}>{un.length}</div><div className="l">{L('to check', 'சரிபார்க்க')}</div></div></div>
       <div className="list">{lines.map(l => <div key={l.id} className="item"><div className={`avatar ${l.status === 'matched' ? 'ok' : l.status === 'ignored' ? '' : 'gold'}`}><Landmark size={18} /></div><div className="grow"><div className="t">{l.shop ?? l.narration.slice(0, 40)}</div><div className="s">{l.date}{l.ref ? ` · ${l.ref}` : ''} · {l.status}</div></div><span className="amt num" style={{ color: l.debit ? 'var(--bad)' : undefined }}>{l.credit ? inr(l.credit) : `−${inr(l.debit)}`}</span></div>)}{!lines.length && <div className="card muted">{L('No statement uploaded yet.', 'ஸ்டேட்மென்ட் இல்லை.')}</div>}</div>
@@ -83,7 +83,7 @@ export function Expenses({ onRox }: { onRox?: () => void }) {
   const byCat = new Map<string, number>(); for (const e of rows) byCat.set(e.category, (byCat.get(e.category) ?? 0) + e.amount);
   return (
     <div className="stack">
-      <button className="btn primary big block" onClick={onRox}><MessageSquareText /> {L('Tell RoX: "diesel 1500", "toll 80", "rent 12000"', 'RoX-க்கு சொல்லுங்கள்: "diesel 1500"')}</button>
+      <button className="btn primary big block" onClick={onRox}><MessageSquareText /> {L('Tell TESRAX: "diesel 1500", "toll 80", "rent 12000"', 'TESRAX-க்கு சொல்லுங்கள்: "diesel 1500"')}</button>
       <div className="kpi navy"><div className="v">{inr(rows.reduce((a, e) => a + e.amount, 0))}</div><div className="l">{L('this month', 'இந்த மாதம்')} · {[...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${inr(v)}`).join(' · ')}</div></div>
       {pending.length > 0 && <div className="alert"><Wallet /><div className="grow"><b>{pending.length} {L('to approve', 'ஒப்புதலுக்கு')}</b> · {inr(pending.reduce((a, e) => a + e.amount, 0))}</div><button className="btn small primary" onClick={approveAll}><Check /> {L('Approve all', 'எல்லாம் ஒப்புதல்')}</button></div>}
       <div className="list">{rows.map(e => <div key={e.id} className="item"><div className={`avatar ${e.approved || e.category === 'advance' ? 'ok' : 'gold'}`}><Wallet size={18} /></div><div className="grow"><div className="t">{e.category}{e.van ? ` · ${e.van}` : ''}</div><div className="s">{e.date} · {e.note?.slice(0, 50)}</div></div><span className="amt num">{inr(e.amount)}</span>{!e.approved && e.category !== 'advance' && <button className="btn small" onClick={async () => { const cs = new ChangeSet(); cs.put('expenses', { ...e, approved: true }, 'approved'); await cs.commit('Expense approved'); setTick(x => x + 1); }}><Check size={14} /></button>}</div>)}</div>
@@ -140,7 +140,7 @@ export function PnL() {
   return (
     <div className="stack">
       <div className="segmented" style={{ maxWidth: 260 }}><button className={period === 'today' ? 'on' : ''} onClick={() => setPeriod('today')}>{L('Today', 'இன்று')}</button><button className={period === 'month' ? 'on' : ''} onClick={() => setPeriod('month')}>{L('This month', 'இந்த மாதம்')}</button></div>
-      <div className="kpi navy"><div className="v" style={{ color: profit < 0 ? '#ffa39a' : undefined }}>{inr(profit)}</div><div className="l">{L('net profit', 'நிகர லாபம்')} · {incT ? Math.round(profit / incT * 100) : 0}% · {L('tap a head to see entries', 'தலைப்பை தட்டினால் விவரம்')}</div></div>
+      <div className="kpi navy"><div className="v" style={{ color: profit < 0 ? 'var(--bad)' : undefined }}>{inr(profit)}</div><div className="l">{L('net profit', 'நிகர லாபம்')} · {incT ? Math.round(profit / incT * 100) : 0}% · {L('tap a head to see entries', 'தலைப்பை தட்டினால் விவரம்')}</div></div>
       <div className="card">
         <div className="eyebrow">{L('Income', 'வருமானம்')}</div>
         {d.income.map(h => <HeadRow key={h.key} h={h} />)}
@@ -203,7 +203,7 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
       <Sec title={L('Pending cheques', 'நிலுவை செக்')} total={chqT} lines={d.cheques} onTap={() => go?.('cheques')} />
       <Sec title={L('Payables to companies', 'கம்பெனிக்கு தர வேண்டியது')} total={payT} lines={d.payCo} tone="var(--bad)" />
       <div className="card"><div className="row" style={{ justifyContent: 'space-between' }}><span>{L('Claims to receive', 'வர வேண்டிய கிளைம்')}</span><b className="num">{inr(d.claims)}</b></div><div className="row" style={{ justifyContent: 'space-between' }}><span>{L('Loans', 'கடன்')}</span><b className="num">{inr(d.loans)}</b></div></div>
-      <div className="muted">{L('Ask RoX: "who will pay this week", "what do I owe Britannia", "cash flow".', 'RoX-இடம் கேளுங்கள்: "cash flow".')}</div>
+      <div className="muted">{L('Ask TESRAX: "who will pay this week", "what do I owe Britannia", "cash flow".', 'TESRAX-இடம் கேளுங்கள்: "cash flow".')}</div>
     </div>
   );
 }
@@ -215,7 +215,7 @@ export function ExportPage() {
   const ledgers = async () => {
     const shops = new Map((await activeShops()).map(s => [s.id, s.name]));
     const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && i.date.startsWith(m)); const pays = (await db.payments.toArray()).filter(p => p.date.startsWith(m) && p.status === 'ok'); const exps = (await db.expenses.toArray()).filter(e => e.date.startsWith(m));
-    await downloadWorkbook(`DBRoX-ledgers-${m}`, [
+    await downloadWorkbook(`Hanubix-ledgers-${m}`, [
       { name: 'Sales', header: ['Date', 'Bill', 'Shop', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'], rows: invs.map(i => [i.date, i.number, shops.get(i.shopId) ?? '', i.taxable, i.cgst, i.sgst, i.igst, i.total]) },
       { name: 'Receipts', header: ['Date', 'Shop', 'Mode', 'Ref', 'Amount'], rows: pays.map(p => [p.date, shops.get(p.shopId) ?? '', p.mode, p.ref ?? '', p.amount]) },
       { name: 'Expenses', header: ['Date', 'Head', 'Amount', 'Note'], rows: exps.map(e => [e.date, e.category, e.amount, e.note ?? '']) },
@@ -231,7 +231,7 @@ export function ExportPage() {
   );
 }
 
-// ---------- GST: RoX acts as the accountant; one screen, flags with one-tap fixes ----------
+// ---------- GST: TESRAX acts as the accountant; one screen, flags with one-tap fixes ----------
 export function Gst({ go }: { go?: (p: string) => void }) {
   const [d, setD] = useState<{ sales: number; tax: number; bills: number; flags: { text: string; page?: string; tone?: 'bad' }[]; due: string; daysLeft: number } | null>(null);
   const m = month();
@@ -246,7 +246,7 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     const badGst = shops.filter(s => s.gstin && s.gstin.length !== 15);
     if (badGst.length) flags.push({ text: L(`${badGst.length} shop(s) have a wrong GSTIN — billed as B2C until fixed`, `${badGst.length} கடை GSTIN தவறு`), page: 'outstanding' });
     const purchases = (await db.purchases.toArray()).filter(p => p.date.startsWith(m));
-    if (purchases.length) flags.push({ text: L(`${purchases.length} company bill(s) this month — drop your GSTR-2B Excel in RoX ("match 2B") before claiming input credit`, `${purchases.length} கம்பெனி பில் — 2B பொருத்துங்கள்`) });
+    if (purchases.length) flags.push({ text: L(`${purchases.length} company bill(s) this month — drop your GSTR-2B Excel in TESRAX ("match 2B") before claiming input credit`, `${purchases.length} கம்பெனி பில் — 2B பொருத்துங்கள்`) });
     const turnover = (await db.invoices.toArray()).filter(i => !i.cancelled).reduce((a, i) => a + i.total, 0);
     if (turnover > 50000000) flags.push({ text: L('Turnover crossed ₹5 crore — e-invoicing is mandatory', 'விற்றுமுதல் ₹5 கோடி — e-invoice கட்டாயம்'), tone: 'bad' });
     const next = new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 11); const daysLeft = Math.ceil((next.getTime() - Date.now()) / 86400000);

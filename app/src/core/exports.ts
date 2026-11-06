@@ -1,4 +1,4 @@
-// RoX Accounts + RoX Claim Prep outputs. Pure code: exact, repeatable, explainable.
+// TESRAX Accounts + TESRAX Claim Prep outputs. Pure code: exact, repeatable, explainable.
 import { ChangeSet, db, getSettings } from './db';
 import { r2 } from './ledger';
 import { downloadText, downloadWorkbook } from './readers';
@@ -36,7 +36,7 @@ export async function tallyXml(month: string): Promise<{ xml: string; counts: Re
     if (i.sgst) { ledgers.set('Output SGST', 'Duties & Taxes'); e.push(entry('Output SGST', i.sgst, false)); }
     if (i.igst) { ledgers.set('Output IGST', 'Duties & Taxes'); e.push(entry('Output IGST', i.igst, false)); }
     if (i.roundOff) { ledgers.set('Round Off', 'Indirect Expenses'); e.push(entry('Round Off', Math.abs(i.roundOff), i.roundOff < 0)); }
-    out.push(voucher('Sales', i.date, i.number, p, e, `DBRoX ${i.kind}`));
+    out.push(voucher('Sales', i.date, i.number, p, e, `Hanubix ${i.kind}`));
   }
   for (const c of cns) {
     const p = party(c.shopId);
@@ -65,7 +65,7 @@ export async function exportTally(month: string): Promise<Reply> {
   return {
     text: `Tally file for ${month}: ${counts.sales} sales, ${counts.creditNotes} credit notes, ${counts.receipts} receipts, ${counts.expenses} expenses. In Tally: Import → Vouchers → pick this file. New party ledgers are created under Sundry Debtors.`,
     table: { name: `Tally ${month}`, columns: ['Type', 'Count'], rows: Object.entries(counts) },
-    actions: [{ label: 'Download Tally XML', run: () => downloadText(`DBRoX-Tally-${month}.xml`, xml, 'application/xml') }],
+    actions: [{ label: 'Download Tally XML', run: () => downloadText(`Hanubix-Tally-${month}.xml`, xml, 'application/xml') }],
   };
 }
 
@@ -109,7 +109,7 @@ export async function exportGstr1(month: string): Promise<Reply> {
   return {
     text: `GSTR-1 for ${month}: ${b2b.length} B2B lines, ${b2cs.size} B2C summary lines, ${hsn.size} HSN lines, taxable ₹${tot.toLocaleString('en-IN')}. Give this to your CA or load it in the GST offline tool.`,
     table: { name: `GSTR1 ${month}`, columns: sheets[3].header, rows: sheets[3].rows },
-    actions: [{ label: 'Download GSTR-1 Excel', run: () => downloadWorkbook(`DBRoX-GSTR1-${month}`, sheets) }],
+    actions: [{ label: 'Download GSTR-1 Excel', run: () => downloadWorkbook(`Hanubix-GSTR1-${month}`, sheets) }],
   };
 }
 
@@ -157,11 +157,11 @@ export async function exportEinvoice(month: string): Promise<Reply> {
     text: `${docs.length} B2B bill(s) for ${month} in the government e-invoice format. Upload this file in the free bulk tool on the e-invoice portal, then download the IRN file.` + (warn ? `\n⚠ ${warn}` : ''),
     tone: warn ? 'warn' : 'ok',
     table: { name: `E-invoice ${month}`, columns: ['Bill', 'Date', 'Buyer', 'Value ₹'], rows: invs.map(i => [i.number, i.date, shops.get(i.shopId)?.name ?? '', i.total]) },
-    actions: [{ label: 'Download e-invoice JSON', run: () => downloadText(`DBRoX-einvoice-${month}.json`, JSON.stringify(docs, null, 2)) }],
+    actions: [{ label: 'Download e-invoice JSON', run: () => downloadText(`Hanubix-einvoice-${month}.json`, JSON.stringify(docs, null, 2)) }],
   };
 }
 
-// ---------------------------------------------------------------- RoX Claim Prep
+// ---------------------------------------------------------------- TESRAX Claim Prep
 export async function exportClaims(month: string): Promise<Reply> {
   const entries = (await db.claimEntries.toArray()).filter(e => e.month === month);
   const companies = await db.companies.toArray();
@@ -191,7 +191,7 @@ export async function exportClaims(month: string): Promise<Reply> {
   return {
     text: rows.length ? `Claims for ${month}: ₹${r2(rows.reduce((a, r) => a + Number(r[3]), 0)).toLocaleString('en-IN')} across ${rows.length} compan${rows.length > 1 ? 'ies' : 'y'}. Every line has its bill as proof.` : `No claim lines for ${month}.`,
     table: { name: `Claims ${month}`, columns: ['Company', 'Scheme ₹', 'Damage/expiry ₹', 'Total ₹'], rows },
-    actions: sheets.length ? [{ label: 'Download claim file', run: () => downloadWorkbook(`DBRoX-Claims-${month}`, [{ name: 'Summary', header: ['Company', 'Scheme ₹', 'Damage/expiry ₹', 'Total ₹'], rows }, ...sheets]) }] : [],
+    actions: sheets.length ? [{ label: 'Download claim file', run: () => downloadWorkbook(`Hanubix-Claims-${month}`, [{ name: 'Summary', header: ['Company', 'Scheme ₹', 'Damage/expiry ₹', 'Total ₹'], rows }, ...sheets]) }] : [],
   };
 }
 

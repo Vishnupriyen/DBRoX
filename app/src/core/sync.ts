@@ -1,4 +1,4 @@
-// Our own sync layer (scale plan): phone ⇄ DBRoX server. Phones work offline; this runs when
+// Our own sync layer (scale plan): phone ⇄ Hanubix server. Phones work offline; this runs when
 // there is signal. Server is swappable because the app only knows this small protocol.
 import { db, getSettings } from './db';
 import type { Base, TableName } from './types';
@@ -71,7 +71,7 @@ export async function syncNow(): Promise<string> {
 async function syncOnce(): Promise<{ msg: string; more: boolean }> {
   const done = (msg: string, more = false) => ({ msg, more });
   const url = await server();
-  if (!url) return done('Not connected to a DBRoX server yet. Everything is saved safely on this phone.');
+  if (!url) return done('Not connected to a Hanubix server yet. Everything is saved safely on this phone.');
   if (!navigator.onLine) return done('Offline — will sync when there is signal.');
   if (running) return done('Sync already running.');
   running = true;

@@ -162,7 +162,7 @@ export function LiteExport() {
     const es = await db.liteEntries.where('date').equals(today()).toArray();
     const names = new Map((await activeShops()).map(s => [s.id, s]));
     const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
-    await downloadWorkbook(`DBRoX-day-${today()}`, [
+    await downloadWorkbook(`Hanubix-day-${today()}`, [
       { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
       { name: 'Collections', header: ['Shop', 'Amount', 'Mode', 'Ref', 'Time', 'By'], rows: es.filter(e => e.kind === 'payment').map(e => [names.get(e.shopId)?.name ?? '', e.amount ?? 0, e.mode ?? '', e.ref ?? '', e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
     ]);

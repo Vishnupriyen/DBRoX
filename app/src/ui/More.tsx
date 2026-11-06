@@ -34,7 +34,7 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
-        downloadText(`DBRoX-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(dump));
+        downloadText(`Hanubix-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">{t('logout')}</span></button>
@@ -42,8 +42,8 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
         if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
       }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
-      {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (DBRoX side — never shown to a distributor)</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>DBRoX · RoX Proprietary Engine · v0.3</div>
+      {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (Hanubix side — never shown to a distributor)</span></button>}
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX · v0.3</div>
     </div>
   );
 }
@@ -60,7 +60,7 @@ function Modules({ editable }: { editable: boolean }) {
   return (
     <div className="card">
       <h3>{t('modules')}</h3>
-      <div className="muted" style={{ marginBottom: 6 }}>{on} of {MODULES.length} on — demo switch, DBRoX side only</div>
+      <div className="muted" style={{ marginBottom: 6 }}>{on} of {MODULES.length} on — demo switch, Hanubix side only</div>
       <div className="row" style={{ marginBottom: 8 }}>
         <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, true])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'all modules'); await cs.commit('Plan'); setS(next); }}>All modules</button>
         <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, m.key === 'delivery' || m.key === 'collection'])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'delivery+collection'); await cs.commit('Plan'); setS(next); }}>Delivery + Collection only</button>
@@ -100,7 +100,7 @@ function SettingsPage({ editable }: { editable: boolean }) {
       {f('checkInBy', 'Check-in after this time is "late" (HH:MM)')}
       <div className="row" style={{ gap: 8 }}>{f('godownLat', 'Godown latitude', 'number')}{f('godownLng', 'Godown longitude', 'number')}</div>
       <button className="btn small" onClick={async () => { const { getPos } = await import('./Beat'); const p = await getPos(); if (p) setS({ ...s, godownLat: p.lat, godownLng: p.lng }); else void notify('Location', 'Could not read the phone location.'); }}>Use my location now</button>
-      {f('serverUrl', 'DBRoX server address (for sync and photo reading)')}
+      {f('serverUrl', 'Hanubix server address (for sync and photo reading)')}
       {editable && <button className="btn primary" onClick={async () => { const cs = new ChangeSet(); cs.put('settings', s, 'settings'); await cs.commit('Settings saved'); setSaved(true); }}>{t('save')}</button>}
       {saved && <span className="muted"> ✓ {t('done')}</span>}
     </div>

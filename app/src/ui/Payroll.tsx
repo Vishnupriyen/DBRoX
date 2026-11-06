@@ -27,7 +27,7 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   };
   return (
     <div className="gate">
-      <div className="eyebrow">{L('Good morning', 'காலை வணக்கம்')}</div>
+      <div className="eyebrow">{new Date().getHours() < 12 ? L('Good morning', 'காலை வணக்கம்') : new Date().getHours() < 17 ? L('Good afternoon', 'மதிய வணக்கம்') : L('Good evening', 'மாலை வணக்கம்')}</div>
       <div className="h" style={{ fontSize: 26 }}>{me.name.split(' ')[0]}</div>
       <div className="muted"><Clock size={16} style={{ verticalAlign: -3 }} /> {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {today()}{late && <span className="badge warn" style={{ marginLeft: 8 }}>{L('after', 'பிறகு')} {threshold}</span>}</div>
       <button className="big-btn" disabled={busy} onClick={go}><span><LogIn /><br />{L('Check in', 'செக் இன்')}</span></button>
@@ -81,7 +81,7 @@ export function Today() {
       {(leaves.filter(l => l.status === 'waiting').length > 0 || advances.length > 0) && <div className="sechead"><h3>{L('Requests', 'கோரிக்கைகள்')}</h3></div>}
       {leaves.filter(l => l.status === 'waiting').map(l => <div key={l.id} className="item"><div className="grow"><div className="t">{l.name} · {L('leave', 'விடுமுறை')}</div><div className="s">{l.from}{l.to !== l.from ? ` → ${l.to}` : ''} · {l.reason}</div></div><button className="btn small primary" onClick={() => decide('leaves', l, true)}><Check /></button><button className="btn small" onClick={() => decide('leaves', l, false)}><X /></button></div>)}
       {advances.map(a => <div key={a.id} className="item"><div className="grow"><div className="t">{a.name} · {L('advance', 'அட்வான்ஸ்')} {inr(a.amount)}</div><div className="s">{a.reason}</div></div><button className="btn small primary" onClick={() => decide('advances', a, true)}><Check /></button><button className="btn small" onClick={() => decide('advances', a, false)}><X /></button></div>)}
-      <div className="muted">{L('Staff type "leave Monday" or "advance 1000" to RoX; you approve here.', 'ஊழியர்கள் RoX-ல் "leave Monday" / "advance 1000" என்று சொல்வார்கள்; இங்கே ஒப்புதல்.')}</div>
+      <div className="muted">{L('Staff type "leave Monday" or "advance 1000" to TESRAX; you approve here.', 'ஊழியர்கள் TESRAX-ல் "leave Monday" / "advance 1000" என்று சொல்வார்கள்; இங்கே ஒப்புதல்.')}</div>
     </div>
   );
 }

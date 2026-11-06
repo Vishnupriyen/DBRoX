@@ -6,8 +6,9 @@ import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
-import { RoxOrb, type OrbState } from './ui/RoxOrb';
-import { RoxMark } from './ui/icons';
+import { TesraxCore } from './ui/TesraxCore';
+import { sound } from './core/sound';
+import { Volume2, VolumeX } from 'lucide-react';
 import { UndoToast } from './ui/UndoToast';
 import { OrdersReceived } from './ui/OrdersReceived';
 import { NewShop, NewShops, Targets } from './ui/Sales';
@@ -45,7 +46,7 @@ const TITLE: Partial<Record<Page, [string, string]>> = {
   gst: ['GST', 'GST'], today: ['Today', 'இன்று'], salary: ['Salary', 'சம்பளம்'], staff: ['Staff', 'ஊழியர்கள்'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'], bills: ['Bills', 'பில்கள்'],
   'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
 };
-// RoX "open a screen" names → pages (keeps old names working)
+// TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
 
 export default function App() {
@@ -56,7 +57,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('home');
   const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
-  const [orb, setOrb] = useState<OrbState>('idle');
+  const [soundOn, setSoundOn] = useState(sound.isOn());
   const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
   const [langTick, setLangTick] = useState(0);
@@ -92,7 +93,7 @@ export default function App() {
 
   const toggleLang = () => { setLang(getLang() === 'en' ? 'ta' : 'en'); setLangTick(x => x + 1); };
 
-  if (!ready) return <div className="login"><div className="mark">DB<em>RoX</em></div></div>;
+  if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow();
@@ -106,10 +107,10 @@ export default function App() {
   const home = () => { setPage('home'); };
   const go = (p: string) => { setPage((ALIAS[p] ?? p) as Page); setRox(false); };
   const title = TITLE[page]?.[lang === 'ta' ? 1 : 0];
-  const openRox = () => setRox(true);
+  const openRox = () => { sound.wake(); setRox(true); };
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
-  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark"><RoxMark size={26} />DB<em>RoX</em></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     switch (page) {
@@ -164,8 +165,9 @@ export default function App() {
 
   return (
     <div className="app" key={langTick}>
+      <GradDefs />
       <header className="top">
-        {page === 'home' ? <div className="wordmark"><RoxMark size={26} />DB<em>RoX</em></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
@@ -177,22 +179,32 @@ export default function App() {
       <UndoToast />
 
       {rox && (
-        <div className="sheet-wrap" onClick={() => setRox(false)}>
-          <div className="sheet" onClick={e => e.stopPropagation()}>
-            <div className="sheet-head"><RoxOrb state={orb} size={44} /><div className="grow"><b>RoX Engine</b><span className="state">{orb === 'listening' ? t('listening') : orb === 'thinking' ? t('thinking') : orb === 'ready' ? t('done') : t('askMe')}</span></div><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
-            <div className="sheet-body"><Chat role={me.role} onGo={go} onState={setOrb} /></div>
+        <div className="engine" role="dialog" aria-label="TESRAX">
+          <div className="engine-col">
+            <div className="engine-head" onPointerDown={e => { (e.currentTarget as HTMLElement).dataset.y = String(e.clientY); }} onPointerUp={e => { const y0 = Number((e.currentTarget as HTMLElement).dataset.y ?? e.clientY); if (e.clientY - y0 > 70) setRox(false); }}>
+              <span className="engine-mark">Hanubix<sup>™</sup></span>
+              <span className="engine-pw">Powered by <b>TESRAX</b></span>
+              <button className="engine-x" onClick={() => { const v = !soundOn; sound.set(v); setSoundOn(v); }} aria-label={soundOn ? 'Sound off' : 'Sound on'}>{soundOn ? <Volume2 /> : <VolumeX />}</button>
+              <button className="engine-x" onClick={() => setRox(false)} aria-label="Close"><X /></button>
+            </div>
+            <Chat role={me.role} onGo={go} />
           </div>
         </div>
       )}
 
       <nav className="tabs">
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
-        {/* RoX Engine: the raised centre button on every screen, for every role. It proposes, you approve. */}
-        <button className="fab" onClick={openRox} aria-label="RoX Engine"><RoxOrb state="idle" size={64} /></button>
+        {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
+        <button className="fab" onClick={openRox} aria-label="TESRAX"><TesraxCore size={64} interactive={false} /></button>
         <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{lang === 'ta' ? 'மேலும்' : 'More'}</button>
       </nav>
     </div>
   );
+}
+
+// The signature gradient as an SVG paint server, so icon accents can use fill="url(#hg)".
+function GradDefs() {
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
 }
 
 function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string) => void; lang: 'en' | 'ta'; onLang: () => void }) {
@@ -215,7 +227,7 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
 
   if (newFirm) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">DB<em>RoX</em></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? '60 நாள் இலவச சோதனை' : 'Start your 60-day free trial'}</div></div>
+      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? '60 நாள் இலவச சோதனை' : 'Start your 60-day free trial'}</div></div>
       <div className="stack">
         <div className="field"><label>Firm name</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
@@ -231,7 +243,7 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
 
   if (firms) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">DB<em>RoX</em></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? 'எந்த நிறுவனம்?' : 'Which firm?'}</div></div>
+      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? 'எந்த நிறுவனம்?' : 'Which firm?'}</div></div>
       <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
@@ -240,10 +252,11 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
     <div className="login">
       <div className="login-hero">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div className="mark">DB<em>RoX</em></div>
+          <div className="mark">Hanubix<sup>™</sup></div>
           <button className="lang" onClick={onLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
         </div>
-        <div className="tag" style={{ color: 'var(--on-navy-2)', margin: '8px 0 0' }}>{t('appTagline')}</div>
+        <div className="powered">Powered by <b>TESRAX</b></div>
+        <div className="tag" style={{ margin: '10px 0 0' }}>{t('appTagline')}</div>
       </div>
       <label className="eyebrow" htmlFor="login-phone">{t('phone')}</label>
       <input id="login-phone" className="phone" inputMode="numeric" autoComplete="tel" placeholder="98765 43210" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} />
@@ -253,7 +266,7 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => <button key={d} onClick={() => press(d)}>{d}</button>)}
         <button onClick={() => setPin(p => p.slice(0, -1))} aria-label="Delete"><Delete size={24} /></button>
         <button onClick={() => press('0')}>0</button>
-        <button onClick={() => go()} style={{ background: 'var(--marigold)', borderColor: 'var(--marigold)', color: 'var(--on-marigold)' }} aria-label={t('login')}><ArrowRight size={26} /></button>
+        <button className="go" onClick={() => go()} aria-label={t('login')}><ArrowRight size={26} /></button>
       </div>
       {err && <div style={{ color: 'var(--bad)', marginTop: 10, fontWeight: 600 }}>{err}</div>}
       {ENV_SERVER && <button className="btn block" style={{ marginTop: 16 }} onClick={() => setNewFirm({ firmName: '', ownerName: '', gstin: '' })}>New distributor? Start free trial</button>}

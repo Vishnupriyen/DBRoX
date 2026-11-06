@@ -1,21 +1,21 @@
-// DBRoX core data types.
+// Hanubix core data types.
 // Scale rule: every record carries tenantId (the distributor) and an id created on the device,
 // so the server can split data by distributor and phones never wait for a central counter.
 
 export type Role = 'owner' | 'office' | 'salesman' | 'godown' | 'delivery';
 
-// The eight locked modules (spec 15.1). Switched from the DBRoX console, never shown to the distributor.
+// The eight locked modules (spec 15.1). Switched from the Hanubix console, never shown to the distributor.
 export type ModuleKey = 'sales' | 'bill' | 'inventory' | 'delivery' | 'collection' | 'accountant' | 'gst' | 'payroll';
 
 export const MODULES: { key: ModuleKey; name: string }[] = [
-  { key: 'sales', name: 'RoX Sales' },
-  { key: 'bill', name: 'RoX Bill' },
-  { key: 'inventory', name: 'RoX Inventory' },
-  { key: 'delivery', name: 'RoX Delivery' },
-  { key: 'collection', name: 'RoX Collection' },
-  { key: 'accountant', name: 'RoX Accountant' },
-  { key: 'gst', name: 'RoX GST' },
-  { key: 'payroll', name: 'RoX Payroll' },
+  { key: 'sales', name: 'TESRAX Sales' },
+  { key: 'bill', name: 'TESRAX Bill' },
+  { key: 'inventory', name: 'TESRAX Inventory' },
+  { key: 'delivery', name: 'TESRAX Delivery' },
+  { key: 'collection', name: 'TESRAX Collection' },
+  { key: 'accountant', name: 'TESRAX Accountant' },
+  { key: 'gst', name: 'TESRAX GST' },
+  { key: 'payroll', name: 'TESRAX Payroll' },
 ];
 
 export interface Base {

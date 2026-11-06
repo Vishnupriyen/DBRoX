@@ -25,10 +25,10 @@ export function Plan({ onDone }: { onDone: () => void }) {
       <div className="kpi navy"><div className="v">{pending}</div><div className="l">{L('bills ready for delivery', 'டெலிவரிக்கு தயார் பில்கள்')}</div></div>
       <div className="card stack" style={{ textAlign: 'center' }}>
         <div className="h">{L('How do you want to plan today?', 'இன்று எப்படி திட்டமிடலாம்?')}</div>
-        <button className="btn primary big block" onClick={() => pick('rox')}><Navigation /> {L('RoX, suggest', 'RoX பரிந்துரை')}</button>
+        <button className="btn primary big block" onClick={() => pick('rox')}><Navigation /> {L('TESRAX, suggest', 'TESRAX பரிந்துரை')}</button>
         <div className="muted">{L('Groups by area, fills each van by capacity and time, orders stops nearest-first. You can still move anything.', 'பகுதி வாரியாக, வண்டி திறன் படி, அருகில் முதலில். எதையும் மாற்றலாம்.')}</div>
         <button className="btn big block" onClick={() => pick('me')}><Truck /> {L("I'll make the route", 'நானே வழி அமைக்கிறேன்')}</button>
-        <div className="muted">{L('You put each stop on a van; RoX only orders the stops.', 'நீங்கள் வண்டிக்கு கடை ஒதுக்குங்கள்; RoX வரிசை மட்டும்.')}</div>
+        <div className="muted">{L('You put each stop on a van; TESRAX only orders the stops.', 'நீங்கள் வண்டிக்கு கடை ஒதுக்குங்கள்; TESRAX வரிசை மட்டும்.')}</div>
       </div>
       <TodayTrips />
     </div>
@@ -62,7 +62,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div><div className="v">{billsToday}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{bills} {L('bills', 'பில்')}</span></div><div className="l">{L('today', 'இன்று')} · {plan.filter(x => x.van.id && x.shops.length).length} {L('van(s)', 'வண்டி')} · {total - unplanned} {L('stops', 'நிறுத்தம்')}{unplanned ? ` · ${unplanned} ${L('tomorrow', 'நாளைக்கு')}` : ''}</div></div>
-          <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? L('RoX plan', 'RoX திட்டம்') : L('My route', 'என் வழி')} · {L('change', 'மாற்று')}</button>
+          <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? L('TESRAX plan', 'TESRAX திட்டம்') : L('My route', 'என் வழி')} · {L('change', 'மாற்று')}</button>
         </div>
       </div>
       <div className="muted">{L('Tap a stop to move it earlier, later, to another van, or to tomorrow.', 'நிறுத்தத்தை தட்டி முன்/பின்/வேறு வண்டி/நாளைக்கு மாற்றலாம்.')}</div>

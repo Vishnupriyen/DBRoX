@@ -13,7 +13,7 @@ import { ask, askText, confirmBox } from './dialog';
 
 interface Stop { shop: Shop; invoices: Invoice[] }
 
-// RoX Delivery: the driver's trip. Start trip → stops in order → Delivered ✓ / Short / Return → end trip.
+// TESRAX Delivery: the driver's trip. Start trip → stops in order → Delivered ✓ / Short / Return → end trip.
 // While the trip is out, the phone sends its location every 30 s so the owner sees the van live.
 export function Delivery() {
   const [trip, setTrip] = useState<Trip | null>(null);

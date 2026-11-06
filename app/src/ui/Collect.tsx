@@ -7,7 +7,7 @@ import { norm } from '../core/match';
 import { inr, t } from '../core/i18n';
 import type { Shop } from '../core/types';
 
-// RoX Collection: overdue shops first; bill number first, then amount, mode, shop ✓.
+// TESRAX Collection: overdue shops first; bill number first, then amount, mode, shop ✓.
 export function Collect() {
   const [shops, setShops] = useState<(Shop & { due: number; overdue: number })[]>([]);
   const [q, setQ] = useState('');

@@ -13,7 +13,7 @@ const monthEnd = (ym: string) => { const [y, m] = ym.split('-').map(Number); ret
 const months = () => { const out: string[] = []; const d = new Date(); for (let i = 0; i < 36; i++) { const x = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(x.toISOString().slice(0, 7)); } return out; };
 const isOwner = async () => { const me = await db.staff.get(session().userId); return me?.role === 'owner' || me?.role === 'office'; };
 
-// ---------- Purchases / Stock in: photo or Excel go through RoX; manual entry here. Expiry month is mandatory. ----------
+// ---------- Purchases / Stock in: photo or Excel go through TESRAX; manual entry here. Expiry month is mandatory. ----------
 export function StockIn({ onRox }: { onRox?: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -48,7 +48,7 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
         <button className="btn grow" onClick={onRox}><Camera /> {L('Photo of company bill', 'கம்பெனி பில் போட்டோ')}</button>
         <button className="btn grow" onClick={onRox}><FileSpreadsheet /> {L('Excel from company', 'கம்பெனி Excel')}</button>
       </div>
-      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {L('Both go through RoX: send the file, say "add this to inventory", approve the table. Or add by hand below.', 'இரண்டும் RoX வழியாக: ஃபைல் அனுப்பி "add this to inventory" என்று சொல்லுங்கள்.')}</div>
+      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {L('Both go through TESRAX: send the file, say "add this to inventory", approve the table. Or add by hand below.', 'இரண்டும் TESRAX வழியாக: ஃபைல் அனுப்பி "add this to inventory" என்று சொல்லுங்கள்.')}</div>
       <div className="card stack">
         <div className="field"><label>{L('Company bill no (optional)', 'கம்பெனி பில் எண்')}</label><input value={billNo} onChange={e => setBillNo(e.target.value)} /></div>
         <div className="field"><input placeholder={L('Search product to add…', 'பொருள் தேடு…')} value={q} onChange={e => setQ(e.target.value)} aria-label="Search product" /></div>

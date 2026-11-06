@@ -141,7 +141,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
       deliveryStatus: 'pending',
     }, 'bill made');
     out.push(inv);
-    // every company scheme given becomes a claim line automatically (RoX Claim Prep)
+    // every company scheme given becomes a claim line automatically (TESRAX Claim Prep)
     for (const x of invLines) {
       const schemeValue = r2(x.discount + x.freeQty * x.rate);
       if (schemeValue > 0) {
