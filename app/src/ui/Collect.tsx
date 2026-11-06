@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { PayBox } from './PayBox';
 import { ArrowLeft, Store } from 'lucide-react';
-import { db } from '../core/db';
+import { activeShops } from '../core/db';
 import { shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { inr, t } from '../core/i18n';
@@ -15,7 +15,9 @@ export function Collect() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     (async () => {
-      const ss = await db.shops.toArray();
+      const me = (await import('../core/db')).session().userId;
+      const role = (await (await import('../core/db')).db.staff.get(me))?.role;
+      const ss = (await activeShops()).filter(s => role !== 'salesman' || !s.salesmanId || s.salesmanId === me);
       const withDue = await Promise.all(ss.map(async s => { const o = await shopOutstanding(s.id); return { ...s, due: o.total, overdue: o.maxOverdueDays }; }));
       setShops(withDue.filter(s => s.due > 0.5).sort((a, b) => b.overdue - a.overdue || b.due - a.due));
     })();

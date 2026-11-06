@@ -14,6 +14,7 @@ import { Outstanding, Cheques, Bank, Expenses, PnL, Position, ExportPage, Gst } 
 import { CheckInGate, Today, Salary } from './ui/Payroll';
 import { Morning } from './ui/Morning';
 import { Beat } from './ui/Beat';
+import { BeatBuilder } from './ui/BeatBuilder';
 import { Pick } from './ui/Pick';
 import { PickOrders } from './ui/PickOrders';
 import { Approve } from './ui/Approve';
@@ -113,7 +114,7 @@ export default function App() {
       case 'newshops': return <NewShops />;
       case 'targets': return <Targets />;
       case 'newshop': return <NewShop onDone={home} />;
-      case 'beat': return <Beat lang={lang} />;
+      case 'beat': return me.role === 'salesman' ? <Beat lang={lang} /> : <BeatBuilder />;
       case 'myday': return <MyDay />;
       case 'stockin': return <StockIn onRox={openRox} />;
       case 'stock': return <StockPosition />;
@@ -190,12 +191,15 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
   const [demo, setDemo] = useState<Staff[]>([]);
+  const [firms, setFirms] = useState<{ tenantId: string; firm: string }[] | null>(null);
+  const [tenant, setTenant] = useState<string | undefined>();
   const [newFirm, setNewFirm] = useState<{ firmName: string; ownerName: string; gstin: string } | null>(null);
   useEffect(() => { if (!ENV_SERVER) db.staff.toArray().then(setDemo); }, []);
   const go = async (p = phone, n = pin) => {
     setErr('');
-    const r = await login(p, n);
+    const r = await login(p, n, tenant);
     if (!r) { setErr(t('wrongPin')); setPin(''); return; }
+    if ('choose' in r) { setFirms(r.choose); return; }
     onIn(r.tenantId, r.userId);
   };
   const press = (d: string) => { const n = (pin + d).slice(0, 4); setPin(n); if (n.length === 4 && phone.length === 10) void go(phone, n); };
@@ -213,6 +217,13 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
         <button className="btn primary big block" onClick={async () => { try { setErr(''); const r = await signup({ ...newFirm, phone, pin }); onIn(r.tenantId, r.userId); } catch (e) { setErr((e as Error).message); } }}>Start free trial</button>
         <button className="btn ghost block" onClick={() => setNewFirm(null)}>← Log in instead</button>
       </div>
+    </div>
+  );
+
+  if (firms) return (
+    <div className="login">
+      <div className="login-hero"><div className="mark">DB<em>RoX</em></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? 'எந்த நிறுவனம்?' : 'Which firm?'}</div></div>
+      <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
 

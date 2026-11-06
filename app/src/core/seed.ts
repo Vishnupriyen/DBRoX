@@ -15,7 +15,7 @@ export function gstinWithCheck(first14: string) {
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
-const SEED_VERSION = 'v0.4';
+const SEED_VERSION = 'v0.5';
 export async function seedDemo(tenantId = 'demo') {
   const ls = typeof localStorage === 'undefined' ? null : localStorage;
   if (await db.settings.count()) {
@@ -29,19 +29,19 @@ export async function seedDemo(tenantId = 'demo') {
   const settings = cs.put<Settings>('settings', {
     firmName: 'Sri Murugan Distributors (Demo)', gstin: gstinWithCheck('33ABCDE1234F1Z'),
     address: '12 Bazaar Street, Tittakudi, Cuddalore 606106', stateCode: '33', phone: '9876543210',
-    modules: { orders: true, billing: true, godown: true, delivery: true, collection: true, bank: true, accounts: true, claims: true, scan: true },
+    modules: { sales: true, bill: true, inventory: true, delivery: true, collection: true, accountant: true, gst: true, payroll: true },
     billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5,
-    billPrefix: 'SMD', nextBillNo: 1, checkInBy: '09:30', grnPhoto: true, upiId: 'srimurugan@okaxis',
+    billPrefix: 'SMD', nextBillNo: 1, checkInBy: '09:30', grnPhoto: true, upiId: 'srimurugan@okaxis', godownLat: 11.41, godownLng: 79.12,
   });
   const van = cs.put<Van>('vans', { name: 'Van 1', number: 'TN 31 AB 1234', kind: 'own' });
   cs.put<Van>('vans', { name: 'Auto 2', number: 'TN 31 C 5678', kind: 'hired' });
   const staff = (name: string, phone: string, role: Staff['role'], pin: string, extra: Partial<Staff> = {}) =>
     cs.put<Staff>('staff', { name, phone, role, pin, active: true, ...extra });
   const owner = staff('Vishnu (Owner)', '9000000001', 'owner', '1111');
-  staff('Priya (Office)', '9000000002', 'office', '2222');
-  const ravi = staff('Ravi (Salesman)', '9000000003', 'salesman', '3333');
-  staff('Mani (Godown)', '9000000004', 'godown', '4444');
-  const karthik = staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id });
+  staff('Priya (Office)', '9000000002', 'office', '2222', { salary: 12000 });
+  const ravi = staff('Ravi (Salesman)', '9000000003', 'salesman', '3333', { salary: 15000, batta: 150 });
+  staff('Mani (Godown)', '9000000004', 'godown', '4444', { salary: 11000 });
+  const karthik = staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id, salary: 12000, batta: 150 });
   van.driverId = karthik.id;
 
   const co = (name: string, code: string, pan: string) => cs.put<Company>('companies', { name, code, gstin: gstinWithCheck(`33${pan}1Z`), nextBillNo: 1 });

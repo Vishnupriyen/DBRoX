@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-react';
-import { db } from '../core/db';
+import { ChangeSet, db } from '../core/db';
 import { approveOrder, rejectOrder, shopHistory } from '../core/pipeline';
 import { getLang, inr } from '../core/i18n';
 import { askText } from './dialog';
@@ -48,12 +48,13 @@ export function OrdersReceived() {
               {o.hist.limit > 0 && <> · {L('limit', 'வரம்பு')} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> / {o.hist.days}d</>}
             </div>
             {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{L('Rate request', 'விலை கோரிக்கை')}:</b> {o.rateRemark}</div></div>}
+            {o.source !== 'salesman' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{L('How did this order come?', 'இந்த ஆர்டர் எப்படி வந்தது?')}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{L('pick', 'தேர்வு')}</option><option value="phone">{L('Phone', 'போன்')}</option><option value="in_person">{L('In person', 'நேரில்')}</option><option value="whatsapp">WhatsApp</option><option value="other">{L('Other', 'வேறு')}</option></select></div>}
             {o.issues.length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.map((x, i) => <div key={i}>{x}</div>)}</div></div>}
             <div className="list">
               {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">@{l.rate}</span></div>; })}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              <button className="btn primary grow" onClick={() => ok(o.id)}><Check /> {L('Approve → godown', 'ஒப்புதல் → கிடங்கு')}</button>
+              <button className="btn primary grow" disabled={o.source === 'office'} onClick={() => ok(o.id)}><Check /> {L('Approve → godown', 'ஒப்புதல் → கிடங்கு')}</button>
               <a className="btn" href={`tel:${o.shop.phone ?? ''}`} aria-label="Call shop"><Phone /></a>
               <button className="btn" onClick={async () => { const r = await askText(L('Why cancel?', 'ஏன் ரத்து?')); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
             </div>

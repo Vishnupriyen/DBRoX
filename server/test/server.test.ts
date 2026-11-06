@@ -81,6 +81,52 @@ describe('DBRoX server', () => {
     expect((await post('/v1/sync', { cursor: 0, changes: [] }, sm.body.token)).status).toBe(403);
   });
 
+  it("two phones: driver's trip, check-in and day close reach the owner; purchase rate never reaches staff", async () => {
+    const now = new Date().toISOString();
+    const drv = { id: 'dr1', name: 'Karthik', phone: '9844444444', role: 'delivery', pin: '5555', active: true, updatedAt: now };
+    await post('/v1/sync', { cursor: 0, changes: [{ table: 'staff', id: 'dr1', updatedAt: now, data: drv }, { table: 'products', id: 'p1', updatedAt: now, data: { id: 'p1', name: 'Surf', purchaseRate: 90, rate: 100, updatedAt: now } }] }, owner.token);
+    const d = await post('/v1/login', { phone: '9844444444', pin: '5555' });
+    expect(d.status).toBe(200);
+    // every shared table the driver may write is accepted
+    const push = await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'trips', id: 't1', updatedAt: now, data: { id: 't1', vanId: 'v1', date: now.slice(0, 10), status: 'out', stops: [], track: [], updatedAt: now } },
+      { table: 'checkIns', id: 'c1', updatedAt: now, data: { id: 'c1', staffId: 'dr1', date: now.slice(0, 10), at: now, late: false, updatedAt: now } },
+      { table: 'leaves', id: 'l1', updatedAt: now, data: { id: 'l1', staffId: 'dr1', from: now.slice(0, 10), to: now.slice(0, 10), reason: 'x', status: 'waiting', updatedAt: now } },
+    ] }, d.body.token);
+    expect(push.body.rejected).toEqual([]);
+    // driver's pull carries products without the purchase rate
+    const dp = await post('/v1/sync', { cursor: 0, changes: [] }, d.body.token);
+    const prod = dp.body.changes.find((c: { id: string }) => c.id === 'p1');
+    expect(prod.data.rate).toBe(100); expect(prod.data.purchaseRate).toBeUndefined();
+    // owner's phone sees the trip, the check-in and the leave request
+    const op = await post('/v1/sync', { cursor: 0, changes: [] }, owner.token);
+    const tables = op.body.changes.map((c: { table: string }) => c.table);
+    expect(tables).toContain('trips'); expect(tables).toContain('checkIns'); expect(tables).toContain('leaves');
+    // owner approves the leave; driver's phone receives the decision
+    const later = new Date(Date.now() + 1000).toISOString();
+    await post('/v1/sync', { cursor: 0, changes: [{ table: 'leaves', id: 'l1', updatedAt: later, data: { id: 'l1', staffId: 'dr1', from: now.slice(0, 10), to: now.slice(0, 10), reason: 'x', status: 'approved', updatedAt: later } }] }, owner.token);
+    const dp2 = await post('/v1/sync', { cursor: dp.body.cursor, changes: [] }, d.body.token);
+    expect(dp2.body.changes.find((c: { id: string }) => c.id === 'l1')?.data.status).toBe('approved');
+  });
+
+  it('issues bill numbers on the server, never twice', async () => {
+    const a = await post('/v1/number', { kind: 'bill', count: 2 }, owner.token);
+    const b = await post('/v1/number', { kind: 'bill' }, owner.token);
+    expect(a.body.first).toBe(1); expect(b.body.first).toBe(3);
+    const d = await post('/v1/login', { phone: '9844444444', pin: '5555' });
+    expect((await post('/v1/number', { kind: 'bill' }, d.body.token)).status).toBe(403);
+  });
+
+  it('one phone under two distributors picks the firm', async () => {
+    const now = new Date().toISOString();
+    const other = await post('/v1/login', { phone: '9833333333', pin: '1111' });
+    await post('/v1/sync', { cursor: 0, changes: [{ table: 'staff', id: 'sm2', updatedAt: now, data: { id: 'sm2', name: 'Karthik', phone: '9844444444', role: 'salesman', pin: '5555', active: true, updatedAt: now } }] }, other.body.token);
+    const l = await post('/v1/login', { phone: '9844444444', pin: '5555' });
+    expect(l.body.choose?.length).toBe(2);
+    const l2 = await post('/v1/login', { phone: '9844444444', pin: '5555', tenantId: other.body.tenantId });
+    expect(l2.body.tenantId).toBe(other.body.tenantId);
+  });
+
   it('locks a phone after 5 wrong PINs', async () => {
     for (let i = 0; i < 5; i++) await post('/v1/login', { phone: '9833333333', pin: '0000' });
     expect((await post('/v1/login', { phone: '9833333333', pin: '1111' })).status).toBe(429);

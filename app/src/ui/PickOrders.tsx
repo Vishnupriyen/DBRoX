@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ArrowLeft, AlertTriangle, PackageOpen, Minus, Plus } from 'lucide-react';
+import { Check, ArrowLeft, AlertTriangle, PackageOpen, Minus, Plus, Copy } from 'lucide-react';
 import { db, today } from '../core/db';
 import { pickOrder } from '../core/pipeline';
 import { getLang } from '../core/i18n';
@@ -7,7 +7,7 @@ import { Pack } from './Pack';
 import type { Batch, Order, Product, Shop } from '../core/types';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
-interface Row { product: Product; ordered: number; qty: number; batches: Batch[]; batchId?: string; mrp: number; done: boolean }
+interface Row { product: Product; ordered: number; qty: number; batches: Batch[]; batchId?: string; mrp: number; done: boolean; extra?: boolean }
 
 // Godown: pick each approved order. Qty up or down, batch (oldest first), MRP — never a new product.
 export function PickOrders() {
@@ -31,6 +31,7 @@ export function PickOrders() {
 
   if (open) {
     const allDone = rows.every(r => r.done || r.qty === 0);
+    // same product can be packed from two MRPs: each line goes to the bill as its own line
     return (
       <div className="stack">
         <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{open.shop.name}</div><div className="muted">{open.shop.area} · {rows.length} {L('items', 'பொருட்கள்')}</div></div></div>
@@ -39,14 +40,13 @@ export function PickOrders() {
             const p = r.product; const stock = r.batches.reduce((a, b) => a + b.qty, 0);
             const cs = Math.floor(r.qty / p.caseSize), pcs = r.qty % p.caseSize;
             return (
-              <div key={p.id} className="card stack" style={{ gap: 8, opacity: r.done ? .6 : 1 }}>
+              <div key={i} className="card stack" style={{ gap: 8, opacity: r.done ? .6 : 1 }}>
                 <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
                   <Pack product={p} size="lg" />
                   <div className="grow">
                     <div className="t" style={{ fontSize: 18 }}>{p.nameTa ?? p.name}</div>
-                    <div className="s">{p.name} · {L('ordered', 'ஆர்டர்')} <b>{r.ordered}</b> · {L('stock', 'ஸ்டாக்')} {stock}</div>
-                    {r.qty < r.ordered && <span className="badge bad"><AlertTriangle size={12} /> {L('short', 'குறைவு')} {r.ordered - r.qty}</span>}
-                    {r.qty > r.ordered && <span className="badge warn">+{r.qty - r.ordered} {L('extra', 'கூடுதல்')}</span>}
+                    <div className="s">{p.name} · {r.extra ? L('second MRP line', 'இரண்டாம் MRP வரி') : <>{L('ordered', 'ஆர்டர்')} <b>{r.ordered}</b></>} · {L('stock', 'ஸ்டாக்')} {stock}</div>
+                    {(() => { const tot = rows.filter(x => x.product.id === p.id).reduce((a, x) => a + x.qty, 0); if (r.extra) return null; return tot < r.ordered ? <span className="badge bad"><AlertTriangle size={12} /> {L('short', 'குறைவு')} {r.ordered - tot}</span> : tot > r.ordered ? <span className="badge warn">+{tot - r.ordered} {L('extra', 'கூடுதல்')}</span> : null; })()}
                   </div>
                   <button className={`avatar ${r.done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16, border: 0 }} onClick={() => upd(i, x => ({ ...x, done: !x.done }))} aria-label="Packed">{r.done ? <Check size={30} /> : <PackageOpen size={24} />}</button>
                 </div>
@@ -59,14 +59,17 @@ export function PickOrders() {
                     {r.batches.map(b => <button key={b.id} className={`chip ${r.batchId === b.id ? 'on' : ''}`} onClick={() => upd(i, x => ({ ...x, batchId: b.id, mrp: b.mrp }))}>{L('batch', 'பேட்ச்')} {b.batch} · {b.expiry.slice(0, 7)} · MRP {b.mrp} · {b.qty}</button>)}
                   </div>
                 )}
-                <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><span className="muted">MRP</span><input type="number" value={r.mrp} onChange={e => upd(i, x => ({ ...x, mrp: Number(e.target.value) }))} style={{ width: 100 }} aria-label="MRP" />{r.mrp !== (r.batches.find(b => b.id === r.batchId)?.mrp ?? p.mrp) && <span className="badge warn">{L('MRP changed', 'MRP மாற்றம்')}</span>}</div>
+                <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><span className="muted">MRP</span><input type="number" value={r.mrp} onChange={e => upd(i, x => ({ ...x, mrp: Number(e.target.value) }))} style={{ width: 100 }} aria-label="MRP" />{r.mrp !== (r.batches.find(b => b.id === r.batchId)?.mrp ?? p.mrp) && <span className="badge warn">{L('MRP changed', 'MRP மாற்றம்')}</span>}
+                  <span className="grow" />
+                  {!r.extra && r.batches.length > 1 && <button className="btn small" onClick={() => setRows(rs => { const other = r.batches.find(b => b.id !== r.batchId) ?? r.batches[0]; const copy: Row = { ...r, qty: 0, batchId: other.id, mrp: other.mrp, done: false, extra: true }; return [...rs.slice(0, i + 1), copy, ...rs.slice(i + 1)]; })}><Copy size={14} /> {L('Same product, other MRP', 'அதே பொருள், வேறு MRP')}</button>}
+                  {r.extra && <button className="link" onClick={() => setRows(rs => rs.filter((_, k) => k !== i))}>{L('remove', 'நீக்கு')}</button>}</div>
               </div>
             );
           })}
         </div>
         <div className="sticky-foot">
           {!allDone && <div className="muted grow">{L('Tick every line as you pack', 'ஒவ்வொரு வரியையும் டிக் செய்யவும்')}</div>}
-          <button className="btn primary big grow" disabled={!allDone} onClick={async () => { await pickOrder(open.id, rows.map(r => ({ productId: r.product.id, qty: r.qty, batchId: r.batchId, mrp: r.mrp }))); setOpen(null); setTick(x => x + 1); }}><Check /> {L('Packed → owner', 'கட்டியது → உரிமையாளர்')}</button>
+          <button className="btn primary big grow" disabled={!allDone} onClick={async () => { await pickOrder(open.id, rows.filter(r => r.qty > 0 || !r.extra).map(r => ({ productId: r.product.id, qty: r.qty, batchId: r.batchId, mrp: r.mrp }))); setOpen(null); setTick(x => x + 1); }}><Check /> {L('Packed → owner', 'கட்டியது → உரிமையாளர்')}</button>
         </div>
       </div>
     );

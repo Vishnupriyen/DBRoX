@@ -17,7 +17,7 @@ export type Page = 'home'
 
 interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; ta: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: [string, string] }
 
-export function standalone(s: Settings | undefined) { return !!s && !s.modules.billing && !s.modules.orders; }
+export function standalone(s: Settings | undefined) { return !!s && !s.modules.bill && !s.modules.sales; }
 
 const TAG: Record<string, [string, string]> = {
   sales: ['Take orders in 30 seconds. No typing.', '30 நொடியில் ஆர்டர். டைப்பிங் இல்ல.'],

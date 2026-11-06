@@ -165,3 +165,6 @@ export async function getSettings(): Promise<Settings> {
   if (!s) throw new Error('Settings missing');
   return s;
 }
+
+// Shops that are not rejected or closed. Use this everywhere a person picks a shop.
+export async function activeShops() { return (await db.shops.toArray()).filter(s => s.active !== false); }

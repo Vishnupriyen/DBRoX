@@ -58,7 +58,7 @@ export function NewShops() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { setShops((await db.shops.toArray()).filter(s => !s.approved)); setStaff(new Map((await db.staff.toArray()).map(s => [s.id, s.name]))); })(); }, [tick]);
+  useEffect(() => { (async () => { setShops((await db.shops.toArray()).filter(s => !s.approved && !s.aliases.includes('rejected'))); setStaff(new Map((await db.staff.toArray()).map(s => [s.id, s.name]))); })(); }, [tick]);
   const approve = async (s: Shop) => {
     const lim = await askText(L('Credit limit ₹ (0 = cash only)', 'கடன் வரம்பு ₹ (0 = ரொக்கம்)'), '0'); if (lim === null) return;
     const days = Number(lim) > 0 ? Number(await askText(L('Credit days', 'கடன் நாட்கள்'), '7') ?? 7) : 0;
@@ -76,7 +76,7 @@ export function NewShops() {
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <button className="btn primary grow" onClick={() => approve(s)}><Check /> {L('Approve & set credit', 'ஒப்புதல் & கடன்')}</button>
             <a className="btn" href={`tel:${s.phone}`} aria-label="Call"><Phone /></a>
-            <button className="btn" onClick={async () => { const cs = new ChangeSet(); cs.put('shops', { ...s, aliases: [...s.aliases, 'rejected'] }, 'shop rejected'); await db.shops.delete(s.id); await cs.commit('Shop rejected'); setTick(x => x + 1); }} aria-label="Reject"><X /></button>
+            <button className="btn" onClick={async () => { const cs = new ChangeSet(); cs.put('shops', { ...s, approved: false, active: false, aliases: [...s.aliases, 'rejected'] } as Shop, 'shop rejected'); await cs.commit('Shop rejected'); setTick(x => x + 1); }} aria-label="Reject"><X /></button>
           </div>
         </div>
       ))}

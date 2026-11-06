@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Truck, ArrowRightLeft, Navigation, Clock } from 'lucide-react';
+import { Check, Truck, Navigation, Clock } from 'lucide-react';
+import { ask } from './dialog';
 import { db, today } from '../core/db';
 import { confirmPlan, suggestPlan, type PlanSuggestion } from '../core/pipeline';
 import { getLang, inr } from '../core/i18n';
@@ -33,47 +34,58 @@ export function Plan({ onDone }: { onDone: () => void }) {
     </div>
   );
   if (!plan) return <div className="muted">…</div>;
-  const move = (vi: number, si: number, dir: -1 | 1) => {
+  // one tap on a stop → a small menu: up, down, another van, tomorrow. No arrow clutter.
+  const stopMenu = async (vi: number, si: number) => {
     const p = plan.map(x => ({ ...x, shops: [...x.shops] }));
-    const arr = p[vi].shops; const j = si + dir; if (j < 0 || j >= arr.length) return;
-    [arr[si], arr[j]] = [arr[j], arr[si]]; setPlan(p);
-  };
-  const toVan = (vi: number, si: number) => {
-    const p = plan.map(x => ({ ...x, shops: [...x.shops] }));
-    const stop = p[vi].shops.splice(si, 1)[0];
-    const order = [...vans.map(v => v.id), ''];
-    const next = order[(order.indexOf(p[vi].van.id) + 1) % order.length];
-    let target = p.find(x => x.van.id === next);
-    if (!target) { const v = vans.find(x => x.id === next); if (!v) return; target = { van: v, shops: [] }; p.push(target); }
+    const here = p[vi]; const stop = here.shops[si];
+    const choices: { label: string; value: string }[] = [];
+    if (si > 0) choices.push({ label: L('↑ Earlier', '↑ முன்னே'), value: 'up' });
+    if (si < here.shops.length - 1) choices.push({ label: L('↓ Later', '↓ பின்னே'), value: 'down' });
+    for (const v of vans) if (v.id !== here.van.id) choices.push({ label: `→ ${v.name}`, value: `van:${v.id}` });
+    if (here.van.id !== '') choices.push({ label: L('Tomorrow', 'நாளைக்கு'), value: 'van:' });
+    const r = await ask(stop.shop.name, { message: `${stop.invoices.length} ${L('bill', 'பில்')} · ${inr(stop.value)}`, choices });
+    if (!r) return;
+    if (r === 'up' || r === 'down') { const j = si + (r === 'up' ? -1 : 1); [here.shops[si], here.shops[j]] = [here.shops[j], here.shops[si]]; setPlan(p); return; }
+    const id = r.slice(4);
+    here.shops.splice(si, 1);
+    let target = p.find(x => x.van.id === id);
+    if (!target) { const v = id ? vans.find(x => x.id === id) : ({ id: '', name: L('Tomorrow', 'நாளைக்கு'), number: '', kind: 'own' } as Van); if (!v) return; target = { van: v, shops: [] }; p.push(target); }
     target.shops.push(stop); setPlan(p);
   };
   const unplanned = plan.find(x => x.van.id === '')?.shops.length ?? 0;
   const total = plan.reduce((a, p) => a + p.shops.length, 0);
+  const bills = plan.reduce((a, p) => a + p.shops.reduce((b, s) => b + s.invoices.length, 0), 0);
+  const billsToday = plan.filter(x => x.van.id).reduce((a, p) => a + p.shops.reduce((b, s) => b + s.invoices.length, 0), 0);
+  const km = (p: PlanSuggestion) => { let d = 0; for (let i = 1; i < p.shops.length; i++) { const a = p.shops[i - 1].shop, b = p.shops[i].shop; if (a.lat && a.lng && b.lat && b.lng) d += Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 111 * Math.cos(a.lat * Math.PI / 180)); } return d ? `${d.toFixed(1)} km` : ''; };
   return (
     <div className="stack">
-      <div className="sechead"><h3>{L('Delivery plan', 'டெலிவரி திட்டம்')} · {total - unplanned} {L('stops', 'நிறுத்தங்கள்')}</h3><button className="link" onClick={() => setMode('ask')}>{mode === 'rox' ? L('Suggested by RoX', 'RoX பரிந்துரை') : L('Your route', 'உங்கள் வழி')} · {L('change', 'மாற்று')}</button></div>
-      {unplanned > 0 && <div className="alert"><Clock /><div>{unplanned} {L('stop(s) not on any van yet — tap ⇄ to move them', 'நிறுத்தங்கள் வண்டியில் இல்லை — ⇄ தட்டி நகர்த்தவும்')}</div></div>}
-      {plan.map((p, vi) => (
-        <div key={p.van.id} className="card stack" style={{ gap: 8 }}>
+      <div className="kpi navy">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <div><div className="v">{billsToday}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{bills} {L('bills', 'பில்')}</span></div><div className="l">{L('today', 'இன்று')} · {plan.filter(x => x.van.id && x.shops.length).length} {L('van(s)', 'வண்டி')} · {total - unplanned} {L('stops', 'நிறுத்தம்')}{unplanned ? ` · ${unplanned} ${L('tomorrow', 'நாளைக்கு')}` : ''}</div></div>
+          <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? L('RoX plan', 'RoX திட்டம்') : L('My route', 'என் வழி')} · {L('change', 'மாற்று')}</button>
+        </div>
+      </div>
+      <div className="muted">{L('Tap a stop to move it earlier, later, to another van, or to tomorrow.', 'நிறுத்தத்தை தட்டி முன்/பின்/வேறு வண்டி/நாளைக்கு மாற்றலாம்.')}</div>
+      {plan.filter(x => x.van.id || x.shops.length).map(p => (
+        <div key={p.van.id || 'tomorrow'} className="card stack" style={{ gap: 8, borderStyle: p.van.id ? 'solid' : 'dashed' }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
-            <b style={{ fontSize: 17 }}><Truck size={18} style={{ verticalAlign: -3 }} /> {p.van.name} <span className="muted">{p.van.number}</span></b>
-            <span className="badge navy">{p.shops.length} {L('stops', 'நிறுத்தம்')} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}</span>
+            <b style={{ fontSize: 17 }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
+            <span className={`badge ${p.van.id ? 'navy' : 'warn'}`}>{p.shops.length} {L('stops', 'நிறுத்தம்')} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}{p.van.id && km(p) ? ` · ${km(p)}` : ''}</span>
           </div>
           <div className="route">
             {p.shops.map((s, si) => (
-              <div key={s.shop.id} className="stop row" style={{ flexWrap: 'nowrap', minHeight: 48 }}>
-                <span className="badge">{si + 1}</span>
-                <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {L('bill', 'பில்')} · {inr(s.value)}</div></div>
-                <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => move(vi, si, -1)} aria-label="Up"><ChevronUp /></button>
-                <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => move(vi, si, 1)} aria-label="Down"><ChevronDown /></button>
-                <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => toVan(vi, si)} aria-label="Other van"><ArrowRightLeft /></button>
-              </div>
+              <button key={s.shop.id} className="stop item tap" style={{ minHeight: 52 }} onClick={() => stopMenu(plan.indexOf(p), si)}>
+                <span className="badge">{p.van.id ? si + 1 : '—'}</span>
+                <div className="grow" style={{ textAlign: 'left' }}><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {L('bill', 'பில்')} · {inr(s.value)}</div></div>
+                <span className="muted">⋯</span>
+              </button>
             ))}
+            {!p.shops.length && <div className="muted" style={{ padding: '6px 0' }}>{L('No stops — tap a stop on another van and choose this one.', 'நிறுத்தம் இல்லை.')}</div>}
           </div>
         </div>
       ))}
       {!plan.length && <div className="card muted">{L('No bills waiting for delivery.', 'டெலிவரிக்கு பில் இல்லை.')}</div>}
-      {plan.length > 0 && <button className="btn primary big block" disabled={total - unplanned === 0} onClick={async () => { await confirmPlan(plan.filter(x => x.van.id)); onDone(); }}><Check /> {L('Confirm plan → load sheets', 'உறுதி → லோடு ஷீட்')}{unplanned ? ` (${unplanned} ${L('wait for tomorrow', 'நாளைக்கு')})` : ''}</button>}
+      {plan.length > 0 && <button className="btn primary big block" disabled={total - unplanned === 0} onClick={async () => { await confirmPlan(plan.filter(x => x.van.id)); onDone(); }}><Check /> {L('Confirm plan → load sheets', 'உறுதி → லோடு ஷீட்')}{unplanned ? ` (${unplanned} ${L('tomorrow', 'நாளைக்கு')})` : ''}</button>}
       <TodayTrips />
     </div>
   );

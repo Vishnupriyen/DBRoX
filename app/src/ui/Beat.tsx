@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MapPin, ChevronRight, Phone, IndianRupee, PackageCheck, Store, AlertTriangle } from 'lucide-react';
-import { ChangeSet, db, nowIso, session, today } from '../core/db';
+import { ChangeSet, db, nowIso, session, today, activeShops } from '../core/db';
 import { shopOutstanding } from '../core/ledger';
 import { inr, t } from '../core/i18n';
 import type { Shop, Visit } from '../core/types';
@@ -22,12 +22,12 @@ export function Beat({ lang }: { lang: 'en' | 'ta' }) {
   useEffect(() => {
     (async () => {
       const me = session().userId;
-      const shops = (await db.shops.toArray()).filter(s => s.salesmanId === me || !s.salesmanId);
+      const shops = (await activeShops()).filter(s => s.salesmanId === me || !s.salesmanId);
       const visits = (await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === me);
       const orders = await db.orders.toArray();
       const list: Stop[] = [];
       for (const shop of shops) {
-        if (!showAll && shop.beat !== DAYS[dayIdx]) continue;
+        if (!showAll && shop.beat !== DAYS[dayIdx] && !shop.aliases.includes(`beat:${DAYS[dayIdx]}`)) continue;
         const o = await shopOutstanding(shop.id);
         const mine = orders.filter(x => x.shopId === shop.id && x.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date));
         list.push({ shop, due: o.total, overdue: o.maxOverdueDays, lastOrder: mine[0]?.date, visit: visits.find(v => v.shopId === shop.id), billedToday: mine[0]?.date === today() });

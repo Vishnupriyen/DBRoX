@@ -145,26 +145,26 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (file) {
     if (has(text, W.bank)) {
       if (!can(role, 'bank')) return deny();
-      return need('bank', mods) ?? bankProposal(file);
+      return need('accountant', mods) ?? bankProposal(file);
     }
     if (has(text, W.products) && isSheet(file)) return importProducts(file);
     if (has(text, W.shops) && isSheet(file)) return importShops(file);
     if (has(text, W.expense)) return expenseFromFile(file, textIn);
-    if (has(text, W.damage)) { const r = need('claims', mods); if (r) return r; return damageProposal(textIn, file); }
+    if (has(text, W.damage)) { const r = need('inventory', mods); if (r) return r; return damageProposal(textIn, file); }
     if (has(text, W.order) || has(text, ['diary'])) {
-      const r = need('orders', mods) ?? need('scan', mods); if (r) return r;
+      const r = need('sales', mods) ?? need('inventory', mods); if (r) return r;
       return orderFromPhoto(file, textIn);
     }
     if (!can(role, 'purchase')) return deny();
-    const r = need('godown', mods); if (r) return r;
+    const r = need('inventory', mods); if (r) return r;
     return purchaseProposal(file);
   }
 
   // ------------------------ exports ------------------------
-  if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny(); return need('accounts', mods) ?? exportTally(monthIn(text)); }
-  if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny(); return need('accounts', mods) ?? exportGstr1(monthIn(text)); }
-  if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny(); return need('accounts', mods) ?? exportEinvoice(monthIn(text)); }
-  if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('claims', mods) ?? exportClaims(monthIn(text)); }
+  if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportTally(monthIn(text)); }
+  if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
+  if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
+  if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
   // ------------------------ actions ------------------------
   const shops = await db.shops.toArray();
@@ -172,7 +172,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
 
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
-  if (has(text, W.damage) && !has(text, W.outstanding)) { const r = need('claims', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
+  if (has(text, W.damage) && !has(text, W.outstanding)) { const r = need('inventory', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
   if (shop && has(text, W.ret)) { if (!can(role, 'return')) return deny(); return returnProposal(shop.id, rest); }
   if (shop && has(text, W.paid) && findAmount(rest) != null) {
     const r = need('collection', mods); if (r) return r;
@@ -187,7 +187,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   // ------------------------ questions ------------------------
   if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
   if (has(text, W.cashHand)) return cashInHand();
-  if (has(text, W.loadSheet)) { const r = need('godown', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
+  if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
   if (has(text, W.sales)) return salesToday();
@@ -195,7 +195,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   // ------------------------ orders ------------------------
   const lines = parseItemLines(shop ? rest : textIn);
   if (shop && lines.length) {
-    const r = need('orders', mods) ?? (mods.billing ? null : null); if (r) return r;
+    const r = need('sales', mods) ?? (mods.bill ? null : null); if (r) return r;
     if (!can(role, 'order')) return deny();
     return orderProposal(shop.id, shop ? rest : textIn);
   }

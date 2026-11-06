@@ -1,0 +1,22 @@
+{
+  "_comment": "ONE list of every synced table and who may read/write it. The phone (app/src/core/sync.ts) and the server (server/src/app.ts) both load this file, so a table cannot exist on one side only.",
+  "tables": ["settings", "staff", "companies", "products", "shops", "batches", "schemes", "orders", "invoices", "creditNotes", "payments", "purchases", "expenses", "bankLines", "claimEntries", "claims", "vans", "audit", "visits", "targets", "trips", "dayCloses", "dayPlans", "liteEntries", "checkIns", "leaves", "advances"],
+  "read": {
+    "owner": "*",
+    "office": "*",
+    "salesman": ["settings", "staff", "companies", "products", "shops", "batches", "schemes", "orders", "invoices", "creditNotes", "payments", "vans", "visits", "targets", "checkIns", "leaves", "advances", "dayPlans", "liteEntries"],
+    "godown": ["settings", "staff", "companies", "products", "batches", "orders", "invoices", "purchases", "claimEntries", "vans", "shops", "trips", "checkIns", "leaves", "advances"],
+    "delivery": ["settings", "staff", "companies", "products", "shops", "invoices", "creditNotes", "payments", "vans", "batches", "trips", "checkIns", "leaves", "advances", "dayPlans", "liteEntries", "expenses"]
+  },
+  "write": {
+    "owner": "*",
+    "office": ["staff", "companies", "products", "shops", "batches", "schemes", "orders", "invoices", "creditNotes", "payments", "purchases", "expenses", "bankLines", "claimEntries", "claims", "vans", "audit", "visits", "targets", "trips", "dayCloses", "dayPlans", "liteEntries", "checkIns", "leaves", "advances"],
+    "salesman": ["orders", "shops", "payments", "visits", "checkIns", "leaves", "advances", "liteEntries", "expenses", "audit"],
+    "godown": ["orders", "batches", "purchases", "products", "claimEntries", "trips", "checkIns", "leaves", "advances", "audit"],
+    "delivery": ["invoices", "payments", "batches", "claimEntries", "trips", "shops", "checkIns", "leaves", "advances", "liteEntries", "expenses", "audit"]
+  },
+  "ownerOnlyFields": {
+    "products": ["purchaseRate"],
+    "settings": ["upiId"]
+  }
+}

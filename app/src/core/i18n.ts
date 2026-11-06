@@ -27,6 +27,7 @@ const T = {
   sales: { en: 'Sales', ta: 'விற்பனை' },
   collected: { en: 'Collected', ta: 'வசூலானது' },
   outstanding: { en: 'Outstanding', ta: 'நிலுவை' },
+  edit: { en: 'Edit', ta: 'மாற்று' },
   cashInHand: { en: 'Cash in hand', ta: 'கையிருப்பு பணம்' },
   needsOk: { en: 'Needs your OK', ta: 'உங்கள் ஒப்புதல் தேவை' },
   alerts: { en: 'Alerts', ta: 'எச்சரிக்கைகள்' },
@@ -51,7 +52,7 @@ const T = {
   bills: { en: 'Bills', ta: 'பில்கள்' },
   noItems: { en: 'Nothing here yet', ta: 'இங்கு இன்னும் எதுவும் இல்லை' },
   offline: { en: 'Offline — saved on phone, will sync', ta: 'இணையம் இல்லை — போனில் சேமிக்கப்பட்டது' },
-  takePhoto: { en: 'Take shop photo', ta: 'கடை புகைப்படம் எடு' },
+  takePhoto: { en: 'Take photo', ta: 'போட்டோ எடு' },
   print: { en: 'Print', ta: 'அச்சிடு' },
   settle: { en: 'Receive cash', ta: 'பணம் பெறு' },
 } as const;

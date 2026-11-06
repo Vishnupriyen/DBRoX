@@ -21,7 +21,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
   const [qr, setQr] = useState<string>();
   const [showQr, setShowQr] = useState(false);
   useEffect(() => { invoiceBalances(shop.id).then(bs => { const list = bs.filter(b => b.balance > 0.5).sort((a, b) => a.invoice.date.localeCompare(b.invoice.date)).map(b => ({ id: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: b.balance })); setBills(list); if (!preferInvoiceIds.length && list.length) setSel(new Set([list[0].id])); }); }, [shop.id]);
-  useEffect(() => { (async () => { const s = await getSettings(); const upi = s.upiId ?? 'dbrox@upi'; setQr(await QRCode.toDataURL(`upi://pay?pa=${upi}&pn=${encodeURIComponent(s.firmName)}&am=${amount || ''}&cu=INR`, { width: 480, margin: 1 })); })(); }, [amount]);
+  useEffect(() => { (async () => { const s = await getSettings(); if (!s.upiId) { setQr(undefined); return; } setQr(await QRCode.toDataURL(`upi://pay?pa=${s.upiId}&pn=${encodeURIComponent(s.firmName)}&am=${amount || ''}&cu=INR`, { width: 480, margin: 1 })); })(); }, [amount]);
 
   const chosen = bills.filter(b => sel.has(b.id));
   const due = r2(chosen.reduce((a, b) => a + b.balance, 0));
@@ -56,7 +56,8 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
         <div className="segmented">{(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={mode === m ? 'on' : ''} onClick={() => { setMode(m); setShowQr(m === 'upi'); }}>{t(m)}</button>)}</div>
         {mode === 'upi' && <>
           {showQr && qr && <div className="qr"><img src={qr} alt="UPI QR" /><div className="muted" style={{ marginTop: 6 }}>{L('Shop scans this', 'கடை இதை ஸ்கேன் செய்யும்')}{amount ? ` · ${inr(amount)}` : ''}</div></div>}
-          {!showQr && <button className="btn" onClick={() => setShowQr(true)}><QrCode /> {L('Show QR', 'QR காட்டு')}</button>}
+          {!showQr && qr && <button className="btn" onClick={() => setShowQr(true)}><QrCode /> {L('Show QR', 'QR காட்டு')}</button>}
+          {!qr && <div className="alert"><AlertTriangle /><div>{L('Owner has not set the UPI ID yet (More → Settings). Shop can pay to the usual number.', 'உரிமையாளர் UPI ID அமைக்கவில்லை.')}</div></div>}
           <div className="field"><label>{L('UPI ref (last 4 digits)', 'UPI குறிப்பு (கடைசி 4)')}</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>
           <PhotoButton facing="environment" onPhoto={setPhoto} label={L('Photo of payment screen', 'பணம் அனுப்பிய திரை போட்டோ')} />
         </>}

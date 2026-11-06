@@ -9,6 +9,8 @@ export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: Num
 export async function migrate(p: pg.Pool = pool) {
   const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'db');
   await p.query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
+  await p.query('SELECT pg_advisory_lock(727001)'); // several Cloud Run instances may start at once: one migrates, others wait
+  try {
   const done = new Set((await p.query('SELECT version FROM schema_migrations')).rows.map(r => r.version));
   for (const f of readdirSync(dir).filter(x => x.endsWith('.sql')).sort()) {
     if (done.has(f)) continue;
@@ -20,4 +22,5 @@ export async function migrate(p: pg.Pool = pool) {
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
+  } finally { await p.query('SELECT pg_advisory_unlock(727001)'); }
 }

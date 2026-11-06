@@ -20,7 +20,12 @@ export async function invoiceBalances(shopId?: string): Promise<InvoiceBalance[]
   for (const c of cns) credBy.set(c.invoiceId, (credBy.get(c.invoiceId) ?? 0) + c.total);
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
   const t = new Date(today()).getTime();
-  return live.map(invoice => {
+  // Shop advance = excess paid + anything paid against a bill that was later cancelled. It is carried to the
+  // shop's oldest open bills automatically, so every screen shows the same balance (locked spec 15.1 Collection).
+  const cancelledIds = new Set(invs.filter(i => i.cancelled).map(i => i.id));
+  const advBy = new Map<string, number>();
+  for (const p of pays) { let a = p.advance || 0; for (const x of p.allocations) if (cancelledIds.has(x.invoiceId)) a += x.amount; if (a) advBy.set(p.shopId, r2((advBy.get(p.shopId) ?? 0) + a)); }
+  const rows = live.map(invoice => {
     const paid = paidBy.get(invoice.id) ?? 0;
     const credited = credBy.get(invoice.id) ?? 0;
     const balance = r2(invoice.total - paid - credited);
@@ -29,12 +34,17 @@ export async function invoiceBalances(shopId?: string): Promise<InvoiceBalance[]
     const overdueDays = balance > 0.5 ? Math.max(0, Math.floor((t - due) / 86400000)) : 0;
     return { invoice, paid, credited, balance, overdueDays };
   }).sort((a, b) => a.invoice.date.localeCompare(b.invoice.date) || a.invoice.number.localeCompare(b.invoice.number));
+  for (const r of rows) { const adv = advBy.get(r.invoice.shopId) ?? 0; if (adv > 0 && r.balance > 0) { const use = Math.min(adv, r.balance); r.balance = r2(r.balance - use); r.paid = r2(r.paid + use); advBy.set(r.invoice.shopId, r2(adv - use)); if (r.balance <= 0.5) r.overdueDays = 0; } }
+  return rows;
 }
 
 export async function shopOutstanding(shopId: string) {
   const bal = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
-  const advance = (await db.payments.where('shopId').equals(shopId).toArray())
-    .filter(p => p.status === 'ok').reduce((s, p) => s + (p.advance || 0), 0);
+  // advance is already applied to the oldest bills inside invoiceBalances; what is left is unused advance
+  const all = await invoiceBalances(shopId);
+  const paidTotal = all.reduce((s, b) => s + b.paid, 0);
+  const pays = (await db.payments.where('shopId').equals(shopId).toArray()).filter(p => p.status === 'ok' || p.status === 'waiting_shop');
+  const advance = r2(Math.max(0, pays.reduce((s, p) => s + p.amount, 0) - paidTotal));
   return {
     total: r2(bal.reduce((s, b) => s + b.balance, 0) - advance),
     overdue: r2(bal.filter(b => b.overdueDays > 0).reduce((s, b) => s + b.balance, 0)),

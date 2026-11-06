@@ -83,7 +83,7 @@ function finYear(date: string) {
   return `${String(start).slice(2)}-${String(start + 1).slice(2)}`;
 }
 
-export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Promise<Invoice[]> {
+export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numbers?: { first: number; prefix: string }): Promise<Invoice[]> {
   const settings = await getSettings();
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
@@ -103,7 +103,12 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Pro
     for (const l of lines) {
       const p = products.get(l.productId)!;
       const sch = applySchemes(p, l.qty, l.rate, activeSchemes(schemes, p, date));
-      const { picks } = pickBatches(batches, p.id, l.qty + sch.freeQty, date);
+      // the picker's batch first (what is physically in the van), the rest oldest-expiry first
+      const picks: ReturnType<typeof pickBatches>['picks'] = [];
+      let need = l.qty + sch.freeQty;
+      const chosen = l.batchId ? batches.find(b => b.id === l.batchId && b.qty > 0) : undefined;
+      if (chosen) { const take = Math.min(chosen.qty, need); picks.push({ batchId: chosen.id, batch: chosen.batch, qty: take, expiry: chosen.expiry }); need -= take; }
+      if (need > 0) picks.push(...pickBatches(batches.filter(b => b.id !== chosen?.id), p.id, need, date).picks);
       for (const pk of picks) {
         const b = batches.find(x => x.id === pk.batchId)!;
         b.qty -= pk.qty;
@@ -113,7 +118,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Pro
       const tax = r2(taxable * p.gst / 100);
       invLines.push({
         productId: p.id, name: p.name, nameTa: p.nameTa, hsn: p.hsn, qty: l.qty, freeQty: sch.freeQty,
-        rate: l.rate, mrp: p.mrp, gross: sch.gross, discount: sch.discount, taxable, gst: p.gst,
+        rate: l.rate, mrp: l.mrp ?? p.mrp, gross: sch.gross, discount: sch.discount, taxable, gst: p.gst,
         cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0,
         total: r2(taxable + tax), batches: picks, schemeNames: sch.names,
       });
@@ -126,9 +131,9 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Pro
     const total = Math.round(exact);
     const freeValue = invLines.reduce((s, x) => s + x.freeQty * x.rate, 0);
     // One running series for the distributor; several companies in one order take consecutive numbers.
-    const number = `${settings.billPrefix ?? 'DBX'}/${finYear(date)}/${String(settings.nextBillNo ?? 1).padStart(5, '0')}`;
-    settings.nextBillNo = (settings.nextBillNo ?? 1) + 1;
-    cs.put('settings', { ...settings }, 'bill number');
+    let number: string;
+    if (numbers) { number = `${numbers.prefix}/${finYear(date)}/${String(numbers.first).padStart(5, '0')}`; numbers.first += 1; } // issued by the server
+    else { number = `${settings.billPrefix ?? 'DBX'}/${finYear(date)}/${String(settings.nextBillNo ?? 1).padStart(5, '0')}`; settings.nextBillNo = (settings.nextBillNo ?? 1) + 1; cs.put('settings', { ...settings }, 'bill number'); }
     const inv = cs.put<Invoice>('invoices', {
       number, companyId, shopId: shop.id, orderId: order.id, date, kind: isB2B(shop) ? 'B2B' : 'B2C',
       lines: invLines, taxable, cgst, sgst, igst, roundOff: r2(total - exact), total,

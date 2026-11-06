@@ -6,7 +6,8 @@ import { Pack } from './Pack';
 import { ChangeSet, db, getSettings, nowIso, session, today } from '../core/db';
 import { PayBox } from './PayBox';
 import { r2 } from '../core/ledger';
-import { inr, t } from '../core/i18n';
+import { getLang, inr, t } from '../core/i18n';
+const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 import type { Invoice, Product, Shop, Trip } from '../core/types';
 import { ask, askText, confirmBox } from './dialog';
 
@@ -49,11 +50,11 @@ export function Delivery() {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
+          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? L('on the road', 'சாலையில்') : trip.status === 'loaded' ? L('loaded, ready to go', 'ஏற்றியது, தயார்') : L('being loaded', 'ஏற்றுகிறது')) : L('no trip today', 'இன்று டிரிப் இல்லை')}</div></div>
           {trip && trip.status === 'out' && <span className="badge gold"><Navigation size={12} /> live</span>}
         </div>
       </div>
-      {trip && trip.status !== 'out' && <button className="btn primary big block" disabled={trip.status === 'planned'} onClick={async () => { await startTrip(trip.id); setTick(x => x + 1); }}><Navigation /> {trip.status === 'planned' ? 'Waiting for godown to load' : 'Start trip'}</button>}
+      {trip && trip.status !== 'out' && <button className="btn primary big block" disabled={trip.status === 'planned'} onClick={async () => { await startTrip(trip.id); setTick(x => x + 1); }}><Navigation /> {trip.status === 'planned' ? L('Waiting for godown to load', 'கிடங்கு ஏற்றும் வரை காத்திருங்கள்') : L('Start trip', 'டிரிப் தொடங்கு')}</button>}
       <div className="route">
         {stops.map((s, k) => {
           const st = s.invoices[0].deliveryStatus;
@@ -68,7 +69,7 @@ export function Delivery() {
         })}
         {!stops.length && <div className="card muted">{t('noItems')}</div>}
       </div>
-      {trip?.status === 'out' && <button className="btn big block" onClick={() => setEnding(true)}><Flag /> End trip{left.length ? ` (${left.length} not delivered)` : ''}</button>}
+      {trip?.status === 'out' && <button className="btn big block" onClick={() => setEnding(true)}><Flag /> {L('End trip', 'டிரிப் முடி')}{left.length ? ` (${left.length} ${L('not delivered', 'டெலிவரி ஆகவில்லை')})` : ''}</button>}
     </div>
   );
 }
@@ -77,18 +78,18 @@ function EndTrip({ trip, stops, onDone }: { trip: Trip; stops: Stop[]; onDone: (
   const [what, setWhat] = useState<Record<string, 'godown' | 'van' | 'next'>>({});
   return (
     <div className="stack">
-      <div className="sechead"><h3>End trip</h3></div>
+      <div className="sechead"><h3>{L('End trip', 'டிரிப் முடி')}</h3></div>
       {stops.map(s => (
         <div key={s.shop.id} className="card">
-          <b>{s.shop.name}</b> <span className="muted">· not delivered. Goods are:</span>
+          <b>{s.shop.name}</b> <span className="muted">· {L('not delivered. Goods are:', 'டெலிவரி ஆகவில்லை. பொருட்கள்:')}</span>
           <div className="segmented" style={{ marginTop: 8 }}>
-            {([['godown', 'Back in godown'], ['van', 'Kept in van'], ['next', 'Next visit']] as const).map(([k, l]) => <button key={k} className={(what[s.invoices[0].id] ?? 'next') === k ? 'on' : ''} onClick={() => setWhat(w => { const n = { ...w }; for (const i of s.invoices) n[i.id] = k; return n; })}>{l}</button>)}
+            {([['godown', L('Back in godown', 'கிடங்கில்')], ['van', L('Kept in van', 'வண்டியில்')], ['next', L('Next visit', 'அடுத்த முறை')]] as const).map(([k, l]) => <button key={k} className={(what[s.invoices[0].id] ?? 'next') === k ? 'on' : ''} onClick={() => setWhat(w => { const n = { ...w }; for (const i of s.invoices) n[i.id] = k; return n; })}>{l}</button>)}
           </div>
         </div>
       ))}
-      {!stops.length && <div className="card ok" style={{ background: 'var(--ok-soft)' }}>Every stop done. 🎉</div>}
-      <button className="btn primary big block" onClick={async () => { await endTrip(trip.id, what); onDone(); }}><Check /> Trip over — back at godown</button>
-      <button className="btn ghost block" onClick={onDone}>Cancel</button>
+      {!stops.length && <div className="card ok" style={{ background: 'var(--ok-soft)' }}>{L('Every stop done.', 'எல்லா நிறுத்தமும் முடிந்தது.')} 🎉</div>}
+      <button className="btn primary big block" onClick={async () => { await endTrip(trip.id, what); onDone(); }}><Check /> {L('Trip over — back at godown', 'டிரிப் முடிந்தது — கிடங்கில்')}</button>
+      <button className="btn ghost block" onClick={onDone}>{t('cancel')}</button>
     </div>
   );
 }
@@ -155,7 +156,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
     <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
       <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
       <h2>{stop.shop.name}</h2>
-      <button className="btn big primary block" onClick={onClose}>Next shop →</button>
+      <button className="btn big primary block" onClick={onClose}>{L('Next shop →', 'அடுத்த கடை →')}</button>
     </div>
   );
 
@@ -172,18 +173,18 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
       <div>
         <div className="sechead"><h3>{stop.shop.name}</h3></div>
         <div className="card stack" style={{ textAlign: 'center' }}>
-          <div className="eyebrow">Goods delivered</div>
+          <div className="eyebrow">{L('Goods delivered', 'டெலிவரி பொருட்கள்')}</div>
           <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
-          {shortValue > 0 && <div><span className="badge warn">Short {inr(shortValue)}</span></div>}
-          {extraValue > 0 && <div><span className="badge warn">Extra {inr(extraValue)}</span></div>}
+          {shortValue > 0 && <div><span className="badge warn">{L('Short', 'குறைவு')} {inr(shortValue)}</span></div>}
+          {extraValue > 0 && <div><span className="badge warn">{L('Extra', 'கூடுதல்')} {inr(extraValue)}</span></div>}
           <div className="row" style={{ justifyContent: 'center', gap: 8 }}>
-            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label="1. Shop photo" />{shopPhoto && <span className="muted" style={{ fontSize: 12 }}>{pos ? (distanceM != null ? `${distanceM} m from shop` : 'location saved') : 'no GPS — marked'}</span>}</div>
-            {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label="2. Signed bill / GRN" />}
+            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label={L('1. Shop photo', '1. கடை போட்டோ')} />{shopPhoto && <span className="muted" style={{ fontSize: 12 }}>{pos ? (distanceM != null ? `${distanceM} m ${L('from shop', 'கடையிலிருந்து')}` : L('location saved', 'இடம் பதிவானது')) : L('no GPS — marked', 'GPS இல்லை — குறிக்கப்பட்டது')}</span>}</div>
+            {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label={L('2. Signed bill / GRN', '2. கையொப்பமிட்ட பில்')} />}
           </div>
           <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
           <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
-          {!ready && <div className="muted" style={{ fontSize: 12 }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
-          <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> Back</button>
+          {!ready && <div className="muted" style={{ fontSize: 12 }}>{grn ? L('Both photos are needed', 'இரண்டு போட்டோவும் தேவை') : L('Shop photo is needed', 'கடை போட்டோ தேவை')}</div>}
+          <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> {L('Back', 'பின்')}</button>
         </div>
       </div>
     );
@@ -217,12 +218,12 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                   </div>
                   <div className="stack" style={{ gap: 4 }}>
                     <button className="btn small" onClick={async () => {
-                      const raw = await askText(`${t('short')}: how many pieces of ${l.name}?`, String(s?.qty ?? ''), 'number');
+                      const raw = await askText(`${t('short')}: ${l.name} — ${L('how many pieces?', 'எத்தனை பீஸ்?')}`, String(s?.qty ?? ''), 'number');
                       if (raw == null) return; const q = Number(raw); if (!Number.isFinite(q)) return;
-                      const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
+                      const reason = q ? (await ask(L('Why?', 'ஏன்?'), { choices: [{ label: L('Not loaded / short', 'ஏற்றவில்லை / குறைவு'), value: 'short' }, { label: L('Shop refused', 'கடை மறுத்தது'), value: 'refused' }, { label: L('Damaged in van', 'வண்டியில் சேதம்'), value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
                       setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
                     }}>{t('short')}</button>
-                    <button className="btn small" onClick={async () => { const raw = await askText(`Extra pieces of ${l.name} given from the van?`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>Extra</button>
+                    <button className="btn small" onClick={async () => { const raw = await askText(`${L('Extra pieces of', 'கூடுதல் பீஸ்')} ${l.name} ${L('given from the van?', 'வண்டியிலிருந்து கொடுத்தது?')}`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>{L('Extra', 'கூடுதல்')}</button>
                   </div>
                 </div>
               );
@@ -231,7 +232,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         </div>
       ))}
       <button className="btn big primary block" onClick={() => setStep('confirm')}><Check /> {t('delivered')}</button>
-      <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown. The owner decides the bill at day close.', 'Refused')) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
+      <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox(L('Shop refused everything?', 'கடை எல்லாவற்றையும் மறுத்ததா?'), L('All goods go back to the godown. The owner decides the bill at day close.', 'பொருட்கள் கிடங்கிற்கு. உரிமையாளர் நாள் முடிவில் முடிவு செய்வார்.'), L('Refused', 'மறுத்தது'))) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
     </div>
   );
 }

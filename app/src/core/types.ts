@@ -4,20 +4,18 @@
 
 export type Role = 'owner' | 'office' | 'salesman' | 'godown' | 'delivery';
 
-export type ModuleKey =
-  | 'orders' | 'billing' | 'godown' | 'delivery' | 'collection'
-  | 'bank' | 'accounts' | 'claims' | 'scan';
+// The eight locked modules (spec 15.1). Switched from the DBRoX console, never shown to the distributor.
+export type ModuleKey = 'sales' | 'bill' | 'inventory' | 'delivery' | 'collection' | 'accountant' | 'gst' | 'payroll';
 
 export const MODULES: { key: ModuleKey; name: string }[] = [
-  { key: 'orders', name: 'RoX Orders' },
-  { key: 'billing', name: 'RoX Billing' },
-  { key: 'godown', name: 'RoX Godown' },
+  { key: 'sales', name: 'RoX Sales' },
+  { key: 'bill', name: 'RoX Bill' },
+  { key: 'inventory', name: 'RoX Inventory' },
   { key: 'delivery', name: 'RoX Delivery' },
   { key: 'collection', name: 'RoX Collection' },
-  { key: 'bank', name: 'RoX Bank' },
-  { key: 'accounts', name: 'RoX Accounts' },
-  { key: 'claims', name: 'RoX Claim Prep' },
-  { key: 'scan', name: 'RoX Scan' },
+  { key: 'accountant', name: 'RoX Accountant' },
+  { key: 'gst', name: 'RoX GST' },
+  { key: 'payroll', name: 'RoX Payroll' },
 ];
 
 export interface Base {
@@ -45,6 +43,7 @@ export interface Settings extends Base {
   checkInBy?: string;       // 'HH:MM' — check-in after this is "late"
   grnPhoto?: boolean;       // second delivery photo (signed bill / GRN); owner can switch off
   upiId?: string;           // shown as QR at collection
+  godownLat?: number; godownLng?: number; // check-in distance is measured from here
 }
 
 export interface Staff extends Base {
@@ -54,6 +53,7 @@ export interface Staff extends Base {
   pin: string; // local only; server keeps a hash
   active: boolean;
   vanId?: string;
+  salary?: number; batta?: number; // per month / per present day
   kind?: 'db' | 'company_rep'; // company rep sees only his company's products
   companyId?: string;
 }
@@ -103,6 +103,7 @@ export interface Shop extends Base {
   tradeDiscountPct?: number;
   creditMode?: 'days' | 'limit' | 'bill_to_bill' | 'none';
   diffPref?: 'modified' | 'credit_note'; // how this shop wants delivery differences handled
+  active?: boolean; // false = rejected / closed shop; hidden everywhere
 }
 
 export interface Batch extends Base {
@@ -128,7 +129,7 @@ export interface Scheme extends Base {
   combine: 'add' | 'replace';
 }
 
-export interface OrderLine { productId: string; qty: number; rate: number }
+export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number } // batch/MRP chosen by the picker
 
 export interface Order extends Base {
   shopId: string;
@@ -320,6 +321,8 @@ export interface LeaveRequest extends Base {
 }
 export interface Advance extends Base {
   staffId: string; amount: number; reason: string; status: 'waiting' | 'approved' | 'rejected'; instalments?: number; recovered?: number;
+  kind?: 'advance' | 'shortfall'; // shortfall = cash not handed over at day close; shown daily until cleared
+  date?: string;
 }
 export interface LiteEntry extends Base {
   date: string;

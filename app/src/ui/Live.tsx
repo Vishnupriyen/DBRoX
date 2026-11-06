@@ -1,33 +1,65 @@
 import { useEffect, useState } from 'react';
-import { Navigation, Check, Clock, Truck } from 'lucide-react';
+import { Navigation, Check, Clock, Truck, AlertTriangle, Flag } from 'lucide-react';
+import { ownerEndTrip } from '../core/pipeline';
+import { confirmBox } from './dialog';
 import { db, today } from '../core/db';
 import { getLang, inr } from '../core/i18n';
-import type { Invoice, Trip } from '../core/types';
+import type { Invoice, Shop, Trip } from '../core/types';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
-interface Row { trip: Trip; van: string; driver: string; stops: { name: string; status: Invoice['deliveryStatus']; value: number }[]; lastSeen?: string }
+interface Row { trip: Trip; van: string; driver: string; stops: { name: string; status: Invoice['deliveryStatus']; value: number; shop?: Shop }[]; lastSeen?: string; alerts: string[] }
+
+// Fixed rules, no settings (spec 15.1 Delivery): off route > 800 m from the line between last and next stop for 5 min;
+// idle > 20 min away from any planned stop; phone off = no point for 10 min. One 45-minute break between 12:00 and 15:00 is not flagged.
+function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }) { return Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 111 * Math.cos(a.lat * Math.PI / 180)); }
+function alertsFor(t: Trip, stops: { status: Invoice['deliveryStatus']; shop?: Shop }[], L: (a: string, b: string) => string): string[] {
+  if (t.status !== 'out') return [];
+  const out: string[] = []; const tr = t.track; const now = Date.now();
+  if (!tr.length) return [L('no location yet', 'இடம் இன்னும் இல்லை')];
+  const last = tr[tr.length - 1]; const silent = (now - new Date(last.at).getTime()) / 60000;
+  if (silent > 10) out.push(L(`phone off / no signal for ${Math.round(silent)} min`, `${Math.round(silent)} நிமிடமாக போன் ஆஃப்`));
+  // idle: all points in the last 20 min within 100 m, and not near a planned stop
+  const recent = tr.filter(p => now - new Date(p.at).getTime() <= 20 * 60000);
+  if (recent.length >= 2 && (new Date(recent[recent.length - 1].at).getTime() - new Date(recent[0].at).getTime()) >= 19 * 60000) {
+    const spread = Math.max(...recent.map(p => km(p, recent[0])));
+    const nearStop = stops.some(s => s.shop?.lat && s.shop.lng && km(last, { lat: s.shop.lat, lng: s.shop.lng }) < 0.15);
+    const h = new Date(last.at).getHours(); const lunch = h >= 12 && h < 15 && (now - new Date(recent[0].at).getTime()) <= 45 * 60000;
+    if (spread < 0.1 && !nearStop && !lunch) out.push(L('stopped 20+ min at an unplanned place', '20+ நிமிடம் திட்டமிடாத இடத்தில் நின்றுள்ளது'));
+  }
+  // off route: distance from the segment between the last done stop and the next stop
+  const done = stops.filter(s => ['delivered', 'partial', 'returned'].includes(s.status)); const next = stops.find(s => !['delivered', 'partial', 'returned'].includes(s.status));
+  const a = done[done.length - 1]?.shop; const b = next?.shop;
+  if (a?.lat && a.lng && b?.lat && b.lng) {
+    const seg = km({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng });
+    const d = Math.min(km(last, { lat: a.lat, lng: a.lng }), km(last, { lat: b.lat, lng: b.lng }));
+    const off = d - seg * 0.5 > 0.8 && km(last, { lat: a.lat, lng: a.lng }) + km(last, { lat: b.lat, lng: b.lng }) - seg > 0.8;
+    const offFor = tr.filter(p => now - new Date(p.at).getTime() <= 5 * 60000).every(p => km(p, { lat: a.lat!, lng: a.lng! }) + km(p, { lat: b.lat!, lng: b.lng! }) - seg > 0.8);
+    if (off && offFor) out.push(L(`off route between ${a.name} and ${b.name}`, `${a.name} – ${b.name} வழியிலிருந்து விலகியுள்ளது`));
+  }
+  return out;
+}
 
 // Owner: where every van is right now, which stop it is on, last location time. Refreshes itself.
 export function Live() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
     const load = async () => {
       const trips = (await db.trips.where('date').equals(today()).toArray()).filter(t => t.status !== 'planned');
       const vans = new Map((await db.vans.toArray()).map(v => [v.id, v.name]));
       const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
-      const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
+      const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
       const invs = await db.invoices.toArray();
-      const out: Row[] = trips.map(t => ({
-        trip: t, van: vans.get(t.vanId) ?? '', driver: staff.get(t.driverId ?? '') ?? '—',
-        stops: t.stops.map(sid => { const si = invs.filter(i => i.tripId === t.id && i.shopId === sid); return { name: shops.get(sid) ?? '', status: si[0]?.deliveryStatus ?? 'planned', value: si.reduce((a, i) => a + i.total, 0) }; }),
-        lastSeen: t.track[t.track.length - 1]?.at,
-      }));
+      const out: Row[] = trips.map(t => {
+        const stops = t.stops.map(sid => { const si = invs.filter(i => i.tripId === t.id && i.shopId === sid); return { name: shops.get(sid)?.name ?? '', shop: shops.get(sid), status: si[0]?.deliveryStatus ?? 'planned', value: si.reduce((a, i) => a + i.total, 0) }; });
+        return { trip: t, van: vans.get(t.vanId) ?? '', driver: staff.get(t.driverId ?? '') ?? '—', stops, lastSeen: t.track[t.track.length - 1]?.at, alerts: alertsFor(t, stops, L) };
+      });
       if (alive) setRows(out);
     };
     load(); const id = setInterval(load, 10000);
     return () => { alive = false; clearInterval(id); };
-  }, []);
+  }, [tick]);
   return (
     <div className="stack">
       <div className="sechead"><h3>{L('Live vans', 'வண்டிகள் இப்போது')}</h3><span className="muted">{L('updates every 10 s', '10 வினாடிக்கு ஒருமுறை')}</span></div>
@@ -46,6 +78,7 @@ export function Live() {
               <div><div className="eyebrow">{L('Now at', 'இப்போது')}</div><div style={{ fontWeight: 700 }}>{cur?.name ?? (r.trip.status === 'done' ? L('Godown', 'கிடங்கு') : '—')}</div></div>
               <div><div className="eyebrow">{L('Last location', 'கடைசி இடம்')}</div><div style={{ fontWeight: 700 }}>{mins == null ? '—' : mins < 1 ? L('just now', 'இப்போது') : `${mins} ${L('min ago', 'நிமிடம் முன்')}`}</div></div>
             </div>
+            {r.alerts.map((a, i) => <div key={i} className="alert bad"><AlertTriangle /><div>{a}</div></div>)}
             <Track trip={r.trip} />
             <div className="route">
               {r.stops.map((s, k) => (
@@ -55,6 +88,7 @@ export function Live() {
                 </div>
               ))}
             </div>
+            {r.trip.status !== 'done' && <button className="btn small" onClick={async () => { if (await confirmBox(L(r.trip.status === 'out' ? 'End this trip now?' : 'Cancel this trip?', 'டிரிப்பை முடிக்கவா?'), L('Undelivered bills go back to the pool for tomorrow.', 'டெலிவரி ஆகாத பில்கள் நாளைக்கு.'), L('Yes', 'ஆம்'))) { await ownerEndTrip(r.trip.id); setTick(x => x + 1); } }}><Flag size={14} /> {r.trip.status === 'out' ? L('End trip (driver forgot)', 'டிரிப் முடி') : L('Cancel trip', 'டிரிப் ரத்து')}</button>}
           </div>
         );
       })}

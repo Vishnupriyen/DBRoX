@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Banknote, Boxes, CalendarClock, Check, X, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
+import { AlertTriangle, Banknote, Boxes, CalendarClock, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
 import { ChangeSet, db, today, undoBatch } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
-import { approveOrder } from '../core/proposals';
 import { inr, getLang } from '../core/i18n';
-import { confirmBox, askText } from './dialog';
+import { confirmBox } from './dialog';
 import type { AuditEntry, Order } from '../core/types';
 
 interface Data {
@@ -38,24 +37,6 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
         <div className="kpi"><div className="v">{inr(d.collect.dueToday)}</div><div className="l">{L('To collect today', 'இன்று வசூல்')}</div></div>
         <div className="kpi"><div className="v" style={{ color: d.collect.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(d.collect.overdue)}</div><div className="l">{L('Overdue in market', 'தாமத பாக்கி')}</div></div>
       </div>}
-
-      {show('rest') && d.needsOk.length > 0 && (
-        <section className="card">
-          <div className="sechead"><h3><AlertTriangle size={18} style={{ verticalAlign: -3, color: 'var(--marigold)' }} /> {L('Needs your OK', 'உங்கள் ஒப்புதல்')} · {d.needsOk.length}</h3></div>
-          <div className="list">
-            {d.needsOk.map(o => (
-              <div key={o.id} className="item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                <div><div className="t">{o.shopName}</div><div className="s">{o.lines.length} {L('items', 'பொருட்கள்')} · {o.date}</div>
-                  <div className="row" style={{ marginTop: 4 }}>{o.issues.map((x, i) => <span key={i} className="badge warn">{x}</span>)}</div></div>
-                <div className="row" style={{ flexWrap: 'nowrap' }}>
-                  <button className="btn primary grow" onClick={async () => { await approveOrder(o.id); refresh(); }}><Check /> {L('OK, bill it', 'சரி, பில் போடு')}</button>
-                  <button className="btn" onClick={async () => { const r = await askText(L('Why cancel?', 'ஏன் ரத்து?')); if (!r) return; const cs = new ChangeSet(); cs.put('orders', { ...o, status: 'cancelled', issues: [...o.issues, `Cancelled: ${r}`] }, 'cancel'); await cs.commit('Order cancelled'); refresh(); }}><X /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {show('rest') && <section className="card">
         <div className="sechead"><h3><CalendarClock size={18} style={{ verticalAlign: -3 }} /> {L('Money to collect', 'வசூல் செய்ய வேண்டியது')}</h3></div>

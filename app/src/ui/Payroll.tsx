@@ -4,12 +4,11 @@ import { ChangeSet, db, nowIso, today } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
-import { askText } from './dialog';
+import { askText, confirmBox } from './dialog';
 import type { Advance, CheckIn, LeaveRequest, Settings, Staff } from '../core/types';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 const hm = (iso: string) => iso.slice(11, 16);
-const GODOWN = { lat: 11.41, lng: 79.12 }; // demo godown; real one is set from Settings
 
 // ---------- The gate: the app opens on this until the person checks in (owner exempt) ----------
 export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Settings; onDone: () => void }) {
@@ -21,7 +20,7 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   const go = async () => {
     setBusy(true);
     const pos = await getPos();
-    const d = pos ? Math.round(dist(pos.lat, pos.lng, GODOWN.lat, GODOWN.lng)) : undefined;
+    const d = pos && settings.godownLat && settings.godownLng ? Math.round(dist(pos.lat, pos.lng, settings.godownLat, settings.godownLng)) : undefined;
     const cs = new ChangeSet();
     cs.put<CheckIn>('checkIns', { staffId: me.id, date: today(), at: nowIso(), lat: pos?.lat, lng: pos?.lng, distanceM: d, late }, 'check-in');
     await cs.commit('Check-in'); onDone();
@@ -53,6 +52,7 @@ export function Today() {
     setAdvances((await db.advances.toArray()).filter(a => a.status === 'waiting').map(a => ({ ...a, name: names.get(a.staffId) ?? '' })));
   })(); }, [tick]);
   const onLeave = (id: string) => leaves.some(l => l.staffId === id && l.status === 'approved' && l.from <= today() && l.to >= today());
+  const absentNow = new Date().toTimeString().slice(0, 5) >= '11:00';
   const mark = async (s: Staff) => {
     const why = await askText(L(`Mark ${s.name.split(' ')[0]} present — remark`, 'வருகை குறி — குறிப்பு')); if (!why) return;
     const cs = new ChangeSet(); cs.put<CheckIn>('checkIns', { staffId: s.id, date: today(), at: nowIso(), late: false }, `owner marked present: ${why}`); await cs.commit('Attendance'); setTick(x => x + 1);
@@ -73,7 +73,7 @@ export function Today() {
         {rows.map(({ s, c }) => (
           <div key={s.id} className="item">
             <div className={`avatar ${c ? (late(c) ? 'gold' : 'ok') : onLeave(s.id) ? '' : 'bad'}`}>{c ? <Check /> : onLeave(s.id) ? <Clock /> : <UserX />}</div>
-            <div className="grow"><div className="t">{s.name}</div><div className="s">{c ? `${hm(c.at)}${c.distanceM != null ? ` · ${c.distanceM < 300 ? L('at godown', 'கிடங்கில்') : `${(c.distanceM / 1000).toFixed(1)} km ${L('from godown', 'கிடங்கிலிருந்து')}`}` : ''}${late(c) ? ` · ${L('late', 'தாமதம்')}` : ''}` : onLeave(s.id) ? L('on leave', 'விடுமுறை') : L('not checked in', 'செக் இன் இல்லை')}</div></div>
+            <div className="grow"><div className="t">{s.name}</div><div className="s">{c ? `${hm(c.at)}${c.distanceM != null ? ` · ${c.distanceM < 300 ? L('at godown', 'கிடங்கில்') : `${(c.distanceM / 1000).toFixed(1)} km ${L('from godown', 'கிடங்கிலிருந்து')}`}` : ''}${late(c) ? ` · ${L('late', 'தாமதம்')}` : ''}` : onLeave(s.id) ? L('on leave', 'விடுமுறை') : absentNow ? L('absent (no check-in by 11:00)', 'வரவில்லை (11:00 வரை செக் இன் இல்லை)') : L('not checked in yet', 'இன்னும் செக் இன் இல்லை')}</div></div>
             {!c && !onLeave(s.id) && <button className="btn small" onClick={() => mark(s)}>{L('Mark present', 'வருகை')}</button>}
           </div>
         ))}
@@ -86,31 +86,46 @@ export function Today() {
   );
 }
 
-// ---------- Salary sheet: fixed + batta × present − advances − shortfalls − unpaid leave ----------
+// ---------- Salary sheet: fixed + batta × present − unpaid leave − advance instalment − cash shortfall. "Paid" posts the expense. ----------
 export function Salary() {
-  const [rows, setRows] = useState<{ s: Staff; present: number; batta: number; fixed: number; advance: number; shortfall: number; net: number }[]>([]);
+  const [rows, setRows] = useState<{ s: Staff; present: number; unpaidLeave: number; batta: number; fixed: number; advance: number; shortfall: number; net: number; paid: boolean }[]>([]);
+  const [tick, setTick] = useState(0);
   const month = today().slice(0, 7);
   useEffect(() => { (async () => {
     const staff = (await db.staff.toArray()).filter(s => s.active && s.role !== 'owner');
     const cis = (await db.checkIns.toArray()).filter(c => c.date.startsWith(month));
-    const adv = (await db.advances.toArray()).filter(a => a.status === 'approved');
-    const closes = await db.dayCloses.toArray();
-    const fixedOf: Record<string, number> = { salesman: 15000, delivery: 12000, godown: 11000, office: 12000, owner: 0 };
+    const adv = (await db.advances.toArray()).filter(a => a.status === 'approved' && (a.recovered ?? 0) < a.amount);
+    const leaves = (await db.leaves.toArray()).filter(l => l.status === 'approved' && l.from.startsWith(month));
+    const paidExp = (await db.expenses.toArray()).filter(e => e.category === 'salary' && e.date.startsWith(month));
+    const dim = new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate();
     setRows(staff.map(s => {
       const present = cis.filter(c => c.staffId === s.id).length;
-      const batta = present * (s.role === 'salesman' || s.role === 'delivery' ? 150 : 0);
-      const advance = adv.filter(a => a.staffId === s.id).reduce((x, a) => x + a.amount - (a.recovered ?? 0), 0);
-      const shortfall = closes.reduce((x, d) => x + (((d.summary as { shortfalls?: Record<string, number> }).shortfalls ?? {})[s.id] ?? 0), 0);
-      const fixed = fixedOf[s.role] ?? 10000;
-      return { s, present, batta, fixed, advance, shortfall, net: fixed + batta - advance - shortfall };
+      const leaveDays = leaves.filter(l => l.staffId === s.id).reduce((a, l) => a + Math.max(1, Math.round((new Date(l.to).getTime() - new Date(l.from).getTime()) / 86400000) + 1), 0);
+      const unpaidLeave = Math.max(0, leaveDays - 2); // 2 paid leave days a month
+      const fixed = s.salary ?? 0; const batta = present * (s.batta ?? 0);
+      const mine = adv.filter(a => a.staffId === s.id);
+      const advance = mine.filter(a => a.kind !== 'shortfall').reduce((x, a) => x + Math.min(a.amount - (a.recovered ?? 0), Math.ceil(a.amount / (a.instalments || 1))), 0);
+      const shortfall = mine.filter(a => a.kind === 'shortfall').reduce((x, a) => x + a.amount - (a.recovered ?? 0), 0);
+      const net = Math.round(fixed - fixed * unpaidLeave / dim + batta - advance - shortfall);
+      return { s, present, unpaidLeave, batta, fixed, advance, shortfall, net, paid: paidExp.some(e => e.note === `Salary ${month} ${s.name}`) };
     }));
-  })(); }, []);
+  })(); }, [tick]);
+  const pay = async (r: typeof rows[0]) => {
+    if (!await confirmBox(L(`Pay ${r.s.name} ${inr(r.net)}?`, `${r.s.name}க்கு ${inr(r.net)} கொடுக்கவா?`), L('Posts the salary as an expense and marks advances/shortfalls as recovered.', 'சம்பளம் செலவாக பதிவாகும்.'), L('Paid', 'கொடுத்தேன்'))) return;
+    const cs = new ChangeSet();
+    cs.put('expenses', { date: today(), category: 'salary', amount: r.net, note: `Salary ${month} ${r.s.name}`, approved: true }, 'salary paid');
+    for (const a of (await db.advances.toArray()).filter(a => a.staffId === r.s.id && a.status === 'approved' && (a.recovered ?? 0) < a.amount)) {
+      const take = a.kind === 'shortfall' ? a.amount - (a.recovered ?? 0) : Math.min(a.amount - (a.recovered ?? 0), Math.ceil(a.amount / (a.instalments || 1)));
+      cs.put('advances', { ...a, recovered: (a.recovered ?? 0) + take }, 'recovered from salary');
+    }
+    await cs.commit('Salary paid'); setTick(x => x + 1);
+  };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {L('Salary sheet', 'சம்பள பட்டியல்')} · {month}</h3><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
-      <table className="tbl"><thead><tr><th>{L('Name', 'பெயர்')}</th><th>{L('Days', 'நாள்')}</th><th>{L('Fixed', 'நிலை')}</th><th>{L('Batta', 'பட்டா')}</th><th>{L('Adv', 'அட்வா')}</th><th>{L('Short', 'குறை')}</th><th>{L('Net', 'நிகர')}</th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}</td><td className="num">{r.fixed}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b></td></tr>)}</tbody></table>
-      <div className="muted">{L('Fixed salary and batta per staff are set in Staff. Demo uses sample figures.', 'நிலை சம்பளம், பட்டா Staff-ல் அமைக்கலாம்.')}</div>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {L('Salary sheet', 'சம்பள பட்டியல்')} · {month}</h3><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
+      <table className="tbl"><thead><tr><th>{L('Name', 'பெயர்')}</th><th>{L('Days', 'நாள்')}</th><th>{L('Fixed', 'நிலை')}</th><th>{L('Batta', 'பட்டா')}</th><th>{L('Adv', 'அட்வா')}</th><th>{L('Short', 'குறை')}</th><th>{L('Net', 'நிகர')}</th><th></th></tr></thead>
+        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}{r.unpaidLeave ? <span className="muted"> −{r.unpaidLeave}</span> : null}</td><td className="num">{r.fixed || <span className="muted">{L('set', 'அமை')}</span>}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b></td><td>{r.paid ? <span className="badge ok">{L('paid', 'கொடுத்தது')}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{L('Paid', 'கொடுத்தேன்')}</button>}</td></tr>)}</tbody></table>
+      <div className="muted">{L('Set each person\'s salary and batta in Staff. 2 paid leave days a month; beyond that is deducted. Advances come back in the instalments set; cash shortfalls in full.', 'சம்பளம், பட்டா Staff-ல் அமைக்கவும்.')}</div>
     </div>
   );
 }

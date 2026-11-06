@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X } from 'lucide-react';
+import { Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
 import { ChangeSet, db, getSettings } from '../core/db';
 import { getLang, inr, setLang, t } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
 import { ENV_SERVER, syncNow } from '../core/sync';
-import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff } from '../core/types';
+import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
 import { PrintBill } from './PrintBill';
-import { askText, confirmBox, notify } from './dialog';
+import { ask, askText, confirmBox, notify } from './dialog';
+import { editInvoice } from '../core/pipeline';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
@@ -56,11 +57,10 @@ function Modules({ editable }: { editable: boolean }) {
     const cs = new ChangeSet(); cs.put('settings', next, `module ${k}`); await cs.commit('Modules changed'); setS(next);
   };
   const on = Object.values(s.modules).filter(Boolean).length;
-  const price = on <= 1 ? 249 : on <= 3 ? 599 : 999;
   return (
     <div className="card">
       <h3>{t('modules')}</h3>
-      <div className="muted" style={{ marginBottom: 6 }}>{on} on · plan ₹{price}/month (proposed pricing)</div>
+      <div className="muted" style={{ marginBottom: 6 }}>{on} of {MODULES.length} on — demo switch, DBRoX side only</div>
       <div className="row" style={{ marginBottom: 8 }}>
         <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, true])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'all modules'); await cs.commit('Plan'); setS(next); }}>All modules</button>
         <button className="btn small" onClick={async () => { const next = { ...s, modules: Object.fromEntries(MODULES.map(m => [m.key, m.key === 'delivery' || m.key === 'collection'])) as Settings['modules'] }; const cs = new ChangeSet(); cs.put('settings', next, 'delivery+collection'); await cs.commit('Plan'); setS(next); }}>Delivery + Collection only</button>
@@ -92,9 +92,39 @@ function SettingsPage({ editable }: { editable: boolean }) {
       <div className="field" style={{ marginBottom: 8 }}><label>Bill size</label>
         <select disabled={!editable} value={s.billFormat} onChange={e => setS({ ...s, billFormat: e.target.value as Settings['billFormat'] })}>
           <option value="A5">A5</option><option value="A4">A4</option><option value="dotmatrix">Dot-matrix</option></select></div>
+      <h3 style={{ marginTop: 14 }}>Billing & collection</h3>
+      {f('billPrefix', 'Bill number prefix (one series for the whole firm, e.g. SMD)')}
+      {f('upiId', 'UPI ID shown as QR at collection (e.g. firm@okaxis)')}
+      <div className="toggle"><span>Driver takes a second photo of the signed bill / GRN</span><button className={`switch ${s.grnPhoto !== false ? 'on' : ''}`} disabled={!editable} aria-label="GRN photo" onClick={() => setS({ ...s, grnPhoto: s.grnPhoto === false })} /></div>
+      <h3 style={{ marginTop: 14 }}>Staff check-in</h3>
+      {f('checkInBy', 'Check-in after this time is "late" (HH:MM)')}
+      <div className="row" style={{ gap: 8 }}>{f('godownLat', 'Godown latitude', 'number')}{f('godownLng', 'Godown longitude', 'number')}</div>
+      <button className="btn small" onClick={async () => { const { getPos } = await import('./Beat'); const p = await getPos(); if (p) setS({ ...s, godownLat: p.lat, godownLng: p.lng }); else void notify('Location', 'Could not read the phone location.'); }}>Use my location now</button>
       {f('serverUrl', 'DBRoX server address (for sync and photo reading)')}
       {editable && <button className="btn primary" onClick={async () => { const cs = new ChangeSet(); cs.put('settings', s, 'settings'); await cs.commit('Settings saved'); setSaved(true); }}>{t('save')}</button>}
       {saved && <span className="muted"> ✓ {t('done')}</span>}
+    </div>
+  );
+}
+
+function VansPage({ editable, staff }: { editable: boolean; staff: Staff[] }) {
+  const [vans, setVans] = useState<Van[]>([]);
+  const load = () => db.vans.toArray().then(setVans);
+  useEffect(() => { load(); }, []);
+  const drivers = staff.filter(s => s.role === 'delivery' && s.active);
+  return (
+    <div className="card">
+      <h3>Vans</h3>
+      <div className="list">
+        {vans.map(v => (
+          <div key={v.id} className="item">
+            <div className="avatar"><Truck size={18} /></div>
+            <div className="grow"><div className="t">{v.name} <span className="muted">{v.number}</span></div><div className="muted">{v.kind} · driver: {staff.find(s => s.id === v.driverId)?.name ?? '—'}</div></div>
+            {editable && <select value={v.driverId ?? ''} onChange={async e => { const cs = new ChangeSet(); cs.put('vans', { ...v, driverId: e.target.value || undefined }, 'driver assigned'); const d = drivers.find(x => x.id === e.target.value); if (d) cs.put('staff', { ...d, vanId: v.id }, 'van assigned'); await cs.commit('Van driver'); load(); }}><option value="">no driver</option>{drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
+          </div>
+        ))}
+      </div>
+      {editable && <button className="btn small" style={{ marginTop: 8 }} onClick={async () => { const name = await askText('Van name (e.g. Van 2)'); if (!name) return; const number = await askText('Registration number', 'TN 31 '); if (number === null) return; const kind = (await ask('Own or hired?', { choices: [{ label: 'Own', value: 'own' }, { label: 'Hired', value: 'hired' }] })) as Van['kind'] || 'own'; const cs = new ChangeSet(); cs.put<Van>('vans', { name, number, kind }, 'van added'); await cs.commit('Van added'); load(); }}>+ Add van</button>}
     </div>
   );
 }
@@ -122,7 +152,8 @@ function StaffPage({ editable }: { editable: boolean }) {
           {list.map(s => (
             <div key={s.id} className="item">
               <div className="avatar">{s.name[0]}</div>
-              <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.role} · {s.phone}</div></div>
+              <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.role} · {s.phone}{s.role !== 'owner' ? ` · ₹${s.salary ?? 0}/mo + ₹${s.batta ?? 0}/day` : ''}</div></div>
+              {s.role !== 'owner' && editable && <button className="btn small" onClick={async () => { const sal = await askText(`${s.name}: monthly salary ₹`, String(s.salary ?? ''), 'number'); if (sal === null) return; const bat = await askText('Batta per present day ₹', String(s.batta ?? ''), 'number'); if (bat === null) return; const cs = new ChangeSet(); cs.put('staff', { ...s, salary: Number(sal) || 0, batta: Number(bat) || 0 }, 'salary set'); await cs.commit('Salary set'); load(); }}>Salary</button>}
               {s.role !== 'owner' && editable && (s.active
                 ? <button className="btn small danger" onClick={() => setActive(s, false)}>Remove access</button>
                 : <button className="btn small" onClick={() => setActive(s, true)}>Restore</button>)}
@@ -130,6 +161,7 @@ function StaffPage({ editable }: { editable: boolean }) {
           ))}
         </div>
       </div>
+      <VansPage editable={editable} staff={list} />
       {editable && (
         <div className="card">
           <h3>Add staff</h3>
@@ -151,6 +183,8 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   const [list, setList] = useState<(Invoice & { shopName: string })[]>([]);
   const [q, setQ] = useState('');
   const [printing, setPrinting] = useState<Invoice | null>(null);
+  const [editing, setEditing] = useState<Invoice | null>(null);
+  const [qtys, setQtys] = useState<number[]>([]);
   const load = async () => {
     const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
     setList((await db.invoices.orderBy('date').reverse().limit(300).toArray()).map(i => ({ ...i, shopName: shops.get(i.shopId) ?? '' })));
@@ -175,12 +209,25 @@ function Bills({ canCancel }: { canCancel: boolean }) {
             <div className="grow"><div className="t">{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
               <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
             <span className="amt num">{inr(i.total)}</span>
+            {canCancel && !i.cancelled && !i.printedAt && i.deliveryStatus === 'pending' && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
             <button className="btn small" onClick={() => setPrinting(i)} aria-label="Print"><Printer /></button>
             {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /></button>}
           </div>
         ))}
       </div>
-      {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
+      {printing && <PrintBill invoice={printing} onClose={async () => { if (!printing.printedAt) { const cs = new ChangeSet(); cs.put('invoices', { ...printing, printedAt: new Date().toISOString() }, 'printed'); await cs.commit('Bill printed'); } setPrinting(null); load(); }} />}
+      {editing && (
+        <div className="sheet-wrap" onClick={() => setEditing(null)}>
+          <div className="sheet" onClick={e => e.stopPropagation()} style={{ height: 'auto', maxHeight: '86vh' }}>
+            <div className="sheet-head"><b className="grow">{t('edit')} {editing.number}</b><button className="icon-btn" onClick={() => setEditing(null)} aria-label="Close"><X /></button></div>
+            <div className="stack" style={{ padding: 14, overflowY: 'auto' }}>
+              <div className="muted">Same bill number. Allowed until the bill is printed. Set a line to 0 to remove it.</div>
+              {editing.lines.map((l, i) => <div key={i} className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><span className="grow">{l.name}{l.mrp ? <span className="muted"> · MRP {l.mrp}</span> : null}</span><input type="number" style={{ width: 90 }} value={qtys[i] ?? l.qty} onChange={e => setQtys(q => { const n = [...editing.lines.map((x, k) => q[k] ?? x.qty)]; n[i] = Math.max(0, Number(e.target.value)); return n; })} aria-label={`Quantity ${l.name}`} /></div>)}
+              <button className="btn primary big block" onClick={async () => { try { await editInvoice(editing.id, editing.lines.map((l, i) => qtys[i] ?? l.qty)); setEditing(null); setQtys([]); load(); } catch (e) { void notify('Edit', (e as Error).message); } }}>Save bill</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

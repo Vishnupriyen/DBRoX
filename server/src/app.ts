@@ -6,22 +6,15 @@ import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 
-const ALL_TABLES = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices',
-  'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit'];
-
-// What each role may receive and send. Staff never see bank lines, purchases or other staff's data they don't need.
-const READ: Record<string, string[]> = {
-  owner: ALL_TABLES, office: ALL_TABLES,
-  salesman: ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices', 'creditNotes', 'payments', 'vans'],
-  godown: ['settings', 'staff', 'companies', 'products', 'batches', 'invoices', 'purchases', 'claimEntries', 'vans', 'shops'],
-  delivery: ['settings', 'staff', 'companies', 'products', 'shops', 'invoices', 'creditNotes', 'payments', 'vans', 'batches'],
-};
-const WRITE: Record<string, string[]> = {
-  owner: ALL_TABLES, office: ALL_TABLES.filter(t => t !== 'settings'),
-  salesman: ['orders', 'invoices', 'payments', 'shops', 'batches', 'companies', 'creditNotes', 'claimEntries', 'audit'],
-  godown: ['batches', 'purchases', 'products', 'claimEntries', 'creditNotes', 'audit'],
-  delivery: ['invoices', 'payments', 'creditNotes', 'batches', 'claimEntries', 'audit'],
-};
+// ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
+import { readFileSync } from 'node:fs';
+const sharedPath = [new URL('../../shared/tables.json', import.meta.url), new URL('../shared/tables.json', import.meta.url)].find(u => { try { readFileSync(u); return true; } catch { return false; } })!;
+const SHARED = JSON.parse(readFileSync(sharedPath, 'utf8')) as { tables: string[]; read: Record<string, string[] | '*'>; write: Record<string, string[] | '*'>; ownerOnlyFields: Record<string, string[]> };
+const ALL_TABLES = SHARED.tables;
+const expand = (m: Record<string, string[] | '*'>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v === '*' ? ALL_TABLES : v])) as Record<string, string[]>;
+const READ = expand(SHARED.read);
+const WRITE = expand(SHARED.write);
+const OWNER_ONLY = SHARED.ownerOnlyFields;
 // Money records are never overwritten by an older copy; newest wins for everything (last-writer-wins on updatedAt).
 
 const newId = () => randomBytes(12).toString('base64url');
@@ -62,7 +55,7 @@ export async function buildApp(pool: pg.Pool) {
       await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash) VALUES ($1,$2,$3,$4,$5,$6)', [tenantId, userId, b.phone, b.ownerName, 'owner', hashPin(b.pin!)]);
       const settings = {
         id: newId(), tenantId, createdAt: now, updatedAt: now, firmName: b.firmName, gstin: b.gstin ?? '', address: b.address ?? '', stateCode: (b.gstin ?? '33').slice(0, 2), phone: b.phone,
-        modules: { orders: true, billing: true, godown: true, delivery: true, collection: true, bank: true, accounts: true, claims: true, scan: true },
+        modules: { sales: true, bill: true, inventory: true, delivery: true, collection: true, accountant: true, gst: true, payroll: true },
         billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5,
       };
       const staff = { id: userId, tenantId, createdAt: now, updatedAt: now, name: b.ownerName, phone: b.phone, role: 'owner', pin: '', active: true };
@@ -76,10 +69,27 @@ export async function buildApp(pool: pg.Pool) {
     const b = req.body as { phone?: string; pin?: string };
     if (!b.phone || !b.pin) throw err(400, 'Phone and PIN needed');
     if (loginLocked(b.phone)) throw err(429, 'Too many wrong PINs. Try again in 15 minutes.');
-    const u = (await pool.query('SELECT tenant_id, id, role, pin_hash, active, token_epoch FROM users WHERE phone=$1', [b.phone])).rows[0];
-    if (!u || !u.active || !verifyPin(b.pin, u.pin_hash)) { loginFailed(b.phone); reply.code(401); return { error: 'Wrong phone or PIN' }; }
+    const bt = (req.body as { tenantId?: string }).tenantId;
+    const all = (await pool.query('SELECT u.tenant_id, u.id, u.role, u.pin_hash, u.active, u.token_epoch, t.name AS firm FROM users u JOIN tenants t ON t.id=u.tenant_id WHERE u.phone=$1 AND u.active', [b.phone])).rows;
+    const ok = all.filter(u => verifyPin(b.pin!, u.pin_hash) && (!bt || u.tenant_id === bt));
+    if (!ok.length) { loginFailed(b.phone); reply.code(401); return { error: 'Wrong phone or PIN' }; }
     loginOk(b.phone);
+    // the same phone under two distributors: the app shows "Which firm?" and sends tenantId
+    if (ok.length > 1) return { choose: ok.map(u => ({ tenantId: u.tenant_id, firm: u.firm })) };
+    const u = ok[0];
     return { tenantId: u.tenant_id, userId: u.id, role: u.role, token: signToken({ t: u.tenant_id, u: u.id, r: u.role, e: u.token_epoch }) };
+  });
+
+  // Numbers are issued here, never on the phone: one running series per distributor, no duplicates across phones.
+  app.post('/v1/number', async req => {
+    const c = await auth(req);
+    if (c.r !== 'owner' && c.r !== 'office') throw err(403, 'Only the owner or office can make bills');
+    const b = req.body as { kind?: 'bill' | 'cn' | 'receipt'; count?: number };
+    const kind = b.kind ?? 'bill'; const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
+    const col = kind === 'bill' ? 'next_bill_no' : kind === 'cn' ? 'next_cn_no' : 'next_receipt_no';
+    const r = await pool.query(`UPDATE tenants SET ${col} = ${col} + $2 WHERE id=$1 RETURNING ${col} - $2 AS first, prefix`, [c.t, n]);
+    if (!r.rows[0]) throw err(404, 'Distributor not found');
+    return { first: Number(r.rows[0].first), count: n, prefix: r.rows[0].prefix ?? 'DBX' };
   });
 
   // Sync: push this phone's changes, pull everything newer than the phone's cursor.
@@ -128,7 +138,8 @@ export async function buildApp(pool: pg.Pool) {
       cursor: maxVersion,
       more: rows.length === config.pullLimit,
       accepted, rejected,
-      changes: rows.map(r => ({ table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: r.data })),
+      // owner-only fields (purchase rate, UPI id …) never reach a staff phone
+      changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.tbl]) { d = { ...d }; for (const f of OWNER_ONLY[r.tbl]) delete d[f]; } return { table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: d }; }),
     };
   });
 
@@ -166,8 +177,8 @@ async function upsertStaffLogin(client: pg.PoolClient, tenantId: string, s: Reco
   const role = String(s.role ?? '');
   if (!/^\d{10}$/.test(phone) || !['owner', 'office', 'salesman', 'godown', 'delivery'].includes(role)) return;
   const pin = String(s.pin ?? '');
-  const existing = (await client.query('SELECT tenant_id, id, active FROM users WHERE phone=$1', [phone])).rows[0];
-  if (existing && existing.tenant_id !== tenantId) return; // phone belongs to another distributor
+  // the same phone may exist under another distributor (a salesman serving two DBs); each firm has its own login row
+  const existing = (await client.query('SELECT tenant_id, id, active FROM users WHERE tenant_id=$1 AND phone=$2', [tenantId, phone])).rows[0];
   if (!existing) {
     if (!/^\d{4}$/.test(pin)) return;
     await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash,active) VALUES ($1,$2,$3,$4,$5,$6,$7)', [tenantId, s.id, phone, s.name, role, hashPin(pin), s.active !== false]);

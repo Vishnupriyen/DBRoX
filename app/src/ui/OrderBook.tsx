@@ -2,19 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Repeat, Search, Flame, Gift, AlertTriangle, Check } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
 import { activeSchemes, applySchemes, stockOf } from '../core/billing';
-import { bookOrder } from '../core/pipeline';
+import { bookOrder, updateMyOrder } from '../core/pipeline';
+import { askText } from './dialog';
 import { r2, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { getLang, inr, t } from '../core/i18n';
-import type { Company, Product, Scheme, Shop, Visit, Invoice } from '../core/types';
+import type { Order, Company, Product, Scheme, Shop, Visit, Invoice } from '../core/types';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
 
-interface Line { product: Product; cases: number; pcs: number }
+interface Line { product: Product; cases: number; pcs: number; rate?: number }
 
 // Salesman order booking (4.1, 5.1, Q91, Q93, Q94): pictures first, push list, live stock, dues
 // and scheme shown, case + piece steppers, repeat last order. Under a minute per shop.
-export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit; onClose: () => void }) {
+export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visit?: Visit; onClose: () => void; existing?: Order }) {
   const lang = getLang();
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -28,6 +29,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
   const [lastOrder, setLastOrder] = useState<{ productId: string; qty: number }[]>([]);
   const [result, setResult] = useState<{ text: string; invoices: Invoice[]; needsOk: boolean } | null>(null);
   const [issuesText, setIssuesText] = useState('');
+  const [remark, setRemark] = useState('');
   const [printing, setPrinting] = useState<Invoice | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -43,6 +45,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
       const u = new Set<string>(); for (const o2 of past.slice(0, 6)) for (const l of o2.lines) u.add(l.productId);
       setUsual(u);
       setLastOrder(past[0]?.lines ?? []);
+      if (existing) { const pm = new Map(ps.map(p => [p.id, p])); const init: Record<string, Line> = {}; for (const l of existing.lines) { const p = pm.get(l.productId); if (p) init[p.id] = { product: p, cases: Math.floor(l.qty / p.caseSize), pcs: l.qty % p.caseSize, rate: l.rate !== p.rate ? l.rate : undefined }; } setLines(init); setCat('all'); }
     })();
   }, [shop.id]);
 
@@ -66,7 +69,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
   const pieces = (l: Line) => l.cases * l.product.caseSize + l.pcs;
   const lineInfo = (l: Line) => {
     const qty = pieces(l);
-    const sch = applySchemes(l.product, qty, l.product.rate, activeSchemes(schemes, l.product, today()));
+    const sch = applySchemes(l.product, qty, l.rate ?? l.product.rate, activeSchemes(schemes, l.product, today()));
     return { qty, free: sch.freeQty, amount: r2((sch.gross - sch.discount) * (1 + l.product.gst / 100)), schemeNames: sch.names, short: Math.max(0, qty + sch.freeQty - (stock[l.product.id] ?? 0)) };
   };
   const totals = Object.values(lines).reduce((a, l) => { const i = lineInfo(l); return { items: a.items + 1, amount: r2(a.amount + i.amount), free: a.free + i.free }; }, { items: 0, amount: 0, free: 0 });
@@ -81,13 +84,16 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
     setBusy(true);
     try {
       const cs = new ChangeSet();
-      const ls = Object.values(lines).map(l => ({ productId: l.product.id, qty: pieces(l), rate: l.product.rate }));
-      const order = await bookOrder(cs, shop, ls, session().userId, { visitId: visit?.id, offRoute: shop.salesmanId !== session().userId });
+      const ls = Object.values(lines).map(l => ({ productId: l.product.id, qty: pieces(l), rate: l.rate ?? l.product.rate }));
+      const lowered = Object.values(lines).filter(l => l.rate != null && l.rate < l.product.rate);
+      if (lowered.length && !remark.trim()) { const r = await askText(lang === 'ta' ? 'குறைந்த விலை — காரணம் (உரிமையாளர் பார்ப்பார்)' : 'Lower rate — write the reason (the owner approves it)'); if (!r) { setBusy(false); return; } setRemark(r); }
+      if (existing) { await updateMyOrder(existing.id, ls); setResult({ text: lang === 'ta' ? 'ஆர்டர் மாற்றப்பட்டது' : 'Order updated', invoices: [], needsOk: false }); return; }
+      const order = await bookOrder(cs, shop, ls, session().userId, { visitId: visit?.id, offRoute: shop.salesmanId !== session().userId, rateRemark: lowered.length ? `${lowered.map(l => `${l.product.name} @${l.rate} (std ${l.product.rate})`).join(', ')} — ${remark}` : undefined });
       if (visit) cs.put('visits', { ...visit, outcome: 'order' }, 'visit outcome');
       await cs.commit('Salesman order');
       setIssuesText(order.issues.join('; '));
       setResult({
-        text: lang === 'ta' ? 'ஆர்டர் கிடங்கிற்கு சென்றது' : 'Order sent to godown',
+        text: lang === 'ta' ? 'ஆர்டர் உரிமையாளருக்கு சென்றது' : 'Order sent to the owner',
         invoices: [], needsOk: order.issues.length > 0,
       });
     } finally { setBusy(false); }
@@ -155,6 +161,7 @@ export function OrderBook({ shop, visit, onClose }: { shop: Shop; visit?: Visit;
                   <div><div className="eyebrow">{lang === 'ta' ? 'கேஸ்' : 'Cases'}</div><Stepper value={l?.cases ?? 0} onChange={v => setQty(p, v, l?.pcs ?? 0)} /></div>
                   <div><div className="eyebrow">{lang === 'ta' ? 'பீஸ்' : 'Pcs'}</div><Stepper value={l?.pcs ?? 0} onChange={v => setQty(p, l?.cases ?? 0, v)} /></div>
                 </div>
+                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${lang === 'ta' ? 'விலை / பீஸ்' : 'rate per piece'} (std ₹${p.rate})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>₹{l.rate ?? p.rate}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
                 {info && <div className="row" style={{ gap: 6, marginLeft: 'auto' }}>
                   {info.free > 0 && <span className="badge ok">+{info.free} free</span>}
                   {info.short > 0 && <span className="badge bad">{info.short} short</span>}

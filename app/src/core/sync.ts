@@ -1,10 +1,11 @@
 // Our own sync layer (scale plan): phone ⇄ DBRoX server. Phones work offline; this runs when
 // there is signal. Server is swappable because the app only knows this small protocol.
 import { db, getSettings } from './db';
-import type { Base } from './types';
+import type { Base, TableName } from './types';
 
-const SYNC_TABLES = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices',
-  'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit', 'visits', 'targets', 'trips', 'dayCloses', 'dayPlans', 'liteEntries', 'checkIns', 'leaves', 'advances'] as const;
+import shared from '../../../shared/tables.json';
+// Phone and server load the same shared/tables.json, so a table can never exist on one side only.
+const SYNC_TABLES = shared.tables as TableName[];
 
 interface Change { table: string; id: string; updatedAt: string; data: Base }
 
@@ -25,22 +26,35 @@ export async function signup(body: { firmName: string; ownerName: string; phone:
   return { tenantId: j.tenantId as string, userId: j.userId as string };
 }
 
-export async function login(phone: string, pin: string): Promise<{ tenantId: string; userId: string } | null> {
+export type LoginResult = { tenantId: string; userId: string } | { choose: { tenantId: string; firm: string }[] } | null;
+export async function login(phone: string, pin: string, tenantId?: string): Promise<LoginResult> {
   const url = await server();
   if (url && navigator.onLine) {
     try {
-      const r = await fetch(`${url}/v1/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone, pin }) });
+      const r = await fetch(`${url}/v1/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone, pin, tenantId }) });
       if (r.ok) {
         const j = await r.json();
+        if (j.choose) return { choose: j.choose }; // same phone under two distributors → the app asks which firm
         localStorage.setItem('dbrox.token', j.token);
         return { tenantId: j.tenantId, userId: j.userId };
       }
       if (r.status === 401) return null;
     } catch { /* offline: fall back to the PIN kept on this phone */ }
   }
-  const s = await db.staff.where('phone').equals(phone).first();
+  const s = (await db.staff.where('phone').equals(phone).toArray()).find(x => !tenantId || x.tenantId === tenantId);
   if (!s || !s.active || s.pin !== pin) return null;
   return { tenantId: s.tenantId, userId: s.id };
+}
+
+// Bill / credit-note / receipt numbers come from the server (one series per distributor, never a duplicate).
+// Without a server (demo), the phone keeps its own series.
+export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): Promise<{ first: number; prefix: string } | null> {
+  const url = await server();
+  if (!url) return null;
+  if (!navigator.onLine) throw new Error('offline');
+  const r = await fetch(`${url}/v1/number`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ kind, count }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not get a bill number');
+  return await r.json();
 }
 
 let running = false;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Phone, AlertTriangle, Landmark, MessageSquareText, Download, FileCheck2, ChevronRight, Wallet } from 'lucide-react';
-import { ChangeSet, db, today } from '../core/db';
+import { ChangeSet, db, today, activeShops } from '../core/db';
 import { getLang, inr } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
@@ -15,7 +15,7 @@ const month = () => today().slice(0, 7);
 export function Outstanding() {
   const [rows, setRows] = useState<{ id: string; name: string; phone?: string; area: string; total: number; b0: number; b8: number; b16: number; b31: number; days: number; limit: number }[]>([]);
   useEffect(() => { (async () => {
-    const shops = await db.shops.toArray(); const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
+    const shops = await activeShops(); const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
     setRows(shops.map(s => { const mine = bal.filter(b => b.invoice.shopId === s.id); const age = (b: typeof mine[0]) => Math.floor((Date.now() - new Date(b.invoice.date).getTime()) / 86400000); const sum = (f: (d: number) => boolean) => r2(mine.filter(b => f(age(b))).reduce((a, b) => a + b.balance, 0)); return { id: s.id, name: s.name, phone: s.phone, area: s.area, total: r2(mine.reduce((a, b) => a + b.balance, 0)), b0: sum(d => d <= 7), b8: sum(d => d > 7 && d <= 15), b16: sum(d => d > 15 && d <= 30), b31: sum(d => d > 30), days: Math.max(0, ...mine.map(age)), limit: s.creditLimit }; }).filter(r => r.total > 0.5).sort((a, b) => b.days - a.days || b.total - a.total));
   })(); }, []);
   const tot = (k: 'b0' | 'b8' | 'b16' | 'b31') => r2(rows.reduce((a, r) => a + r[k], 0));
@@ -32,7 +32,7 @@ export function Outstanding() {
 export function Cheques() {
   const [rows, setRows] = useState<(Payment & { shop: string; by: string })[]>([]);
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name])); const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name])); setRows((await db.payments.toArray()).filter(p => p.mode !== 'cash' && p.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40).map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', by: staff.get(p.collectedBy) ?? '' }))); })(); }, [tick]);
+  useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name])); setRows((await db.payments.toArray()).filter(p => p.mode !== 'cash' && p.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40).map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', by: staff.get(p.collectedBy) ?? '' }))); })(); }, [tick]);
   const dup = (p: Payment) => rows.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount && q.date === p.date);
   const setRef = async (p: Payment) => { const r = await askText(L('Reference number', 'குறிப்பு எண்'), p.ref ?? ''); if (!r) return; const cs = new ChangeSet(); cs.put('payments', { ...p, ref: r }, 'reference'); await cs.commit('Reference'); setTick(x => x + 1); };
   const bounce = async (p: Payment) => { const cs = new ChangeSet(); cs.put('payments', { ...p, status: 'bounced' }, 'cheque bounced'); await cs.commit('Bounced'); setTick(x => x + 1); };
@@ -55,7 +55,7 @@ export function Cheques() {
 // ---------- Bank: statement comes through RoX chat; this shows what's matched and what isn't ----------
 export function Bank({ onRox }: { onRox?: () => void }) {
   const [lines, setLines] = useState<(BankLine & { shop?: string })[]>([]);
-  useEffect(() => { (async () => { const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name])); setLines((await db.bankLines.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map(b => ({ ...b, shop: b.shopId ? shops.get(b.shopId) : undefined }))); })(); }, []);
+  useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); setLines((await db.bankLines.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map(b => ({ ...b, shop: b.shopId ? shops.get(b.shopId) : undefined }))); })(); }, []);
   const un = lines.filter(l => l.status === 'unmatched');
   return (
     <div className="stack">
@@ -158,7 +158,7 @@ export function ExportPage() {
   const m = month();
   const run = async (f: () => Promise<{ text: string }>) => { const r = await f(); void notify(L('Export', 'ஏற்றுமதி'), r.text); };
   const ledgers = async () => {
-    const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
+    const shops = new Map((await activeShops()).map(s => [s.id, s.name]));
     const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && i.date.startsWith(m)); const pays = (await db.payments.toArray()).filter(p => p.date.startsWith(m) && p.status === 'ok'); const exps = (await db.expenses.toArray()).filter(e => e.date.startsWith(m));
     await downloadWorkbook(`DBRoX-ledgers-${m}`, [
       { name: 'Sales', header: ['Date', 'Bill', 'Shop', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'], rows: invs.map(i => [i.date, i.number, shops.get(i.shopId) ?? '', i.taxable, i.cgst, i.sgst, i.igst, i.total]) },
@@ -182,7 +182,7 @@ export function Gst({ go }: { go?: (p: string) => void }) {
   const m = month();
   useEffect(() => { (async () => {
     const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && i.date.startsWith(m));
-    const products = await db.products.toArray(); const shops = await db.shops.toArray();
+    const products = await db.products.toArray(); const shops = await activeShops();
     const flags: { text: string; page?: string; tone?: 'bad' }[] = [];
     const noHsn = products.filter(p => p.active && !(p.hsn && (p.hsn.length === 6 || p.hsn.length === 8)));
     if (noHsn.length) flags.push({ text: L(`${noHsn.length} product(s) have no valid HSN: ${noHsn.slice(0, 3).map(p => p.name).join(', ')} — fix before filing`, `${noHsn.length} பொருட்களுக்கு HSN இல்லை`), tone: 'bad' });

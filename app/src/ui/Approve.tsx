@@ -14,7 +14,8 @@ const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 export function Approve({ go }: { go?: (p: string) => void }) {
   const [orders, setOrders] = useState<(Order & { shop: Shop })[]>([]);
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
-  const [edit, setEdit] = useState<Record<string, Record<string, number>>>({}); // orderId → productId → qty
+  const [staff, setStaff] = useState<Map<string, string>>(new Map());
+  const [edit, setEdit] = useState<Record<string, Record<number, number>>>({}); // orderId → picked line index → qty
   const [tick, setTick] = useState(0);
   const [printing, setPrinting] = useState<Invoice | null>(null);
   const [made, setMade] = useState<Invoice[]>([]);
@@ -23,16 +24,18 @@ export function Approve({ go }: { go?: (p: string) => void }) {
     (async () => {
       const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
+      setStaff(new Map((await db.staff.toArray()).map(s => [s.id, s.name.split(' ')[0]])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'picked').sort((a, b) => (a.pickedAt ?? '').localeCompare(b.pickedAt ?? ''));
       setOrders(os.map(o => ({ ...o, shop: shops.get(o.shopId)! })));
       setLocked(await billingLockedBy());
     })();
   }, [tick]);
 
-  const qtyOf = (o: Order, pid: string) => edit[o.id]?.[pid] ?? o.picked?.find(p => p.productId === pid)?.qty ?? o.lines.find(l => l.productId === pid)?.qty ?? 0;
-  const value = (o: Order) => o.lines.reduce((a, l) => { const p = products.get(l.productId); return a + qtyOf(o, l.productId) * l.rate * (1 + (p?.gst ?? 0) / 100); }, 0);
+  const pickedOf = (o: Order): NonNullable<Order['picked']> => o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }));
+  const qtyAt = (o: Order, i: number) => edit[o.id]?.[i] ?? pickedOf(o)[i].qty;
+  const value = (o: Order) => pickedOf(o).reduce((a, pk, i) => { const l = o.lines.find(x => x.productId === pk.productId); const p = products.get(pk.productId); return a + qtyAt(o, i) * (l?.rate ?? 0) * (1 + (p?.gst ?? 0) / 100); }, 0);
   const done = async (o: Order) => {
-    const picked = (o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }))).map(p => ({ ...p, qty: qtyOf(o, p.productId) }));
+    const picked = pickedOf(o).map((p, i) => ({ ...p, qty: qtyAt(o, i) }));
     const { ChangeSet } = await import('../core/db');
     const cs = new ChangeSet(); cs.put('orders', { ...o, picked }, 'verified'); await cs.commit('Verified');
     const r = await approvePicked(o.id); setMade(m => [...r.invoices, ...m]); setTick(x => x + 1);
@@ -45,24 +48,27 @@ export function Approve({ go }: { go?: (p: string) => void }) {
       {locked && <div className="alert bad"><Lock /><div><b>{L('Billing is locked', 'பில்லிங் பூட்டப்பட்டுள்ளது')}</b> — {L(`close ${locked} first.`, `${locked} நாளை முதலில் முடிக்கவும்.`)} {go && <button className="link" onClick={() => go('dayclose')}>{L('Day close →', 'நாள் முடிவு →')}</button>}</div></div>}
       {made.length > 0 && <div className="alert ok"><Check /><div><b>{made.length} {L('bill(s) made', 'பில் தயார்')}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div></div></div>}
       {orders.map(o => {
-        const diffs = o.lines.filter(l => { const pk = o.picked?.find(p => p.productId === l.productId); return pk && (pk.qty !== l.qty || (pk.mrp && pk.mrp !== products.get(l.productId)?.mrp)); });
+        const pk = pickedOf(o);
+        const orderedQty = (pid: string) => o.lines.find(l => l.productId === pid)?.qty ?? 0;
+        const diffs = pk.filter((x, i) => qtyAt(o, i) !== orderedQty(x.productId) || (x.mrp && x.mrp !== products.get(x.productId)?.mrp) || pk.filter(y => y.productId === x.productId).length > 1).length;
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {L('packed by', 'கட்டியவர்')} {o.pickedBy === 'demo' ? 'Mani' : ''} {o.pickedAt?.slice(11, 16)}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {L('packed by', 'கட்டியவர்')} {staff.get(o.pickedBy ?? '') ?? ''} {o.pickedAt?.slice(11, 16)}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
-            {diffs.length ? <div className="muted">{diffs.length} {L('line(s) changed by the picker — shown in red', 'வரிகள் மாற்றப்பட்டன — சிவப்பில்')}</div> : <div className="muted">{L('Packed exactly as ordered', 'ஆர்டர் படியே கட்டப்பட்டது')}</div>}
+            {diffs ? <div className="muted">{diffs} {L('line(s) changed by the picker — shown in red', 'வரிகள் மாற்றப்பட்டன — சிவப்பில்')}</div> : <div className="muted">{L('Packed exactly as ordered', 'ஆர்டர் படியே கட்டப்பட்டது')}</div>}
             <div className="list">
-              {o.lines.map(l => {
-                const p = products.get(l.productId); const pk = o.picked?.find(x => x.productId === l.productId); const q = qtyOf(o, l.productId);
-                const changed = q !== l.qty || (pk?.mrp && pk.mrp !== p?.mrp);
+              {pk.map((x, i) => {
+                const p = products.get(x.productId); const q = qtyAt(o, i); const ord = orderedQty(x.productId);
+                const twin = pk.filter(y => y.productId === x.productId).length > 1;
+                const changed = (!twin && q !== ord) || (x.mrp && x.mrp !== p?.mrp) || twin;
                 return (
-                  <div key={l.productId} className="row" style={{ flexWrap: 'nowrap', color: changed ? 'var(--bad)' : undefined }}>
+                  <div key={i} className="row" style={{ flexWrap: 'nowrap', color: changed ? 'var(--bad)' : undefined }}>
                     {p && <Pack product={p} />}
-                    <span className="grow">{p?.name}{pk?.mrp && pk.mrp !== p?.mrp ? <span className="badge bad" style={{ marginLeft: 6 }}>MRP {pk.mrp}</span> : null}</span>
-                    <div className="stepper small"><button aria-label="less" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [l.productId]: Math.max(0, q - 1) } }))}><Minus /></button><input type="number" value={q} onChange={ev => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [l.productId]: Math.max(0, Number(ev.target.value)) } }))} aria-label="Quantity" /><button aria-label="more" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [l.productId]: q + 1 } }))}><Plus /></button></div>
-                    {q !== l.qty && <span className="badge bad">{L('of', '/')} {l.qty}</span>}
+                    <span className="grow">{p?.name}{x.mrp && x.mrp !== p?.mrp ? <span className="badge bad" style={{ marginLeft: 6 }}>MRP {x.mrp}</span> : null}{twin ? <span className="badge warn" style={{ marginLeft: 6 }}>{L('2 MRPs', '2 MRP')}</span> : null}</span>
+                    <div className="stepper small"><button aria-label="less" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: Math.max(0, q - 1) } }))}><Minus /></button><input type="number" value={q} onChange={ev => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: Math.max(0, Number(ev.target.value)) } }))} aria-label="Quantity" /><button aria-label="more" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: q + 1 } }))}><Plus /></button></div>
+                    {!twin && q !== ord && <span className="badge bad">{L('of', '/')} {ord}</span>}
                   </div>
                 );
               })}

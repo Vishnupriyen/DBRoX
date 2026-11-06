@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { PhotoButton } from './PhotoButton';
 import { Upload, Check, Store, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
-import { ChangeSet, db, session, today } from '../core/db';
+import { ChangeSet, db, session, today, activeShops } from '../core/db';
 import { orderStops } from '../core/pipeline';
 import { getLang, inr, speak, t } from '../core/i18n';
 import { downloadWorkbook, isSheet, readSheet, readShopRows } from '../core/readers';
@@ -43,7 +43,7 @@ export function LitePlan({ onDone }: { onDone: () => void }) {
   const [shops, setShops] = useState<Shop[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
-  useEffect(() => { (async () => { setShops((await db.shops.toArray()).sort((a, b) => a.area.localeCompare(b.area) || a.name.localeCompare(b.name))); const p = await db.dayPlans.where('date').equals(today()).first(); if (p) setSel(new Set(p.shopIds)); })(); }, []);
+  useEffect(() => { (async () => { setShops((await activeShops()).sort((a, b) => a.area.localeCompare(b.area) || a.name.localeCompare(b.name))); const p = await db.dayPlans.where('date').equals(today()).first(); if (p) setSel(new Set(p.shopIds)); })(); }, []);
   const toggle = (id: string) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const save = async () => {
     const chosen = orderStops(shops.filter(s => sel.has(s.id)).map(shop => ({ shop }))).map(x => x.shop.id);
@@ -80,7 +80,7 @@ export function LiteDelivery() {
   const [stops, setStops] = useState<(Shop & { entry?: LiteEntry })[]>([]);
   const [open, setOpen] = useState<Shop | null>(null);
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const p = await db.dayPlans.where('date').equals(today()).first(); const shops = new Map((await db.shops.toArray()).map(s => [s.id, s])); const es = (await db.liteEntries.where('date').equals(today()).toArray()).filter(e => e.kind !== 'payment'); setStops((p?.shopIds ?? []).map(id => ({ ...shops.get(id)!, entry: es.find(e => e.shopId === id) }))); })(); }, [tick]);
+  useEffect(() => { (async () => { const p = await db.dayPlans.where('date').equals(today()).first(); const shops = new Map((await activeShops()).map(s => [s.id, s])); const es = (await db.liteEntries.where('date').equals(today()).toArray()).filter(e => e.kind !== 'payment'); setStops((p?.shopIds ?? []).map(id => ({ ...shops.get(id)!, entry: es.find(e => e.shopId === id) }))); })(); }, [tick]);
   if (open) return <LiteStop shop={open} onClose={() => { setOpen(null); setTick(x => x + 1); }} />;
   const done = stops.filter(s => s.entry).length;
   return (
@@ -129,7 +129,7 @@ export function LiteCollect() {
   const [mode, setMode] = useState<'cash' | 'upi' | 'cheque'>('cash');
   const [ref, setRef] = useState('');
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const p = await db.dayPlans.where('date').equals(today()).first(); const all = await db.shops.toArray(); const todays = p ? p.shopIds.map(id => all.find(s => s.id === id)!).filter(Boolean) : []; setShops([...todays, ...all.filter(s => !todays.includes(s))]); setEntries((await db.liteEntries.where('date').equals(today()).toArray()).filter(e => e.kind === 'payment')); })(); }, [tick]);
+  useEffect(() => { (async () => { const p = await db.dayPlans.where('date').equals(today()).first(); const all = await activeShops(); const todays = p ? p.shopIds.map(id => all.find(s => s.id === id)!).filter(Boolean) : []; setShops([...todays, ...all.filter(s => !todays.includes(s))]); setEntries((await db.liteEntries.where('date').equals(today()).toArray()).filter(e => e.kind === 'payment')); })(); }, [tick]);
   const save = async () => {
     if (!shopId || amount <= 0) return;
     const cs = new ChangeSet();
@@ -160,7 +160,7 @@ export function LiteExport() {
   useEffect(() => { db.liteEntries.where('date').equals(today()).toArray().then(es => setN({ d: es.filter(e => e.kind !== 'payment').length, p: es.filter(e => e.kind === 'payment').length })); }, []);
   const go = async () => {
     const es = await db.liteEntries.where('date').equals(today()).toArray();
-    const names = new Map((await db.shops.toArray()).map(s => [s.id, s]));
+    const names = new Map((await activeShops()).map(s => [s.id, s]));
     const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
     await downloadWorkbook(`DBRoX-day-${today()}`, [
       { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
