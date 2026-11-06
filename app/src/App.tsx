@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
-import { db, setSession } from './core/db';
+import { db, setSession, today } from './core/db';
 import { seedDemo } from './core/seed';
 import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
+import { OrdersReceived } from './ui/OrdersReceived';
+import { NewShop, NewShops, Targets } from './ui/Sales';
+import { StockIn, StockPosition, Damages, Ageing, StockReports } from './ui/Inventory';
+import { DeliveryStatus, TripReports, PrintLoad } from './ui/DeliveryReports';
+import { Outstanding, Cheques, Bank, Expenses, PnL, Position, ExportPage, Gst } from './ui/Money';
+import { CheckInGate, Today, Salary } from './ui/Payroll';
 import { Morning } from './ui/Morning';
 import { Beat } from './ui/Beat';
 import { Pick } from './ui/Pick';
@@ -20,26 +26,42 @@ import { MyDay } from './ui/MyDay';
 import { LiteShops, LitePlan, LiteDelivery, LiteCollect, LiteExport } from './ui/Lite';
 import { More } from './ui/More';
 import { DialogHost, notify } from './ui/dialog';
-import type { Staff } from './core/types';
+import type { Settings, Staff } from './core/types';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, [string, string]>> = {
-  approve: ['Approve orders', 'ஆர்டர் ஒப்புதல்'], plan: ['Delivery plan', 'டெலிவரி திட்டம்'], live: ['Live vans', 'வண்டிகள் இப்போது'], collect: ['Collect', 'வசூல்'],
-  cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], stock: ['Stock alerts', 'ஸ்டாக் எச்சரிக்கை'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'],
-  reports: ['Reports', 'அறிக்கை'], bills: ['Bills', 'பில்கள்'], pick: ['Pick orders', 'ஆர்டர் எடு'], load: ['Load vans', 'வண்டி ஏற்று'], trip: ['My trip', 'என் டிரிப்'],
-  beat: ["Today's beat", 'இன்றைய பீட்'], myday: ['My day', 'என் நாள்'], 'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'],
-  'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], staff: ['Staff', 'ஊழியர்கள்'], more: ['More', 'மேலும்'],
+  'orders-received': ['Orders received', 'வந்த ஆர்டர்கள்'], verify: ['Picked — to verify', 'சரிபார்க்க'], billed: ['Billed', 'பில் ஆனது'],
+  newshops: ['New shops', 'புதிய கடைகள்'], targets: ['Targets', 'இலக்கு'], beat: ["Today's beat", 'இன்றைய பீட்'], myday: ['My day', 'என் நாள்'], newshop: ['New shop', 'புதிய கடை'], 'orders-excel': ['Orders Excel', 'ஆர்டர் Excel'],
+  stockin: ['Purchases / stock in', 'கொள்முதல்'], stock: ['Stock position', 'ஸ்டாக் நிலை'], damages: ['Damages', 'சேதம்'], ageing: ['Ageing', 'பழைய ஸ்டாக்'], 'stock-reports': ['Stock reports', 'ஸ்டாக் அறிக்கை'],
+  plan: ['Delivery plan', 'டெலிவரி திட்டம்'], live: ['Live vans', 'வண்டிகள் இப்போது'], status: ['Delivery status', 'டெலிவரி நிலை'], trips: ['Trip reports', 'டிரிப் அறிக்கை'], load: ['Load vans', 'வண்டி ஏற்று'], print: ['Load sheet', 'லோடு ஷீட்'], trip: ['My trip', 'என் டிரிப்'], pick: ['Pick orders', 'ஆர்டர் எடு'],
+  collect: ['Collect', 'வசூல்'], outstanding: ['Outstanding', 'நிலுவை'], cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], cheques: ['Cheques & UPI', 'செக் & UPI'],
+  bank: ['Bank', 'வங்கி'], expenses: ['Expenses', 'செலவு'], pnl: ['P&L', 'லாப நஷ்டம்'], position: ['Position', 'நிலை'], export: ['Export', 'ஏற்றுமதி'], reports: ['Reports', 'அறிக்கை'],
+  gst: ['GST', 'GST'], today: ['Today', 'இன்று'], salary: ['Salary', 'சம்பளம்'], staff: ['Staff', 'ஊழியர்கள்'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'], bills: ['Bills', 'பில்கள்'],
+  'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
 };
+// RoX "open a screen" names → pages (keeps old names working)
+const ALIAS: Record<string, Page> = { approve: 'orders-received', reports: 'pnl', cash: 'cash', claims: 'claims', bills: 'billed' };
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState<Staff | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [firm, setFirm] = useState('');
   const [page, setPage] = useState<Page>('home');
+  const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
+  const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
   const [langTick, setLangTick] = useState(0);
   const lang = getLang();
+
+  const loadMe = async (userId: string) => {
+    const s = await db.staff.get(userId);
+    const st = await db.settings.toCollection().first();
+    setSettings(st ?? null); setFirm(st?.firmName ?? '');
+    if (s) { setMe(s); setCheckedIn(s.role === 'owner' || !!(await db.checkIns.where('date').equals(today()).toArray()).find(c => c.staffId === s.id)); }
+    return s;
+  };
 
   useEffect(() => {
     (async () => {
@@ -49,7 +71,7 @@ export default function App() {
       if (saved) {
         const { tenantId, userId } = JSON.parse(saved);
         const s = await db.staff.get(userId);
-        if (s?.active) { setSession(tenantId, userId); setMe(s); }
+        if (s?.active) { setSession(tenantId, userId); await loadMe(userId); }
       }
       setReady(true);
       startAutoSync();
@@ -67,41 +89,66 @@ export default function App() {
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow();
-    const s = await db.staff.get(userId);
+    const s = await loadMe(userId);
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
-    setFirm((await db.settings.toCollection().first())?.firmName ?? '');
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
-    setMe(s); setPage('home');
+    setPage('home'); setModule(null);
   }} lang={lang} onLang={toggleLang} /></>;
 
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
-  const home = () => setPage('home');
+  const home = () => { setPage('home'); };
+  const go = (p: string) => { setPage((ALIAS[p] ?? p) as Page); setRox(false); };
   const title = TITLE[page]?.[lang === 'ta' ? 1 : 0];
+  const openRox = () => setRox(true);
+
+  // Check-in gate: nothing opens until the person checks in (owner exempt).
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">DB<em>RoX</em></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     switch (page) {
-      case 'home': return <Home role={me.role} go={setPage} />;
-      case 'approve': return <Approve />;
-      case 'plan': return <Plan onDone={home} />;
-      case 'live': return <Live />;
-      case 'collect': return <Collect />;
-      case 'cash': return <Morning only="cash" />;
-      case 'stock': return <Morning only="stock" />;
-      case 'claims': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="claims" />;
-      case 'dayclose': return <DayClose />;
-      case 'reports': return <Morning />;
-      case 'bills': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="bills" />;
-      case 'pick': return <PickOrders />;
-      case 'load': return <Pick />;
-      case 'trip': return <Delivery />;
+      case 'home': return <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
+      case 'orders-received': return <OrdersReceived />;
+      case 'verify': return <Approve go={go} />;
+      case 'billed': case 'bills': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="bills" />;
+      case 'newshops': return <NewShops />;
+      case 'targets': return <Targets />;
+      case 'newshop': return <NewShop onDone={home} />;
       case 'beat': return <Beat lang={lang} />;
       case 'myday': return <MyDay />;
+      case 'stockin': return <StockIn onRox={openRox} />;
+      case 'stock': return <StockPosition />;
+      case 'damages': return <Damages />;
+      case 'ageing': return <Ageing />;
+      case 'stock-reports': return <StockReports />;
+      case 'claims': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="claims" />;
+      case 'plan': return <Plan onDone={home} />;
+      case 'live': return <Live />;
+      case 'status': return <DeliveryStatus />;
+      case 'trips': return <TripReports />;
+      case 'load': return <Pick />;
+      case 'print': return <PrintLoad />;
+      case 'trip': return <Delivery />;
+      case 'pick': return <PickOrders />;
+      case 'collect': return <Collect />;
+      case 'outstanding': return <Outstanding />;
+      case 'cash': return <Morning only="cash" />;
+      case 'cheques': return <Cheques />;
+      case 'bank': return <Bank onRox={openRox} />;
+      case 'expenses': return <Expenses onRox={openRox} />;
+      case 'pnl': case 'reports': return <PnL />;
+      case 'position': return <Position />;
+      case 'export': return <ExportPage />;
+      case 'gst': return <Gst go={go} />;
+      case 'today': return <Today />;
+      case 'salary': return <Salary />;
+      case 'staff': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="staff" />;
+      case 'dayclose': return <DayClose go={p => setPage(p)} />;
       case 'lite-shops': return <LiteShops />;
       case 'lite-plan': return <LitePlan onDone={home} />;
       case 'lite-delivery': return <LiteDelivery />;
       case 'lite-collect': return <LiteCollect />;
       case 'lite-export': return <LiteExport />;
-      case 'staff': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="staff" />;
+      case 'orders-excel': return <MyDay />;
       case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} />;
     }
   };
@@ -119,19 +166,19 @@ export default function App() {
       <main className="main" key={page}>{body()}</main>
       <DialogHost />
 
-      {/* RoX Engine: one floating button on every screen, for every role. Type or speak; it proposes, you approve. */}
-      <button className="fab" onClick={() => setRox(true)} aria-label="RoX Engine"><span className="fab-mark">RoX</span></button>
       {rox && (
         <div className="sheet-wrap" onClick={() => setRox(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <div className="sheet-head"><span className="fab-mark small">RoX</span><b className="grow">RoX Engine</b><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
-            <div className="sheet-body"><Chat role={me.role} onGo={p => { setPage(p as Page); setRox(false); }} /></div>
+            <div className="sheet-body"><Chat role={me.role} onGo={go} /></div>
           </div>
         </div>
       )}
 
       <nav className="tabs">
-        <button className={page === 'home' ? 'on' : ''} onClick={home}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
+        <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
+        {/* RoX Engine: the raised centre button on every screen, for every role. It proposes, you approve. */}
+        <button className="fab" onClick={openRox} aria-label="RoX Engine"><span className="fab-mark">RoX</span></button>
         <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{lang === 'ta' ? 'மேலும்' : 'More'}</button>
       </nav>
     </div>

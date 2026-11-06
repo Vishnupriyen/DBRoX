@@ -11,7 +11,27 @@ const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 export function Plan({ onDone }: { onDone: () => void }) {
   const [plan, setPlan] = useState<PlanSuggestion[] | null>(null);
   const [vans, setVans] = useState<Van[]>([]);
-  useEffect(() => { suggestPlan().then(setPlan); db.vans.toArray().then(setVans); }, []);
+  const [mode, setMode] = useState<'ask' | 'rox' | 'me'>((localStorage.getItem('dbrox.planMode') as 'rox' | 'me') ?? 'ask');
+  const [pending, setPending] = useState(0);
+  useEffect(() => { db.vans.toArray().then(setVans); db.invoices.where('deliveryStatus').equals('pending').count().then(setPending); }, []);
+  useEffect(() => {
+    if (mode === 'rox') suggestPlan().then(setPlan);
+    if (mode === 'me') suggestPlan().then(p => setPlan(p.map(x => ({ ...x, shops: [] as PlanSuggestion['shops'] })).concat([{ van: { id: '', name: L('Not planned', 'திட்டமிடவில்லை'), number: '', kind: 'own' } as Van, shops: p.flatMap(x => x.shops) }])));
+  }, [mode]);
+  const pick = (m: 'rox' | 'me') => { localStorage.setItem('dbrox.planMode', m); setMode(m); };
+  if (mode === 'ask') return (
+    <div className="stack">
+      <div className="kpi navy"><div className="v">{pending}</div><div className="l">{L('bills ready for delivery', 'டெலிவரிக்கு தயார் பில்கள்')}</div></div>
+      <div className="card stack" style={{ textAlign: 'center' }}>
+        <div className="h">{L('How do you want to plan today?', 'இன்று எப்படி திட்டமிடலாம்?')}</div>
+        <button className="btn primary big block" onClick={() => pick('rox')}><Navigation /> {L('RoX, suggest', 'RoX பரிந்துரை')}</button>
+        <div className="muted">{L('Groups by area, fills each van by capacity and time, orders stops nearest-first. You can still move anything.', 'பகுதி வாரியாக, வண்டி திறன் படி, அருகில் முதலில். எதையும் மாற்றலாம்.')}</div>
+        <button className="btn big block" onClick={() => pick('me')}><Truck /> {L("I'll make the route", 'நானே வழி அமைக்கிறேன்')}</button>
+        <div className="muted">{L('You put each stop on a van; RoX only orders the stops.', 'நீங்கள் வண்டிக்கு கடை ஒதுக்குங்கள்; RoX வரிசை மட்டும்.')}</div>
+      </div>
+      <TodayTrips />
+    </div>
+  );
   if (!plan) return <div className="muted">…</div>;
   const move = (vi: number, si: number, dir: -1 | 1) => {
     const p = plan.map(x => ({ ...x, shops: [...x.shops] }));
@@ -21,16 +41,18 @@ export function Plan({ onDone }: { onDone: () => void }) {
   const toVan = (vi: number, si: number) => {
     const p = plan.map(x => ({ ...x, shops: [...x.shops] }));
     const stop = p[vi].shops.splice(si, 1)[0];
-    const others = vans.filter(v => v.id !== p[vi].van.id);
-    if (!others.length) return;
-    let target = p.find(x => x.van.id === others[0].id);
-    if (!target) { target = { van: others[0], shops: [] }; p.push(target); }
-    target.shops.push(stop); setPlan(p.filter(x => x.shops.length));
+    const order = [...vans.map(v => v.id), ''];
+    const next = order[(order.indexOf(p[vi].van.id) + 1) % order.length];
+    let target = p.find(x => x.van.id === next);
+    if (!target) { const v = vans.find(x => x.id === next); if (!v) return; target = { van: v, shops: [] }; p.push(target); }
+    target.shops.push(stop); setPlan(p);
   };
+  const unplanned = plan.find(x => x.van.id === '')?.shops.length ?? 0;
   const total = plan.reduce((a, p) => a + p.shops.length, 0);
   return (
     <div className="stack">
-      <div className="sechead"><h3>{L('Delivery plan', 'டெலிவரி திட்டம்')} · {total} {L('stops', 'நிறுத்தங்கள்')}</h3><span className="muted">{L('Suggested by RoX', 'RoX பரிந்துரை')}</span></div>
+      <div className="sechead"><h3>{L('Delivery plan', 'டெலிவரி திட்டம்')} · {total - unplanned} {L('stops', 'நிறுத்தங்கள்')}</h3><button className="link" onClick={() => setMode('ask')}>{mode === 'rox' ? L('Suggested by RoX', 'RoX பரிந்துரை') : L('Your route', 'உங்கள் வழி')} · {L('change', 'மாற்று')}</button></div>
+      {unplanned > 0 && <div className="alert"><Clock /><div>{unplanned} {L('stop(s) not on any van yet — tap ⇄ to move them', 'நிறுத்தங்கள் வண்டியில் இல்லை — ⇄ தட்டி நகர்த்தவும்')}</div></div>}
       {plan.map((p, vi) => (
         <div key={p.van.id} className="card stack" style={{ gap: 8 }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -44,14 +66,14 @@ export function Plan({ onDone }: { onDone: () => void }) {
                 <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {L('bill', 'பில்')} · {inr(s.value)}</div></div>
                 <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => move(vi, si, -1)} aria-label="Up"><ChevronUp /></button>
                 <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => move(vi, si, 1)} aria-label="Down"><ChevronDown /></button>
-                {vans.length > 1 && <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => toVan(vi, si)} aria-label="Other van"><ArrowRightLeft /></button>}
+                <button className="icon-btn" style={{ width: 40, height: 40 }} onClick={() => toVan(vi, si)} aria-label="Other van"><ArrowRightLeft /></button>
               </div>
             ))}
           </div>
         </div>
       ))}
       {!plan.length && <div className="card muted">{L('No bills waiting for delivery.', 'டெலிவரிக்கு பில் இல்லை.')}</div>}
-      {plan.length > 0 && <button className="btn primary big block" onClick={async () => { await confirmPlan(plan); onDone(); }}><Check /> {L('Confirm plan → load sheets', 'உறுதி → லோடு ஷீட்')}</button>}
+      {plan.length > 0 && <button className="btn primary big block" disabled={total - unplanned === 0} onClick={async () => { await confirmPlan(plan.filter(x => x.van.id)); onDone(); }}><Check /> {L('Confirm plan → load sheets', 'உறுதி → லோடு ஷீட்')}{unplanned ? ` (${unplanned} ${L('wait for tomorrow', 'நாளைக்கு')})` : ''}</button>}
       <TodayTrips />
     </div>
   );

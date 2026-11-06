@@ -1,7 +1,7 @@
 // RoX Engine: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, Tamil + English). The AI is only used to
 // read photos, never to decide money.
-import { db, getSettings, newId, session, today } from './db';
+import { ChangeSet, db, getSettings, newId, session, today } from './db';
 import { applySchemes, activeSchemes, stockOf } from './billing';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
 import { bestProduct, findAmount, findShopInText, norm, parseItemLines, toPieces } from './match';
@@ -10,7 +10,7 @@ import {
 } from './proposals';
 import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
-import { MODULES, type ModuleKey, type Product, type Role, type Scheme } from './types';
+import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Scheme, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
 
 export interface Reply {
@@ -24,17 +24,38 @@ export interface Reply {
 
 // Screens RoX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
-  { page: 'approve', name: 'Approve orders', roles: ['owner', 'office'], words: ['approve', 'approval', 'needs ok', 'waiting for me', 'ஒப்புதல்'] },
+  { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approval', 'needs ok', 'waiting for me', 'new orders', 'ஒப்புதல்', 'வந்த ஆர்டர்'] },
+  { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'சரிபார்'] },
+  { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'today bills', 'பில் ஆனது'] },
+  { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['new shops', 'shops to approve', 'புதிய கடைகள்'] },
+  { page: 'targets', name: 'Targets', roles: ['owner', 'office'], words: ['target', 'targets', 'இலக்கு'] },
+  { page: 'stockin', name: 'Purchases', roles: ['owner', 'office', 'godown'], words: ['stock in', 'purchases', 'purchase', 'கொள்முதல்'] },
+  { page: 'ageing', name: 'Ageing', roles: ['owner', 'office', 'godown'], words: ['ageing', 'aging', 'old stock', 'பழைய ஸ்டாக்'] },
+  { page: 'damages', name: 'Damages', roles: ['owner', 'office', 'godown'], words: ['damages', 'damage register', 'சேதம்'] },
+  { page: 'status', name: 'Delivery status', roles: ['owner', 'office'], words: ['delivery status', 'delivered today', 'டெலிவரி நிலை'] },
+  { page: 'trips', name: 'Trip reports', roles: ['owner', 'office'], words: ['trip report', 'trip reports', 'km', 'டிரிப் அறிக்கை'] },
+  { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding list', 'who owes', 'dues', 'நிலுவை பட்டியல்'] },
+  { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'upi list', 'செக்'] },
+  { page: 'bank', name: 'Bank', roles: ['owner', 'office'], words: ['bank', 'statement', 'வங்கி'] },
+  { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list', 'செலவுகள்'] },
+  { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'pnl', 'profit', 'profit and loss', 'லாபம்'] },
+  { page: 'position', name: 'Position', roles: ['owner'], words: ['position', 'net worth', 'loans', 'நிலை'] },
+  { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export', 'ஏற்றுமதி'] },
+  { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
+  { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'வருகை'] },
+  { page: 'salary', name: 'Salary', roles: ['owner'], words: ['salary', 'salary sheet', 'payroll', 'சம்பளம்'] },
+  { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
   { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan', 'டெலிவரி திட்டம்', 'திட்டம்'] },
   { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'where is the van', 'where is van', 'track', 'tracking', 'வண்டி எங்கே'] },
   { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'ஊழியர் பணம்'] },
-  { page: 'stock', name: 'Stock alerts', roles: ['owner', 'office', 'godown'], words: ['stock alert', 'stock alerts', 'out of stock', 'ஸ்டாக் எச்சரிக்கை'] },
+  { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'ஸ்டாக் நிலை'] },
   { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'கிளைம்'] },
   { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'close day', 'close the day', 'reconcile', 'reconciliation', 'நாள் முடி'] },
-  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['report', 'reports', 'morning', 'dashboard', 'அறிக்கை'] },
-  { page: 'bills', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list', 'பில்கள்'] },
+  { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report', 'fast moving', 'slow moving', 'அறிக்கை'] },
+  { page: 'billed', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list', 'பில்கள்'] },
   { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection', 'வசூல்'] },
   { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack', 'ஆர்டர் எடு'] },
+  { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print', 'பிரிண்ட்'] },
   { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading', 'லோடு', 'ஏற்று'] },
   { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery', 'டிரிப்', 'டெலிவரி'] },
   { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'பீட்'] },
@@ -159,9 +180,12 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
     return paymentProposal(shop.id, findAmount(rest)!, modeIn(text), refIn(textIn));
   }
   if (has(text, W.expense) && findAmount(text) != null && !shop) return expenseFromText(textIn);
+  // Payroll by chat: "leave monday", "leave 12/11 to 14/11 fever", "advance 1000", owner: "Karthik leave tomorrow", "advance 2000 to Ravi"
+  if (has(text, ['leave', 'லீவு', 'விடுமுறை'])) return leaveRequest(textIn, role);
+  if (has(text, ['advance', 'அட்வான்ஸ்']) && findAmount(text) != null) return advanceRequest(textIn, role);
 
   // ------------------------ questions ------------------------
-  if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Approve orders.', go: 'approve' } : needsOkTable();
+  if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
   if (has(text, W.cashHand)) return cashInHand();
   if (has(text, W.loadSheet)) { const r = need('godown', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
@@ -431,7 +455,8 @@ async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'u
 async function expenseFromText(textIn: string): Promise<Reply> {
   const t = norm(textIn);
   const vans = await db.vans.toArray();
-  const van = vans.find(v => t.includes(norm(v.name)) || t.includes(norm(v.number)));
+  const me = await db.staff.get(session().userId);
+  const van = vans.find(v => t.includes(norm(v.name)) || t.includes(norm(v.number))) ?? (me?.vanId ? vans.find(v => v.id === me.vanId) : undefined);
   return expenseProposal([{ date: today(), category: categoryOf(t), amount: findAmount(t.replace(/van \d+/, '')) ?? 0, vanId: van?.id ?? '', note: textIn }]);
 }
 
@@ -755,4 +780,44 @@ async function needsOkTable(): Promise<Reply> {
   const orders = (await db.orders.where('status').equals('needs_ok').toArray());
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
   return { text: orders.length ? `${orders.length} order(s) wait for your OK. Open "Today" to approve them.` : 'Nothing waiting for your OK.', table: { name: 'Needs OK', columns: ['Shop', 'Date', 'Items', 'Why'], rows: orders.map(o => [shops.get(o.shopId) ?? '', o.date, o.lines.length, o.issues.join('; ')]) } };
+}
+
+
+// ---------------- Payroll by chat ----------------
+function parseDate(t: string): string | null {
+  const m = t.match(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
+  if (m) { const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : today().slice(0, 4); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  if (t.includes('tomorrow') || t.includes('நாளை')) return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (t.includes('today') || t.includes('இன்று')) return today();
+  for (let i = 0; i < 7; i++) if (t.includes(days[i])) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return new Date(Date.now() + diff * 86400000).toISOString().slice(0, 10); }
+  return null;
+}
+async function whom(t: string, role: Role): Promise<Staff | undefined> {
+  const staff = (await db.staff.toArray()).filter(s => s.active);
+  if (role === 'owner' || role === 'office') { const hit = staff.find(s => s.role !== 'owner' && t.includes(norm(s.name.split(' ')[0]))); if (hit) return hit; }
+  return staff.find(s => s.id === session().userId);
+}
+async function leaveRequest(textIn: string, role: Role): Promise<Reply> {
+  const t = norm(textIn);
+  const who = await whom(t, role); if (!who) return { text: 'Who is the leave for?', tone: 'warn' };
+  const dates = [...t.matchAll(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/g)].map(m => parseDate(m[0])!);
+  const from = dates[0] ?? parseDate(t) ?? today(); const to = dates[1] ?? from;
+  const reason = textIn.replace(/leave|லீவு|விடுமுறை|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|to|for|on/gi, '').replace(new RegExp(who.name.split(' ')[0], 'i'), '').trim() || 'personal';
+  const self = who.id === session().userId;
+  const cs = new ChangeSet();
+  cs.put<LeaveRequest>('leaves', { staffId: who.id, from, to, reason, status: self && role !== 'owner' ? 'waiting' : 'approved' }, 'leave');
+  await cs.commit('Leave');
+  return { text: self && role !== 'owner' ? `Leave request ${from}${to !== from ? ' to ' + to : ''} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${from}${to !== from ? ' to ' + to : ''} recorded (${reason}).`, tone: 'ok' };
+}
+async function advanceRequest(textIn: string, role: Role): Promise<Reply> {
+  const t = norm(textIn);
+  const who = await whom(t, role); if (!who) return { text: 'Who is the advance for?', tone: 'warn' };
+  const amount = findAmount(t)!;
+  const self = who.id === session().userId;
+  const cs = new ChangeSet();
+  cs.put<Advance>('advances', { staffId: who.id, amount, reason: textIn, status: self && role !== 'owner' ? 'waiting' : 'approved', instalments: 1, recovered: 0 }, 'advance');
+  if (!(self && role !== 'owner')) cs.put('expenses', { date: today(), category: 'advance', amount, note: `Advance to ${who.name}` }, 'advance paid');
+  await cs.commit('Advance');
+  return { text: self && role !== 'owner' ? `Advance request ₹${amount} sent to the owner.` : `Advance ₹${amount} to ${who.name.split(' ')[0]} recorded; recovered from next salary.`, tone: 'ok' };
 }

@@ -12,8 +12,24 @@ export async function bookOrder(cs: ChangeSet, shop: Shop, lines: OrderLine[], b
   return cs.put<Order>('orders', { shopId: shop.id, salesmanId: by, source: 'salesman', lines, date: today(), status: 'new', issues: check.issues, invoiceIds: [], ...extra }, 'order booked');
 }
 
-// ---- 2. godown picks what is actually available
-export async function pickOrder(orderId: string, picked: { productId: string; qty: number }[]) {
+// ---- 1b. owner approves the order (credit/history seen) → goes to the godown
+export async function approveOrder(orderId: string) {
+  const o = (await db.orders.get(orderId))!;
+  const cs = new ChangeSet();
+  cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso() }, 'owner approved');
+  await cs.commit('Order approved');
+}
+
+// Shop history strip for the approval screen: bills pending, oldest days, rupees, limit.
+export async function shopHistory(shopId: string) {
+  const { invoiceBalances } = await import('./ledger');
+  const bal = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
+  const shop = (await db.shops.get(shopId))!;
+  return { bills: bal.length, amount: r2(bal.reduce((a, b) => a + b.balance, 0)), oldestDays: Math.max(0, ...bal.map(b => Math.floor((Date.now() - new Date(b.invoice.date).getTime()) / 86400000))), limit: shop.creditLimit, days: shop.creditDays };
+}
+
+// ---- 2. godown picks what is actually available (qty, batch, MRP may change; never adds a product)
+export async function pickOrder(orderId: string, picked: { productId: string; qty: number; batchId?: string; mrp?: number }[]) {
   const o = (await db.orders.get(orderId))!;
   const cs = new ChangeSet();
   cs.put('orders', { ...o, status: 'picked', picked, pickedBy: session().userId, pickedAt: nowIso() }, 'picked');
@@ -42,6 +58,19 @@ export async function approvePicked(orderId: string) {
   billed.invoiceIds = invs.map(i => i.id);
   const batchId = await cs.commit('Approved & billed');
   return { invoices: invs, batchId };
+}
+
+// Day-close gate: billing stops until every earlier day with activity is closed (locked spec 15.2).
+export async function billingLockedBy(): Promise<string | null> {
+  const t = today();
+  const days = new Set<string>();
+  for (const i of await db.invoices.toArray()) if (i.date < t) days.add(i.date);
+  for (const x of await db.trips.toArray()) if (x.date < t) days.add(x.date);
+  for (const p of await db.payments.toArray()) if (p.date < t) days.add(p.date);
+  const closed = new Set((await db.dayCloses.toArray()).map(d => d.date));
+  const first = (await db.audit.orderBy('at').first())?.at.slice(0, 10) ?? t; // nothing before the app started counts
+  const open = [...days].filter(d => !closed.has(d) && d >= first).sort();
+  return open[0] ?? null;
 }
 
 export async function rejectOrder(orderId: string, reason: string) {
@@ -166,12 +195,68 @@ export async function daySummary(date = today()) {
   };
 }
 
-export async function closeDay(date = today()) {
+// ---- 5b. the checklist: everything the owner must decide before the day can close
+export async function dayChecklist(date = today()) {
+  const invs = (await db.invoices.toArray()).filter(i => !i.cancelled);
+  const trips = (await db.trips.where('date').equals(date).toArray());
+  const pays = (await db.payments.toArray());
+  const orders = await db.orders.toArray();
+  const shops = await db.shops.toArray();
+  const expenses = (await db.expenses.where('date').equals(date).toArray());
+  const tripsOpen = trips.filter(t => t.status === 'out' || t.status === 'loaded');
+  const noResult = invs.filter(i => i.tripId && trips.some(t => t.id === i.tripId) && ['planned', 'out'].includes(i.deliveryStatus));
+  const diffs = invs.filter(i => i.delivery && !i.diffAction && ((i.delivery.shortages?.length ?? 0) > 0 || (i.delivery.excess?.length ?? 0) > 0));
+  const refs = pays.filter(p => p.date === date && p.mode !== 'cash' && !(p.ref && p.ref.length >= 4) && !p.confirmPhoto);
+  const waitingOrders = orders.filter(o => o.date <= date && (o.status === 'new' || o.status === 'needs_ok' || o.status === 'picked'));
+  const newShops = shops.filter(s => !s.approved);
+  const dupes = pays.filter(p => p.status === 'ok' && p.date === date).filter((p, _, all) => all.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount && q.collectedBy !== p.collectedBy));
+  const cashOpen = pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok' && p.date <= date);
+  const unapprovedExpenses = expenses.filter(e => !(e as { approved?: boolean }).approved && e.category !== 'advance');
+  return { tripsOpen, noResult, diffs, refs, waitingOrders, newShops, dupes, cashOpen, unapprovedExpenses };
+}
+
+// Owner's choice for a bill with delivery differences: re-issue the same number with delivered quantities, or a credit note.
+export async function settleDifference(invoiceId: string, action: 'modified' | 'credit_note') {
+  const inv = (await db.invoices.get(invoiceId))!;
+  const cs = new ChangeSet();
+  const sh = inv.delivery?.shortages ?? []; const ex = inv.delivery?.excess ?? [];
+  if (action === 'modified') {
+    const lines = inv.lines.map(l => {
+      const minus = sh.find(x => x.productId === l.productId)?.qty ?? 0; const plus = ex.find(x => x.productId === l.productId)?.qty ?? 0;
+      const qty = Math.max(0, l.qty - minus + plus); if (qty === l.qty) return l;
+      const f = qty / (l.qty || 1);
+      const gross = r2(l.gross * f), discount = r2(l.discount * f), taxable = r2(gross - discount), tax = r2(taxable * l.gst / 100);
+      const inter = l.igst > 0;
+      return { ...l, qty, gross, discount, taxable, cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0, total: r2(taxable + tax) };
+    }).filter(l => l.qty > 0);
+    const taxable = r2(lines.reduce((a, l) => a + l.taxable, 0)), cgst = r2(lines.reduce((a, l) => a + l.cgst, 0)), sgst = r2(lines.reduce((a, l) => a + l.sgst, 0)), igst = r2(lines.reduce((a, l) => a + l.igst, 0));
+    const exact = r2(taxable + cgst + sgst + igst); const total = Math.round(exact);
+    cs.put('invoices', { ...inv, original: inv.original ?? { lines: inv.lines, total: inv.total, at: nowIso() }, lines, taxable, cgst, sgst, igst, roundOff: r2(total - exact), total, diffAction: 'modified' }, 'bill revised to delivered qty');
+  } else {
+    const cnLines = sh.map(x => { const l = inv.lines.find(y => y.productId === x.productId)!; return { productId: x.productId, qty: x.qty, amount: r2(x.qty * l.total / (l.qty || 1)), restock: true }; });
+    if (cnLines.length) {
+      const n = await db.creditNotes.count();
+      cs.put('creditNotes', { number: `CN/${today().slice(2, 4)}/${String(n + 1).padStart(5, '0')}`, invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'Short at delivery', lines: cnLines, total: r2(cnLines.reduce((a, l) => a + l.amount, 0)) }, 'credit note');
+    }
+    cs.put('invoices', { ...inv, diffAction: 'credit_note' }, 'credit note chosen');
+  }
+  await cs.commit('Delivery difference settled');
+}
+
+export async function closeDay(date = today(), received: Record<string, number> = {}) {
   const s = await daySummary(date);
   const cs = new ChangeSet();
+  // cash: only what the owner counted and received is settled; the rest stays pending against that person
   const pays = (await db.payments.toArray()).filter(p => p.date <= date && p.mode === 'cash' && !p.settled && p.status === 'ok');
-  for (const p of pays) cs.put('payments', { ...p, settled: true }, 'settled at day close');
-  cs.put('dayCloses', { date, closedBy: session().userId, summary: s as unknown as Record<string, unknown> }, 'day closed');
+  const shortfalls: Record<string, number> = {};
+  const byStaff = new Map<string, typeof pays>(); for (const p of pays) byStaff.set(p.collectedBy, [...(byStaff.get(p.collectedBy) ?? []), p]);
+  for (const [staffId, list] of byStaff) {
+    const have = list.reduce((a, p) => a + p.amount, 0); const got = received[staffId] ?? 0;
+    let left = got;
+    for (const p of list.sort((a, b) => a.date.localeCompare(b.date))) { if (left >= p.amount) { cs.put('payments', { ...p, settled: true }, 'cash received'); left = r2(left - p.amount); } }
+    if (got < have) shortfalls[staffId] = r2(have - got);
+  }
+  cs.put('dayCloses', { date, closedBy: session().userId, summary: { ...(s as unknown as Record<string, unknown>), received, shortfalls } }, 'day closed');
   await cs.commit('Day closed');
 }
 
@@ -190,8 +275,9 @@ export async function counts() {
   const myTrip = me?.role === 'delivery' ? trips.find(t => t.status !== 'done' && (t.driverId === me.id || (me.vanId && t.vanId === me.vanId))) : undefined;
   const myStops = myTrip ? new Set(invs.filter(i => i.tripId === myTrip.id && ['planned', 'out'].includes(i.deliveryStatus)).map(i => i.shopId)).size : 0;
   return {
-    toPick: orders.filter(o => o.status === 'new').length,
-    toApprove: orders.filter(o => o.status === 'picked' || o.status === 'needs_ok').length,
+    toApproveOrders: orders.filter(o => o.status === 'new' || o.status === 'needs_ok').length,
+    toPick: orders.filter(o => o.status === 'approved').length,
+    toApprove: orders.filter(o => o.status === 'picked').length,
     toPlan: invs.filter(i => i.deliveryStatus === 'pending').length,
     toLoad: trips.filter(t => t.status === 'planned').length,
     out: trips.filter(t => t.status === 'out').length,

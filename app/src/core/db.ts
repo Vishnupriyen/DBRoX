@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
-  Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry,
+  Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -29,6 +29,9 @@ class RoxDB extends Dexie {
   dayCloses!: Table<DayClose, string>;
   dayPlans!: Table<DayPlan, string>;
   liteEntries!: Table<LiteEntry, string>;
+  checkIns!: Table<CheckIn, string>;
+  leaves!: Table<LeaveRequest, string>;
+  advances!: Table<Advance, string>;
   audit!: Table<AuditEntry, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 

@@ -3,10 +3,11 @@ import { PhotoButton } from './PhotoButton';
 import { Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
 import { endTrip, startTrip, trackPoint } from '../core/pipeline';
 import { Pack } from './Pack';
-import { ChangeSet, db, nowIso, session, today } from '../core/db';
-import { allocateOldestFirst, r2, shopOutstanding } from '../core/ledger';
-import { inr, speak, t } from '../core/i18n';
-import type { CreditNote, Invoice, Payment, Product, Shop, Trip } from '../core/types';
+import { ChangeSet, db, getSettings, nowIso, session, today } from '../core/db';
+import { PayBox } from './PayBox';
+import { r2 } from '../core/ledger';
+import { inr, t } from '../core/i18n';
+import type { Invoice, Product, Shop, Trip } from '../core/types';
 import { ask, askText, confirmBox } from './dialog';
 
 interface Stop { shop: Shop; invoices: Invoice[] }
@@ -101,72 +102,53 @@ const REASONS = [
 function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [short, setShort] = useState<Record<string, { qty: number; reason: string }>>({});
+  const [extra, setExtra] = useState<Record<string, number>>({});
   const [step, setStep] = useState<'items' | 'confirm' | 'pay' | 'done'>('items');
-  const [photo, setPhoto] = useState<string | undefined>();
-  const [pay, setPay] = useState({ amount: 0, mode: 'cash' as Payment['mode'], ref: '' });
-  const [oldBal, setOldBal] = useState(0);
-  useEffect(() => { db.products.toArray().then(ps => setProducts(new Map(ps.map(p => [p.id, p])))); shopOutstanding(stop.shop.id).then(o => setOldBal(o.total)); }, [stop]);
+  const [shopPhoto, setShopPhoto] = useState<string>();
+  const [billPhoto, setBillPhoto] = useState<string>();
+  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [grn, setGrn] = useState(true);
+  useEffect(() => { db.products.toArray().then(ps => setProducts(new Map(ps.map(p => [p.id, p])))); getSettings().then(s => setGrn(s.grnPhoto !== false)); }, [stop]);
 
   const key = (inv: Invoice, pid: string) => `${inv.id}|${pid}`;
   const shortValue = useMemo(() => {
     let v = 0;
-    for (const inv of stop.invoices) for (const l of inv.lines) {
-      const s = short[key(inv, l.productId)];
-      if (s?.qty) v += Math.min(s.qty, l.qty) * (l.total / (l.qty || 1));
-    }
+    for (const inv of stop.invoices) for (const l of inv.lines) { const s = short[key(inv, l.productId)]; if (s?.qty) v += Math.min(s.qty, l.qty) * (l.total / (l.qty || 1)); }
     return r2(v);
   }, [short, stop]);
+  const extraValue = useMemo(() => { let v = 0; for (const inv of stop.invoices) for (const l of inv.lines) { const e = extra[key(inv, l.productId)]; if (e) v += e * (l.total / (l.qty || 1)); } return r2(v); }, [extra, stop]);
   const billTotal = r2(stop.invoices.reduce((a, i) => a + i.total, 0));
-  const delivered = r2(billTotal - shortValue);
+  const delivered = r2(billTotal - shortValue + extraValue);
+  const distanceM = pos && stop.shop.lat && stop.shop.lng ? Math.round(Math.hypot((pos.lat - stop.shop.lat) * 111000, (pos.lng - stop.shop.lng) * 111000 * Math.cos(pos.lat * Math.PI / 180))) : undefined;
 
-  const toConfirm = () => {
-    setStep('confirm');
-    speak(`${stop.shop.name}. ${Math.round(delivered)} ரூபாய் பொருட்கள் வந்து சேர்ந்தன. சரி என்றால் பச்சை பொத்தானை அழுத்துங்கள்.`);
-  };
+  const takeShopPhoto = async (p: string) => { setShopPhoto(p); setPos(await getPos()); };
 
+  // Delivered: record what the shop accepted. No credit note here — the owner chooses modified bill / credit note at day close.
   const confirmDelivery = async (returnAll = false) => {
-    const pos = await getPos();
     const cs = new ChangeSet();
     const batches = await db.batches.toArray();
-    const cnCount = await db.creditNotes.count();
-    let cnNo = 0;
     for (const inv of stop.invoices) {
       const shortages: { productId: string; qty: number; reason: string }[] = [];
-      const cnLines: CreditNote['lines'] = [];
+      const excess: { productId: string; qty: number }[] = [];
       for (const l of inv.lines) {
         const s = returnAll ? { qty: l.qty, reason: 'refused' } : short[key(inv, l.productId)];
+        const e = extra[key(inv, l.productId)];
+        if (e) { excess.push({ productId: l.productId, qty: e }); const b = batches.find(x => x.productId === l.productId && x.qty >= e); if (b) { b.qty -= e; cs.put('batches', { ...b }, 'extra given from van'); } }
         if (!s?.qty) continue;
         const qty = Math.min(s.qty, l.qty);
         const reason = REASONS.find(r => r.value === s.reason) ?? REASONS[0];
         shortages.push({ productId: l.productId, qty, reason: reason.label });
-        cnLines.push({ productId: l.productId, qty, amount: r2(qty * l.total / (l.qty || 1)), restock: reason.restock });
-        if (reason.restock) {
-          const b = batches.find(x => x.id === l.batches[0]?.batchId);
-          if (b) { b.qty += qty; cs.put('batches', { ...b }, 'back to godown'); }
-        } else {
-          cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo }, 'transit damage');
-        }
+        if (reason.restock) { const b = batches.find(x => x.id === l.batches[0]?.batchId); if (b) { b.qty += qty; cs.put('batches', { ...b }, 'back to stock'); } }
+        else cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: shopPhoto }, 'transit damage');
       }
-      if (cnLines.length) {
-        cs.put<CreditNote>('creditNotes', { number: `CN/${today().slice(2, 4)}/${String(cnCount + ++cnNo).padStart(5, '0')}`, invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: returnAll ? 'Returned at door' : 'Short at delivery', lines: cnLines, total: r2(cnLines.reduce((a, l) => a + l.amount, 0)) }, 'credit note at door');
-      }
-      cs.put('invoices', { ...inv, deliveryStatus: returnAll ? 'returned' : shortages.length ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo, lat: pos?.lat, lng: pos?.lng, shortages } }, 'delivery');
+      const diff = shortages.length || excess.length;
+      // shop location fills itself from the first delivery
+      if (pos && !stop.shop.lat) cs.put('shops', { ...stop.shop, lat: pos.lat, lng: pos.lng }, 'location from delivery');
+      cs.put('invoices', { ...inv, deliveryStatus: returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo: shopPhoto, shopPhoto, billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM, shortages, excess } }, 'delivery');
     }
-    await cs.commit(returnAll ? 'Returned at door' : 'Delivered');
+    await cs.commit(returnAll ? 'Refused at door' : 'Delivered');
     if (returnAll) { setStep('done'); return; }
-    setPay({ amount: Math.max(0, Math.round(delivered)), mode: 'cash', ref: '' });
     setStep('pay');
-  };
-
-  const savePayment = async (shopConfirmed: boolean) => {
-    if (pay.amount > 0) {
-      const { allocations, advance } = await allocateOldestFirst(stop.shop.id, pay.amount);
-      const cs = new ChangeSet();
-      cs.put<Payment>('payments', { shopId: stop.shop.id, amount: pay.amount, mode: pay.mode, ref: pay.ref, date: today(), collectedBy: session().userId, shopConfirmed, confirmPhoto: photo, allocations, advance, settled: false, status: shopConfirmed ? 'ok' : 'waiting_shop' }, 'collected at door');
-      await cs.commit('Payment at delivery');
-      if (shopConfirmed) speak(`${pay.amount} ரூபாய் பெறப்பட்டது. நன்றி.`);
-    }
-    setStep('done');
   };
 
   if (step === 'done') return (
@@ -178,39 +160,34 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   );
 
   if (step === 'pay') return (
-    <div>
+    <div className="stack">
       <div className="sechead"><h3>{t('collect')} · {stop.shop.name}</h3></div>
-      <div className="card stack">
-        <div className="row" style={{ justifyContent: 'space-between' }}><span className="muted">Today's goods</span><b className="num">{inr(delivered)}</b></div>
-        <div className="row" style={{ justifyContent: 'space-between' }}><span className="muted">Old balance</span><b className="num">{inr(Math.max(0, oldBal))}</b></div>
-        <div className="field"><label>{t('amount')}</label>
-          <input className="bigamount" type="number" inputMode="decimal" value={pay.amount || ''} onChange={e => setPay({ ...pay, amount: Number(e.target.value) })} aria-label={t('amount')} /></div>
-        <div className="segmented">
-          {(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={pay.mode === m ? 'on' : ''} onClick={() => setPay({ ...pay, mode: m })}>{t(m)}</button>)}
-        </div>
-        {pay.mode !== 'cash' && <div className="field"><label>UPI / cheque no</label><input value={pay.ref} onChange={e => setPay({ ...pay, ref: e.target.value })} /></div>}
-        <p className="muted" style={{ textAlign: 'center', margin: 0 }}>{t('shopConfirm')}</p>
-        <button className="btn ok-huge" onClick={() => savePayment(true)} aria-label="Shop confirms payment"><Check size={84} /></button>
-        <button className="btn" onClick={() => savePayment(false)}>Owner not here — wait for shop ✓</button>
-        <button className="btn ghost" onClick={() => { setPay({ ...pay, amount: 0 }); setStep('done'); }}>No payment today</button>
-      </div>
+      <PayBox shop={stop.shop} preferInvoiceIds={stop.invoices.map(i => i.id)} onDone={() => setStep('done')} onSkip={() => setStep('done')} />
     </div>
   );
 
-  if (step === 'confirm') return (
-    <div>
-      <div className="sechead"><h3>{stop.shop.name}</h3></div>
-      <div className="card stack" style={{ textAlign: 'center' }}>
-        <div className="eyebrow">Goods delivered</div>
-        <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
-        {shortValue > 0 && <div><span className="badge warn">Short / return {inr(shortValue)} → credit note</span></div>}
-        <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
-        <PhotoButton facing="user" onPhoto={setPhoto} />
-        <button className="btn ok-huge" onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
-        <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> Back</button>
+  if (step === 'confirm') {
+    const ready = !!shopPhoto && (!grn || !!billPhoto);
+    return (
+      <div>
+        <div className="sechead"><h3>{stop.shop.name}</h3></div>
+        <div className="card stack" style={{ textAlign: 'center' }}>
+          <div className="eyebrow">Goods delivered</div>
+          <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
+          {shortValue > 0 && <div><span className="badge warn">Short {inr(shortValue)}</span></div>}
+          {extraValue > 0 && <div><span className="badge warn">Extra {inr(extraValue)}</span></div>}
+          <div className="row" style={{ justifyContent: 'center', gap: 8 }}>
+            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label="1. Shop photo" />{shopPhoto && <span className="muted" style={{ fontSize: 12 }}>{pos ? (distanceM != null ? `${distanceM} m from shop` : 'location saved') : 'no GPS — marked'}</span>}</div>
+            {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label="2. Signed bill / GRN" />}
+          </div>
+          <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
+          <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
+          {!ready && <div className="muted" style={{ fontSize: 12 }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
+          <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> Back</button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div>
@@ -225,7 +202,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
           <div className="list">
             {inv.lines.map(l => {
               const p = products.get(l.productId);
-              const s = short[key(inv, l.productId)];
+              const s = short[key(inv, l.productId)]; const e = extra[key(inv, l.productId)];
               return (
                 <div className="item" key={l.productId}>
                   {p ? <Pack product={p} /> : <div className="avatar">?</div>}
@@ -235,24 +212,26 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                     <div className="row" style={{ marginTop: 4 }}>
                       <span className="badge navy">{l.qty + l.freeQty} pcs{l.freeQty ? ` (${l.freeQty} free)` : ''}</span>
                       {s?.qty ? <span className="badge bad">−{s.qty} {REASONS.find(r => r.value === s.reason)?.label}</span> : null}
+                      {e ? <span className="badge warn">+{e} extra</span> : null}
                     </div>
                   </div>
-                  <button className="btn small" onClick={async () => {
-                    const raw = await askText(`${t('short')}: how many pieces of ${l.name}?`, String(s?.qty ?? ''), 'number');
-                    if (raw == null) return;
-                    const q = Number(raw);
-                    if (!Number.isFinite(q)) return;
-                    const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
-                    setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
-                  }}>{t('short')}</button>
+                  <div className="stack" style={{ gap: 4 }}>
+                    <button className="btn small" onClick={async () => {
+                      const raw = await askText(`${t('short')}: how many pieces of ${l.name}?`, String(s?.qty ?? ''), 'number');
+                      if (raw == null) return; const q = Number(raw); if (!Number.isFinite(q)) return;
+                      const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
+                      setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
+                    }}>{t('short')}</button>
+                    <button className="btn small" onClick={async () => { const raw = await askText(`Extra pieces of ${l.name} given from the van?`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>Extra</button>
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
       ))}
-      <button className="btn big primary block" onClick={toConfirm}><Check /> {t('delivered')}</button>
-      <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown and a credit note is made.', 'Return all')) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
+      <button className="btn big primary block" onClick={() => setStep('confirm')}><Check /> {t('delivered')}</button>
+      <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown. The owner decides the bill at day close.', 'Refused')) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
     </div>
   );
 }

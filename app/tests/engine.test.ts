@@ -5,7 +5,7 @@ import { seedDemo } from '../src/core/seed';
 import { handle } from '../src/core/engine';
 import { commit, validate, hasErrors } from '../src/core/proposals';
 import { invoiceBalances, validGstin } from '../src/core/ledger';
-import { pickOrder, approvePicked, suggestPick } from '../src/core/pipeline';
+import { pickOrder, approvePicked, approveOrder, suggestPick } from '../src/core/pipeline';
 
 beforeAll(async () => {
   await seedDemo();
@@ -26,6 +26,8 @@ describe('RoX Engine', () => {
     // pipeline: booked → godown packs what it has → owner approves → bills
     const o = (await db.orders.get(booked.orderId!))!;
     expect(o.status).toBe('new');
+    await approveOrder(o.id); // owner approves first (sees shop history)
+    expect((await db.orders.get(o.id))!.status).toBe('approved');
     const pick = await suggestPick(o);
     expect(pick.every(x => x.available === x.ordered)).toBe(true);
     await pickOrder(o.id, pick.map(x => ({ productId: x.productId, qty: x.available })));
@@ -35,7 +37,7 @@ describe('RoX Engine', () => {
     expect(res.invoices!.length).toBe(2); // one bill per company (HUL, Britannia)
     const codes = new Map((await db.companies.toArray()).map(c => [c.id, c.code]));
     const hul = res.invoices!.find(i => codes.get(i.companyId) === 'HUL')!;
-    expect(hul.number).toMatch(/^DBX\/\d{2}-\d{2}\/\d{5}$/); // one running series for the distributor
+    expect(hul.number).toMatch(/^SMD\/\d{2}-\d{2}\/\d{5}$/); // one running series for the distributor
     const line = hul.lines[0];
     expect(line.gross).toBe(12 * 112);
     expect(line.discount).toBe(67.2); // 5% company scheme

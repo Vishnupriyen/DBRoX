@@ -102,6 +102,7 @@ export interface Shop extends Base {
   priceMode?: 'company' | 'distributor';
   tradeDiscountPct?: number;
   creditMode?: 'days' | 'limit' | 'bill_to_bill' | 'none';
+  diffPref?: 'modified' | 'credit_note'; // how this shop wants delivery differences handled
 }
 
 export interface Batch extends Base {
@@ -138,7 +139,9 @@ export interface Order extends Base {
   rateRemark?: string; // salesman asked for a lower rate; owner approves
   lines: OrderLine[];
   // pipeline: new → picked (godown) → billed (owner approved) ; cancelled at any point
-  status: 'new' | 'picked' | 'needs_ok' | 'billed' | 'cancelled';
+  // new (owner to approve) → approved (godown to pick) → picked (owner to verify) → billed
+  status: 'new' | 'approved' | 'picked' | 'needs_ok' | 'billed' | 'cancelled';
+  approvedBy?: string; approvedAt?: string;
   issues: string[];
   date: string;
   invoiceIds: string[];
@@ -230,6 +233,7 @@ export interface Payment extends Base {
 export interface Purchase extends Base {
   companyId: string;
   supplierGstin?: string;
+  paid?: number; // paid to the company so far
   billNo: string;
   date: string;
   lines: {
@@ -243,6 +247,8 @@ export interface Purchase extends Base {
 }
 
 export interface Expense extends Base {
+  approved?: boolean; // owner approves in bulk at day close
+  by?: string;
   date: string;
   category: string;
   amount: number;

@@ -15,7 +15,7 @@ export function gstinWithCheck(first14: string) {
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
-const SEED_VERSION = 'v0.3b';
+const SEED_VERSION = 'v0.4';
 export async function seedDemo(tenantId = 'demo') {
   const ls = typeof localStorage === 'undefined' ? null : localStorage;
   if (await db.settings.count()) {
@@ -31,6 +31,7 @@ export async function seedDemo(tenantId = 'demo') {
     address: '12 Bazaar Street, Tittakudi, Cuddalore 606106', stateCode: '33', phone: '9876543210',
     modules: { orders: true, billing: true, godown: true, delivery: true, collection: true, bank: true, accounts: true, claims: true, scan: true },
     billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5,
+    billPrefix: 'SMD', nextBillNo: 1, checkInBy: '09:30', grnPhoto: true, upiId: 'srimurugan@okaxis',
   });
   const van = cs.put<Van>('vans', { name: 'Van 1', number: 'TN 31 AB 1234', kind: 'own' });
   cs.put<Van>('vans', { name: 'Auto 2', number: 'TN 31 C 5678', kind: 'hired' });
@@ -122,7 +123,9 @@ export async function seedDemo(tenantId = 'demo') {
   // packed by godown, waiting for the owner's approval
   c4.put<Order>('orders', { shopId: S[1].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[5].id, qty: 24, rate: P[5].rate }, { productId: P[9].id, qty: 48, rate: P[9].rate }], date: today(), status: 'picked', issues: [], invoiceIds: [], picked: [{ productId: P[5].id, qty: 24 }, { productId: P[9].id, qty: 48 }], pickedBy: 'demo', pickedAt: new Date().toISOString() });
   // just booked by the salesman, waiting at the godown
-  c4.put<Order>('orders', { shopId: S[2].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[1].id, qty: 36, rate: P[1].rate }, { productId: P[3].id, qty: 20, rate: P[3].rate }], date: today(), status: 'new', issues: [], invoiceIds: [] });
+  c4.put<Order>('orders', { shopId: S[2].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[1].id, qty: 36, rate: P[1].rate }, { productId: P[3].id, qty: 20, rate: P[3].rate }], date: today(), status: 'approved', approvedBy: 'demo', approvedAt: new Date().toISOString(), issues: [], invoiceIds: [] });
+  // just booked by the salesman, waiting for the owner
+  c4.put<Order>('orders', { shopId: S[4].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[0].id, qty: 24, rate: P[0].rate }, { productId: P[8].id, qty: 12, rate: P[8].rate }], date: today(), status: 'new', issues: [], invoiceIds: [] });
   await c4.commit('Demo today pipeline');
   return settings;
 }

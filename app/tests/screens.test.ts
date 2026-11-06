@@ -12,7 +12,7 @@ describe('RoX opens screens by name', () => {
     await as('owner');
     expect((await handle('delivery plan', [])).go).toBe('plan');
     expect((await handle('Delivery Plan', [])).go).toBe('plan');
-    expect((await handle('approve', [])).go).toBe('approve');
+    expect((await handle('approve', [])).go).toBe('orders-received');
     expect((await handle('live vans', [])).go).toBe('live');
     expect((await handle('close day', [])).go).toBe('dayclose');
     expect((await handle('டெலிவரி திட்டம்', [])).go).toBe('plan');
