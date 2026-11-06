@@ -204,7 +204,7 @@ export default function App() {
 
 // The signature gradient as an SVG paint server, so icon accents can use fill="url(#hg)".
 function GradDefs() {
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
 }
 
 function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string) => void; lang: 'en' | 'ta'; onLang: () => void }) {

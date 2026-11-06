@@ -98,12 +98,12 @@ export function finYear(date: string) {
   return `${String(start).slice(2)}-${String(start + 1).slice(2)}`;
 }
 
-export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numbers?: { first: number; prefix: string }): Promise<Invoice[]> {
+export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numbers?: { first: number; prefix: string }, billDate?: string): Promise<Invoice[]> {
   const settings = await getSettings();
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
   const batches = await db.batches.toArray();
-  const date = today(); // a bill is dated the day it is made, never the order's day (closed days, GST period, number order)
+  const date = billDate ?? today(); // a bill is dated the day it is made, never the order's day (closed days, GST period, number order); only demo history passes a date
   const byCompany = new Map<string, OrderLine[]>();
   for (const l of order.lines) {
     const p = products.get(l.productId);

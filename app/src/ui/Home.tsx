@@ -131,7 +131,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         const myShops = (await db.shops.toArray()).filter(x => x.salesmanId === me);
         const visited = new Set((await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === me).map(v => v.shopId));
         t = [
-          { page: 'beat', icon: Route, en: "Today's beat", ta: 'இன்றைய பீட்', count: Math.max(0, myShops.length - visited.size), tone: 'ok' },
+          { page: 'beat', icon: Route, en: "Today's beat", ta: 'இன்றைய பீட்', count: (() => { const d = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]; const todays = myShops.filter(x => x.beat === d || x.aliases.includes(`beat:${d}`)); return todays.filter(x => !visited.has(x.id)).length || undefined; })(), tone: 'ok' },
           { page: 'collect', icon: IndianRupee, en: 'Collect', ta: 'வசூல்' },
           { page: 'myday', icon: BarChart3, en: 'My day', ta: 'என் நாள்' },
           { page: 'newshop', icon: UserPlus, en: 'New shop', ta: 'புதிய கடை' },
@@ -175,7 +175,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         <div className="morning">
           <div className="grow">
             <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
-            <div className="s">{morning.orders ? L(`${morning.orders} orders waiting for your OK.`, `${morning.orders} ஆர்டர் உங்கள் ஒப்புதலுக்கு.`) : morning.toDeliver ? L(`${morning.toDeliver} bills to plan for delivery.`, `${morning.toDeliver} பில் டெலிவரி திட்டத்திற்கு.`) : L('Nothing is waiting on you right now.', 'இப்போது எதுவும் காத்திருக்கவில்லை.')}</div>
+            <div className="s">{morning.orders ? L(`${morning.orders} order${morning.orders > 1 ? 's' : ''} waiting for your OK.`, `${morning.orders} ஆர்டர் உங்கள் ஒப்புதலுக்கு.`) : morning.toDeliver ? L(`${morning.toDeliver} bill${morning.toDeliver > 1 ? 's' : ''} to plan for delivery.`, `${morning.toDeliver} பில் டெலிவரி திட்டத்திற்கு.`) : L('Nothing is waiting on you right now.', 'இப்போது எதுவும் காத்திருக்கவில்லை.')}</div>
             <div className="kv"><div><b>{morning.orders}</b><span>{L('orders', 'ஆர்டர்')}</span></div><div><b>{morning.toDeliver}</b><span>{L('to deliver', 'டெலிவரி')}</span></div><div><b>{inr(morning.overdue)}</b><span>{L('overdue', 'தாமதம்')}</span></div><div><b>{morning.cash}</b><span>{L('cash w/ staff', 'ஊழியர் பணம்')}</span></div></div>
             {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{L('Start here', 'இங்கே தொடங்கு')} →</button>}
           </div>

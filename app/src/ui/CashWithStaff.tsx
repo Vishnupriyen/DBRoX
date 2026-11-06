@@ -34,7 +34,7 @@ export function CashWithStaff() {
         <div key={g.staffId} className="card stack" style={{ gap: 6 }}>
           <button className="row" style={{ flexWrap: 'nowrap', background: 'none', border: 0, padding: 0, textAlign: 'left', width: '100%' }} onClick={() => setOpenStaff(openStaff === g.staffId ? null : g.staffId)}>
             <div className="avatar"><Banknote size={18} /></div>
-            <div className="grow"><div className="t">{g.name}</div><div className="s">{g.pays.length} {L('collections', 'வசூல்')}{g.older > 0 ? ' · ' : ''}{g.older > 0 && <span className="badge bad">{inr(g.older)} {L('from earlier days', 'முந்தைய நாட்கள்')}</span>}</div></div>
+            <div className="grow"><div className="t">{g.name}</div><div className="s">{g.pays.length} {L(g.pays.length > 1 ? 'collections' : 'collection', 'வசூல்')}{g.older > 0 ? ' · ' : ''}{g.older > 0 && <span className="badge bad">{inr(g.older)} {L('from earlier days', 'முந்தைய நாட்கள்')}</span>}</div></div>
             <span className="amt num">{inr(g.total)}</span>{openStaff === g.staffId ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openStaff === g.staffId && <div className="list">

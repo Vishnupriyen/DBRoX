@@ -58,7 +58,7 @@ export function MyDay() {
           <div key={l.id} className="card stack" style={{ gap: 6 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}><b>{l.shop}</b><span className="amt num">{inr(l.value)}</span></div>
             {l.status === 'cancelled' ? <span className="badge bad">{L('cancelled', 'ரத்து')}</span> : (
-              <div className="row" style={{ gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
+              <div className="row" style={{ gap: 4 }}>
                 {steps(l.o, l.delivered).map((st, k) => <span key={k} className={`badge ${st.done ? 'ok' : ''}`} style={{ whiteSpace: 'nowrap' }}>{st.done ? <Check size={11} /> : <Clock size={11} />} {st.l}{st.time ? ` ${st.time}` : ''}</span>)}
               </div>
             )}

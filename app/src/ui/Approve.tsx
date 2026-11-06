@@ -34,7 +34,12 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   const pickedOf = (o: Order): NonNullable<Order['picked']> => o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }));
   const qtyAt = (o: Order, i: number) => edit[o.id]?.[i] ?? pickedOf(o)[i].qty;
   const value = (o: Order) => pickedOf(o).reduce((a, pk, i) => { const l = o.lines.find(x => x.productId === pk.productId); const p = products.get(pk.productId); return a + qtyAt(o, i) * (l?.rate ?? 0) * (1 + (p?.gst ?? 0) / 100); }, 0);
+  const [saving, setSaving] = useState<string | null>(null);
   const done = async (o: Order) => {
+    if (saving) return; setSaving(o.id);
+    try { await doneOnce(o); } catch (e) { const { notify } = await import('./dialog'); await notify(L('Could not bill', 'பில் ஆகவில்லை'), (e as Error).message); } finally { setSaving(null); }
+  };
+  const doneOnce = async (o: Order) => {
     const picked = pickedOf(o).map((p, i) => ({ ...p, qty: qtyAt(o, i) }));
     const { ChangeSet } = await import('../core/db');
     const cs = new ChangeSet(); cs.put('orders', { ...o, picked }, 'verified'); await cs.commit('Verified');
@@ -74,7 +79,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
               })}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              <button className="btn primary big grow" disabled={!!locked} onClick={() => done(o)}><Check /> {L('Done → bill', 'முடிந்தது → பில்')}</button>
+              <button className="btn primary big grow" disabled={!!locked || saving === o.id} onClick={() => done(o)}><Check /> {L('Done → bill', 'முடிந்தது → பில்')}</button>
               <button className="btn" onClick={async () => { const r = await askText(L('Why cancel?', 'ஏன் ரத்து?')); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
             </div>
           </div>

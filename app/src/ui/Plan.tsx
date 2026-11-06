@@ -43,7 +43,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
     if (si < here.shops.length - 1) choices.push({ label: L('↓ Later', '↓ பின்னே'), value: 'down' });
     for (const v of vans) if (v.id !== here.van.id) choices.push({ label: `→ ${v.name}`, value: `van:${v.id}` });
     if (here.van.id !== '') choices.push({ label: L('Tomorrow', 'நாளைக்கு'), value: 'van:' });
-    const r = await ask(stop.shop.name, { message: `${stop.invoices.length} ${L('bill', 'பில்')} · ${inr(stop.value)}`, choices });
+    const r = await ask(stop.shop.name, { message: `${stop.invoices.length} ${L(stop.invoices.length > 1 ? 'bills' : 'bill', 'பில்')} · ${inr(stop.value)}`, choices });
     if (!r) return;
     if (r === 'up' || r === 'down') { const j = si + (r === 'up' ? -1 : 1); [here.shops[si], here.shops[j]] = [here.shops[j], here.shops[si]]; setPlan(p); return; }
     const id = r.slice(4);
@@ -76,7 +76,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
             {p.shops.map((s, si) => (
               <button key={s.shop.id} className="stop item tap" style={{ minHeight: 52 }} onClick={() => stopMenu(plan.indexOf(p), si)}>
                 <span className="badge">{p.van.id ? si + 1 : '—'}</span>
-                <div className="grow" style={{ textAlign: 'left' }}><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {L('bill', 'பில்')} · {inr(s.value)}</div></div>
+                <div className="grow" style={{ textAlign: 'left' }}><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {L(s.invoices.length > 1 ? 'bills' : 'bill', 'பில்')} · {inr(s.value)}</div></div>
                 <span className="muted">⋯</span>
               </button>
             ))}

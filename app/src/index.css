@@ -604,3 +604,28 @@ table.grid td.ro { color: var(--mut); }
 .engine .composer textarea { white-space: nowrap; overflow-x: hidden; }
 .gate .big-btn { background: var(--g); color: var(--on-g); box-shadow: 0 0 60px rgba(79, 227, 214, .25); font-weight: 700; letter-spacing: -.02em; }
 .check .n.ok { color: #04150D; }
+
+/* sweep fixes (Nov 2026) */
+.link, button.link { background: none; border: 0; padding: 0; color: var(--teal); font-weight: 600; cursor: pointer; }
+.item.stacked { flex-direction: column; align-items: stretch; gap: 10px; }
+.item.stacked .actions { justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.item.stacked .actions .btn { min-height: 36px; }
+select { background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--txt); min-height: 40px; padding: 6px 10px; font: inherit; font-size: 14px; }
+select.full { width: 100%; }
+select:focus { outline: none; border-color: var(--teal); }
+.tbl { display: block; overflow-x: auto; max-width: 100%; }
+.main { padding-bottom: 48px; }
+@media (max-width: 380px) {
+  .morning .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+}
+.segmented button { white-space: nowrap; }
+/* undo toast lives under the header so it never covers an action button or the TESRAX core */
+.toast { top: calc(64px + env(safe-area-inset-top, 0px)); bottom: auto; white-space: nowrap; }
+.toast span { overflow: hidden; text-overflow: ellipsis; }
+@keyframes toast-down { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.toast { animation: toast-down .2s ease-out; }
+@media (min-width: 900px) { .toast { top: 72px; bottom: auto; right: 24px; left: auto; transform: none; animation: none; } }
+.qr img { width: min(240px, 100%); height: auto; display: block; }
+.qr .muted { color: #514A6B; }
+/* last button on a page always scrolls clear of the TESRAX core */
+.main { padding-bottom: 76px; }

@@ -15,7 +15,7 @@ export function gstinWithCheck(first14: string) {
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
-const SEED_VERSION = 'v0.7';
+const SEED_VERSION = 'v0.8';
 export async function seedDemo(tenantId = 'demo') {
   const ls = typeof localStorage === 'undefined' ? null : localStorage;
   if (await db.settings.count()) {
@@ -96,7 +96,7 @@ export async function seedDemo(tenantId = 'demo') {
   const past = async (shopIdx: number, ago: number, lines: [number, number][], payFrac: number, mode: Payment['mode'] = 'cash') => {
     const c2 = new ChangeSet();
     const o = c2.put<Order>('orders', { shopId: S[shopIdx].id, salesmanId: ravi.id, source: 'salesman', lines: lines.map(([pi, q]) => ({ productId: P[pi].id, qty: q, rate: P[pi].rate })), date: daysAgo(ago), status: 'billed', issues: [], invoiceIds: [] });
-    const invs = await makeInvoices(c2, o, S[shopIdx]);
+    const invs = await makeInvoices(c2, o, S[shopIdx], undefined, o.date);
     o.invoiceIds = invs.map(i => i.id);
     for (const i of invs) c2.put('invoices', { ...i, deliveryStatus: 'delivered', vanId: van.id, delivery: { at: daysAgo(ago), by: 'demo', shortages: [] } });
     await c2.commit('Demo bill');
@@ -117,7 +117,7 @@ export async function seedDemo(tenantId = 'demo') {
   const c4 = new ChangeSet();
   // approved & billed, waiting for the delivery plan
   const o = c4.put<Order>('orders', { shopId: S[6].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[0].id, qty: 12, rate: P[0].rate }, { productId: P[7].id, qty: 60, rate: P[7].rate }], date: today(), status: 'billed', issues: [], invoiceIds: [] });
-  const invs = await makeInvoices(c4, o, S[6]);
+  const invs = await makeInvoices(c4, o, S[6], undefined, o.date);
   for (const i of invs) c4.put('invoices', { ...i, vanId: van.id });
   o.invoiceIds = invs.map(i => i.id);
   // packed by godown, waiting for the owner's approval

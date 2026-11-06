@@ -43,7 +43,7 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
       }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
       {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (Hanubix side — never shown to a distributor)</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX · v0.3</div>
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX · v0.8</div>
     </div>
   );
 }
@@ -119,10 +119,12 @@ export function VansPage({ editable, staff: staffIn }: { editable: boolean; staf
       <h3>Vans</h3>
       <div className="list">
         {vans.map(v => (
-          <div key={v.id} className="item">
+          <div key={v.id} className="item stacked">
+            <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
             <div className="avatar"><Truck size={18} /></div>
-            <div className="grow"><div className="t">{v.name} <span className="muted">{v.number}</span></div><div className="muted">{v.kind} · driver: {staff.find(s => s.id === v.driverId)?.name ?? '—'}</div></div>
-            {editable && <select value={v.driverId ?? ''} onChange={async e => { const cs = new ChangeSet(); cs.put('vans', { ...v, driverId: e.target.value || undefined }, 'driver assigned'); const d = drivers.find(x => x.id === e.target.value); if (d) cs.put('staff', { ...d, vanId: v.id }, 'van assigned'); await cs.commit('Van driver'); load(); }}><option value="">no driver</option>{drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
+            <div className="grow"><div className="t">{v.name} <span className="muted">{v.number}</span></div><div className="muted">{v.kind === 'own' ? 'Own' : 'Hired'} · driver: {staff.find(s => s.id === v.driverId)?.name ?? '—'}</div></div>
+            </div>
+            {editable && <select className="full" value={v.driverId ?? ''} onChange={async e => { const cs = new ChangeSet(); cs.put('vans', { ...v, driverId: e.target.value || undefined }, 'driver assigned'); const d = drivers.find(x => x.id === e.target.value); if (d) cs.put('staff', { ...d, vanId: v.id }, 'van assigned'); await cs.commit('Van driver'); load(); }}><option value="">no driver</option>{drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
           </div>
         ))}
       </div>
@@ -152,13 +154,17 @@ function StaffPage({ editable }: { editable: boolean }) {
         <h3>Staff & access</h3>
         <div className="list">
           {list.map(s => (
-            <div key={s.id} className="item">
+            <div key={s.id} className="item stacked">
+              <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
               <div className="avatar">{s.name[0]}</div>
               <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.role} · {s.phone}{s.role !== 'owner' ? ` · ₹${s.salary ?? 0}/mo + ₹${s.batta ?? 0}/day` : ''}</div></div>
-              {s.role !== 'owner' && editable && <button className="btn small" onClick={async () => { const sal = await askText(`${s.name}: monthly salary ₹`, String(s.salary ?? ''), 'number'); if (sal === null) return; const bat = await askText('Batta per present day ₹', String(s.batta ?? ''), 'number'); if (bat === null) return; const cs = new ChangeSet(); cs.put('staff', { ...s, salary: Number(sal) || 0, batta: Number(bat) || 0 }, 'salary set'); await cs.commit('Salary set'); load(); }}>Salary</button>}
-              {s.role !== 'owner' && editable && (s.active
+              </div>
+              {s.role !== 'owner' && editable && <div className="row actions">
+              <button className="btn small" onClick={async () => { const sal = await askText(`${s.name}: monthly salary ₹`, String(s.salary ?? ''), 'number'); if (sal === null) return; const bat = await askText('Batta per present day ₹', String(s.batta ?? ''), 'number'); if (bat === null) return; const cs = new ChangeSet(); cs.put('staff', { ...s, salary: Number(sal) || 0, batta: Number(bat) || 0 }, 'salary set'); await cs.commit('Salary set'); load(); }}>Salary</button>
+              {(s.active
                 ? <button className="btn small danger" onClick={() => setActive(s, false)}>Remove access</button>
                 : <button className="btn small" onClick={() => setActive(s, true)}>Restore</button>)}
+              </div>}
             </div>
           ))}
         </div>
@@ -205,13 +211,17 @@ function Bills({ canCancel }: { canCancel: boolean }) {
       <div className="field" style={{ marginBottom: 10 }}><input placeholder="Search bill or shop…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search" /></div>
       <div className="list">
         {shown.map(i => (
-          <div key={i.id} className="item">
-            <div className="grow"><div className="t">{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
-              <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
-            <span className="amt num">{inr(i.total)}</span>
+          <div key={i.id} className="item stacked">
+            <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
+              <div className="grow"><div className="t" style={{ whiteSpace: 'nowrap' }}>{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
+                <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
+              <span className="amt num">{inr(i.total)}</span>
+            </div>
+            <div className="row actions">
             {canCancel && !i.cancelled && !i.printedAt && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
             <button className="btn small" onClick={() => setPrinting(i)} aria-label="Print"><Printer /></button>
-            {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /></button>}
+            {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /> Cancel</button>}
+            </div>
           </div>
         ))}
       </div>
