@@ -1,6 +1,6 @@
 import { ChangeSet, db, getSettings, today } from './db';
 import { isB2B, r2, shopOutstanding } from './ledger';
-import type { Batch, Company, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Shop } from './types';
+import type { Batch, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Shop } from './types';
 
 // ---------- schemes ----------
 export function activeSchemes(all: Scheme[], p: Product, date: string) {
@@ -86,7 +86,6 @@ function finYear(date: string) {
 export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Promise<Invoice[]> {
   const settings = await getSettings();
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-  const companies = new Map((await db.companies.toArray()).map(c => [c.id, c]));
   const schemes = await db.schemes.toArray();
   const batches = await db.batches.toArray();
   const date = order.date || today();
@@ -100,7 +99,6 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Pro
   const inter = shopState !== settings.stateCode;
   const out: Invoice[] = [];
   for (const [companyId, lines] of byCompany) {
-    const company = companies.get(companyId) as Company;
     const invLines: InvoiceLine[] = [];
     for (const l of lines) {
       const p = products.get(l.productId)!;
@@ -127,9 +125,10 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop): Pro
     const exact = r2(taxable + cgst + sgst + igst);
     const total = Math.round(exact);
     const freeValue = invLines.reduce((s, x) => s + x.freeQty * x.rate, 0);
-    const number = `${company.code}/${finYear(date)}/${String(company.nextBillNo).padStart(5, '0')}`;
-    company.nextBillNo += 1;
-    cs.put('companies', { ...company }, 'bill number');
+    // One running series for the distributor; several companies in one order take consecutive numbers.
+    const number = `${settings.billPrefix ?? 'DBX'}/${finYear(date)}/${String(settings.nextBillNo ?? 1).padStart(5, '0')}`;
+    settings.nextBillNo = (settings.nextBillNo ?? 1) + 1;
+    cs.put('settings', { ...settings }, 'bill number');
     const inv = cs.put<Invoice>('invoices', {
       number, companyId, shopId: shop.id, orderId: order.id, date, kind: isB2B(shop) ? 'B2B' : 'B2C',
       lines: invLines, taxable, cgst, sgst, igst, roundOff: r2(total - exact), total,

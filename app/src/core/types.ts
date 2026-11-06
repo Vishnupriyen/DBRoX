@@ -40,6 +40,11 @@ export interface Settings extends Base {
   discountAlertPct: number;
   serverUrl?: string;
   backupApproverId?: string;
+  billPrefix?: string;      // one running bill series for the distributor (locked spec 15.1)
+  nextBillNo?: number;
+  checkInBy?: string;       // 'HH:MM' — check-in after this is "late"
+  grnPhoto?: boolean;       // second delivery photo (signed bill / GRN); owner can switch off
+  upiId?: string;           // shown as QR at collection
 }
 
 export interface Staff extends Base {
@@ -49,6 +54,8 @@ export interface Staff extends Base {
   pin: string; // local only; server keeps a hash
   active: boolean;
   vanId?: string;
+  kind?: 'db' | 'company_rep'; // company rep sees only his company's products
+  companyId?: string;
 }
 
 export interface Company extends Base {
@@ -127,14 +134,15 @@ export interface Order extends Base {
   offRoute?: boolean;
   visitId?: string;
   salesmanId?: string;
-  source: 'salesman' | 'phone' | 'photo' | 'office';
+  source: 'salesman' | 'phone' | 'photo' | 'office' | 'in_person' | 'whatsapp' | 'other';
+  rateRemark?: string; // salesman asked for a lower rate; owner approves
   lines: OrderLine[];
   // pipeline: new → picked (godown) → billed (owner approved) ; cancelled at any point
   status: 'new' | 'picked' | 'needs_ok' | 'billed' | 'cancelled';
   issues: string[];
   date: string;
   invoiceIds: string[];
-  picked?: { productId: string; qty: number }[]; // what the godown actually packed
+  picked?: { productId: string; qty: number; batchId?: string; mrp?: number }[]; // what the godown actually packed
   pickedBy?: string;
   pickedAt?: string;
 }
@@ -183,7 +191,12 @@ export interface Invoice extends Base {
   delivery?: {
     at: string; by: string; photo?: string; lat?: number; lng?: number;
     shortages: { productId: string; qty: number; reason: string }[];
+    excess?: { productId: string; qty: number }[];
+    shopPhoto?: string; billPhoto?: string; distanceM?: number;
   };
+  diffAction?: 'modified' | 'credit_note'; // owner's choice at day close for delivery differences
+  original?: { lines: InvoiceLine[]; total: number; at: string }; // kept when a bill is revised
+  printedAt?: string;
   cancelled?: { at: string; by: string; reason: string };
 }
 
@@ -293,6 +306,15 @@ export interface DayPlan extends Base {
   shopIds: string[]; // standalone delivery: today's chosen shops in route order
 }
 
+export interface CheckIn extends Base {
+  staffId: string; date: string; at: string; lat?: number; lng?: number; distanceM?: number; late: boolean; out?: string;
+}
+export interface LeaveRequest extends Base {
+  staffId: string; from: string; to: string; reason: string; status: 'waiting' | 'approved' | 'rejected';
+}
+export interface Advance extends Base {
+  staffId: string; amount: number; reason: string; status: 'waiting' | 'approved' | 'rejected'; instalments?: number; recovered?: number;
+}
 export interface LiteEntry extends Base {
   date: string;
   shopId: string;
@@ -345,4 +367,4 @@ export interface AuditEntry extends Base {
 export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
-  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries';
+  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances';

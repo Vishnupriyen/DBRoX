@@ -67,6 +67,11 @@ class RoxDB extends Dexie {
       dayPlans: `${common}, date`,
       liteEntries: `${common}, date, shopId, kind`,
     });
+    this.version(4).stores({
+      checkIns: `${common}, staffId, date`,
+      leaves: `${common}, staffId, status`,
+      advances: `${common}, staffId, status`,
+    });
   }
 }
 

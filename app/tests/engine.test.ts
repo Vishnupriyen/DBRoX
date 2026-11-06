@@ -33,7 +33,9 @@ describe('RoX Engine', () => {
     const res = await approvePicked(o.id);
     expect((await db.orders.get(o.id))!.status).toBe('billed');
     expect(res.invoices!.length).toBe(2); // one bill per company (HUL, Britannia)
-    const hul = res.invoices!.find(i => i.number.startsWith('HUL'))!;
+    const codes = new Map((await db.companies.toArray()).map(c => [c.id, c.code]));
+    const hul = res.invoices!.find(i => codes.get(i.companyId) === 'HUL')!;
+    expect(hul.number).toMatch(/^DBX\/\d{2}-\d{2}\/\d{5}$/); // one running series for the distributor
     const line = hul.lines[0];
     expect(line.gross).toBe(12 * 112);
     expect(line.discount).toBe(67.2); // 5% company scheme
@@ -41,7 +43,7 @@ describe('RoX Engine', () => {
     expect(line.cgst + line.sgst).toBeCloseTo(229.82, 2); // 18%
     expect(hul.total).toBe(Math.round(1276.8 + 229.82));
     expect(line.batches[0].batch).toBe(live[0].batch); // oldest expiry with stock picked first
-    const brt = res.invoices!.find(i => i.number.startsWith('BRT'))!;
+    const brt = res.invoices!.find(i => codes.get(i.companyId) === 'BRT')!;
     expect(brt.lines[0].freeQty).toBe(2); // buy 24 get 2
     const claims = await db.claimEntries.toArray();
     expect(claims.some(c => c.invoiceId === hul.id && c.amount === 67.2)).toBe(true);

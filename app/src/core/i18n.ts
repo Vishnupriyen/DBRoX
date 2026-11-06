@@ -74,7 +74,10 @@ export const inr = (n: number) =>
   '₹' + (Math.round(n * 100) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 // Speak a short line in Tamil (or English) with the phone's free built-in voice.
+const VOICE = false;
 export function speak(text: string, l: Lang = 'ta') {
+  // Voice prompts are off until the owner asks for them (locked spec 15.2).
+  if (!VOICE) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = l === 'ta' ? 'ta-IN' : 'en-IN';
