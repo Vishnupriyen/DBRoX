@@ -12,7 +12,7 @@ export function DeliveryStatus() {
   const [rows, setRows] = useState<(Invoice & { shop: string })[]>([]);
   const [open, setOpen] = useState<Invoice | null>(null);
   useEffect(() => { (async () => { const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name])); setRows((await db.invoices.toArray()).filter(i => !i.cancelled && (i.date === today() || i.deliveryStatus !== 'delivered')).sort((a, b) => (b.delivery?.at ?? '').localeCompare(a.delivery?.at ?? '')).map(i => ({ ...i, shop: shops.get(i.shopId) ?? '' }))); })(); }, []);
-  const st: Record<Invoice['deliveryStatus'], [string, string, string]> = { pending: ['Waiting for plan', 'திட்டத்திற்கு', ''], planned: ['Planned', 'திட்டம்', 'warn'], out: ['On the road', 'சாலையில்', 'warn'], delivered: ['Delivered', 'டெலிவரி', 'ok'], partial: ['With differences', 'வித்தியாசம்', 'bad'], returned: ['Refused', 'மறுத்தது', 'bad'], undelivered: ['Not delivered', 'டெலிவரி இல்லை', 'bad'] };
+  const st: Record<Invoice['deliveryStatus'], [string, string, string]> = { pending: ['Not planned yet', 'இன்னும் திட்டமிடவில்லை', ''], planned: ['Planned', 'திட்டம்', 'warn'], out: ['On the road', 'சாலையில்', 'warn'], delivered: ['Delivered', 'டெலிவரி', 'ok'], partial: ['With differences', 'வித்தியாசம்', 'bad'], returned: ['Refused', 'மறுத்தது', 'bad'], undelivered: ['Not delivered', 'டெலிவரி இல்லை', 'bad'] };
   if (open) return (
     <div className="stack">
       <button className="link" onClick={() => setOpen(null)}>← {L('back', 'பின்')}</button>
@@ -62,6 +62,7 @@ export function TripReports() {
       <table className="tbl"><thead><tr><th>{L('Date', 'தேதி')}</th><th>{L('Van', 'வண்டி')}</th><th>{L('Stops', 'நிறுத்தம்')}</th><th>km</th><th>{L('Idle', 'நின்றது')}</th><th>{L('Fuel', 'டீசல்')}</th></tr></thead>
         <tbody>{rows.map(r => <tr key={r.t.id}><td>{r.t.date.slice(5)}</td><td>{r.van}</td><td className="num">{r.done}/{r.stops}</td><td className="num">{r.km || '—'}</td><td className="num">{r.idleMin ? `${r.idleMin} min` : '—'}</td><td className="num">{r.fuel ? inr(r.fuel) : '—'}</td></tr>)}</tbody></table>
       {!rows.length && <div className="card muted">{L('No trips yet.', 'டிரிப் இல்லை.')}</div>}
+      {rows.length > 0 && rows.every(r => r.t.track.length < 2) && <div className="alert warn"><AlertTriangle /><div>{L('No GPS track recorded on these trips — km and idle time show "—". The driver\'s phone must keep location on during the trip.', 'இந்த டிரிப்புகளில் GPS பதிவு இல்லை — டிரைவர் போனில் லொகேஷன் ஆன் இருக்க வேண்டும்.')}</div></div>}
       <div className="muted">{L('km from the GPS track; fuel from expenses entered as "diesel" for that van and day.', 'km GPS-ல் இருந்து; டீசல் செலவுகளிலிருந்து.')}</div>
     </div>
   );

@@ -140,6 +140,7 @@ export class ChangeSet {
         } as AuditEntry));
       }
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length } }));
     return this.batchId;
   }
 }

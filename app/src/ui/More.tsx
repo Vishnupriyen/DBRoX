@@ -107,9 +107,11 @@ function SettingsPage({ editable }: { editable: boolean }) {
   );
 }
 
-function VansPage({ editable, staff }: { editable: boolean; staff: Staff[] }) {
+export function VansPage({ editable, staff: staffIn }: { editable: boolean; staff?: Staff[] }) {
   const [vans, setVans] = useState<Van[]>([]);
-  const load = () => db.vans.toArray().then(setVans);
+  const [staffLoaded, setStaffLoaded] = useState<Staff[]>([]);
+  const staff = staffIn ?? staffLoaded;
+  const load = () => { db.vans.toArray().then(setVans); if (!staffIn) db.staff.toArray().then(setStaffLoaded); };
   useEffect(() => { load(); }, []);
   const drivers = staff.filter(s => s.role === 'delivery' && s.active);
   return (
@@ -161,7 +163,6 @@ function StaffPage({ editable }: { editable: boolean }) {
           ))}
         </div>
       </div>
-      <VansPage editable={editable} staff={list} />
       {editable && (
         <div className="card">
           <h3>Add staff</h3>
@@ -237,6 +238,16 @@ function Claims() {
     <div className="card">
       <h3>Claims tracker</h3>
       <div className="muted" style={{ marginBottom: 8 }}>Companies owe you {inr(pending)}. Say "claim file" in chat to build this month's claim.</div>
+      <button className="btn small primary" style={{ marginBottom: 8 }} onClick={async () => {
+        const cos = await db.companies.toArray(); if (!cos.length) return;
+        const companyId = (await ask('Which company?', { choices: cos.map(c => ({ label: c.name, value: c.id })) })) as string; if (!companyId) return;
+        const month = await askText('Month (YYYY-MM)', new Date().toISOString().slice(0, 7)); if (!month) return;
+        const open = (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month);
+        const auto = open.reduce((a, e) => a + e.amount, 0);
+        const amt = Number(await askText(`Claim amount ₹ (${open.length} entries this month total ${inr(auto)})`, String(auto || ''), 'number')); if (!amt) return;
+        const note = await askText('Note (scheme / damage / display / other)'); if (note === null) return;
+        const cs = new ChangeSet(); cs.put<Claim>('claims', { companyId, month, amount: amt, status: 'draft', note }, 'claim created'); await cs.commit('Claim created'); load();
+      }}>+ Create claim</button>
       <div className="list">
         {list.map(c => (
           <div key={c.id} className="item">

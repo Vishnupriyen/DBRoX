@@ -20,7 +20,7 @@ const SUGGEST: Record<Role, string[]> = {
 
 let seq = 1;
 
-export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void }) {
+export function Chat({ role, onGo, onState }: { role: Role; onGo?: (page: string) => void; onState?: (s: 'idle' | 'listening' | 'thinking' | 'ready') => void }) {
   const [msgs, setMsgs] = useState<Msg[]>([{ id: seq++, from: 'bot', text: 'Vanakkam! Send a file or photo and say what to do, or just type. Say "help" for examples.' }]);
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -31,6 +31,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+  useEffect(() => { onState?.(busy ? 'thinking' : listening ? 'listening' : 'idle'); }, [busy, listening]);
 
   const push = (m: Omit<Msg, 'id'>) => setMsgs(x => [...x, { ...m, id: seq++ }]);
 
@@ -43,6 +44,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
     try {
       const reply = await handle(said, fs);
       push({ from: 'bot', text: reply.text, reply });
+      setBusy(false); onState?.('ready'); setTimeout(() => onState?.('idle'), 1400);
       if (reply.go && onGo) setTimeout(() => onGo(reply.go!), 350);
     } catch (e) {
       push({ from: 'bot', text: `Something went wrong: ${(e as Error).message}`, reply: { text: '', tone: 'error' } });

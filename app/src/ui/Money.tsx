@@ -93,68 +93,117 @@ export function Expenses({ onRox }: { onRox?: () => void }) {
 
 // ---------- P&L: the owner's most important screen ----------
 export function PnL() {
-  const [d, setD] = useState<{ sales: number; cn: number; cogs: number; claims: number; own: number; exp: Map<string, number>; interest: number; cash: number; bank: number; staff: number } | null>(null);
+  type Head = { key: string; label: string; amount: number; items: { d: string; t: string; v: number }[] };
+  const [d, setD] = useState<{ income: Head[]; expense: Head[]; cash: number; bank: number; staff: number } | null>(null);
   const [period, setPeriod] = useState<'today' | 'month'>('month');
+  const [open, setOpen] = useState<string | null>(null);
   useEffect(() => { (async () => {
     const from = period === 'today' ? today() : month();
     const inRange = (dt: string) => period === 'today' ? dt === from : dt.startsWith(from);
     const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && inRange(i.date));
     const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
+    const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
     const cns = (await db.creditNotes.toArray()).filter(c => inRange(c.date));
-    const sales = r2(invs.reduce((a, i) => a + i.taxable, 0));
-    const cogs = r2(invs.reduce((a, i) => a + i.lines.reduce((b, l) => b + (l.qty + l.freeQty) * (products.get(l.productId)?.purchaseRate ?? 0), 0), 0));
+    const income: Head[] = [];
+    // Sales by company (before tax)
+    for (const [cid, name] of cos) { const ci = invs.filter(i => i.companyId === cid); if (!ci.length) continue; income.push({ key: 'sales-' + cid, label: `${L('Sales', 'விற்பனை')} · ${name}`, amount: r2(ci.reduce((a, i) => a + i.taxable, 0)), items: ci.map(i => ({ d: i.date, t: `${i.number} · ${shops.get(i.shopId) ?? ''}`, v: i.taxable })) }); }
+    const other = invs.filter(i => !cos.has(i.companyId)); if (other.length) income.push({ key: 'sales-x', label: L('Sales · other', 'விற்பனை · மற்றவை'), amount: r2(other.reduce((a, i) => a + i.taxable, 0)), items: other.map(i => ({ d: i.date, t: i.number, v: i.taxable })) });
+    if (cns.length) income.push({ key: 'cn', label: L('Returns / credit notes', 'திரும்பியது'), amount: -r2(cns.reduce((a, c) => a + c.total, 0)), items: cns.map(c => ({ d: c.date, t: `${c.number} · ${shops.get(c.shopId) ?? ''} · ${c.reason}`, v: -c.total })) });
     const claimsAll = (await db.claimEntries.toArray()).filter(c => inRange(c.createdAt.slice(0, 10)));
     const schemes = await db.schemes.toArray();
-    const own = r2(claimsAll.filter(c => c.kind === 'scheme' && schemes.some(s => s.source === 'own' && (s.productId === c.productId || !s.productId) && s.companyId === c.companyId)).reduce((a, c) => a + c.amount, 0));
-    const claims = r2(claimsAll.filter(c => c.kind === 'scheme').reduce((a, c) => a + c.amount, 0) - own);
+    const isOwn = (c: typeof claimsAll[0]) => c.kind === 'scheme' && schemes.some(s => s.source === 'own' && (s.productId === c.productId || !s.productId) && s.companyId === c.companyId);
+    const coClaims = claimsAll.filter(c => c.kind === 'scheme' && !isOwn(c)); const ownDisc = claimsAll.filter(isOwn);
+    if (coClaims.length) income.push({ key: 'claims', label: L('Company scheme claims', 'கம்பெனி கிளைம்'), amount: r2(coClaims.reduce((a, c) => a + c.amount, 0)), items: coClaims.map(c => ({ d: c.createdAt.slice(0, 10), t: `${cos.get(c.companyId) ?? ''} · ${products.get(c.productId ?? '')?.name ?? c.kind}`, v: c.amount })) });
     const exps = (await db.expenses.toArray()).filter(e => inRange(e.date) && e.category !== 'advance');
-    const exp = new Map<string, number>(); for (const e of exps) exp.set(e.category, r2((exp.get(e.category) ?? 0) + e.amount));
+    const incExp = exps.filter(e => e.category === 'income'); if (incExp.length) income.push({ key: 'other-income', label: L('Other income', 'மற்ற வருமானம்'), amount: r2(incExp.reduce((a, e) => a + e.amount, 0)), items: incExp.map(e => ({ d: e.date, t: e.note ?? '', v: e.amount })) });
+    const expense: Head[] = [];
+    const cogsItems = invs.map(i => ({ d: i.date, t: i.number, v: r2(i.lines.reduce((b, l) => b + (l.qty + l.freeQty) * (products.get(l.productId)?.purchaseRate ?? 0), 0)) }));
+    expense.push({ key: 'cogs', label: L('Cost of goods sold (FIFO)', 'விற்ற பொருள் செலவு'), amount: r2(cogsItems.reduce((a, x) => a + x.v, 0)), items: cogsItems });
+    if (ownDisc.length) expense.push({ key: 'own', label: L('Own discounts given', 'சொந்த தள்ளுபடி'), amount: r2(ownDisc.reduce((a, c) => a + c.amount, 0)), items: ownDisc.map(c => ({ d: c.createdAt.slice(0, 10), t: products.get(c.productId ?? '')?.name ?? '', v: c.amount })) });
+    const byCat = new Map<string, typeof exps>(); for (const e of exps) { if (e.category === 'income') continue; byCat.set(e.category, [...(byCat.get(e.category) ?? []), e]); }
+    for (const [k, list] of [...byCat.entries()].sort((a, b) => b[1].reduce((x, e) => x + e.amount, 0) - a[1].reduce((x, e) => x + e.amount, 0))) expense.push({ key: 'exp-' + k, label: k[0].toUpperCase() + k.slice(1), amount: r2(list.reduce((a, e) => a + e.amount, 0)), items: list.map(e => ({ d: e.date, t: e.note || k, v: e.amount })) });
     const pays = (await db.payments.toArray()).filter(p => p.status === 'ok');
     const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
-    setD({ sales, cn: r2(cns.reduce((a, c) => a + c.total, 0)), cogs, claims, own, exp, interest: exp.get('emi') ?? 0, cash: r2(pays.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(pays.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)) });
+    setD({ income, expense, cash: r2(pays.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(pays.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)) });
   })(); }, [period]);
   if (!d) return null;
-  const net = r2(d.sales - d.cn); const gm = r2(net - d.cogs); const expT = r2([...d.exp.values()].reduce((a, v) => a + v, 0)); const profit = r2(gm + d.claims - d.own - expT);
-  const Row = ({ l, v, bold, neg }: { l: string; v: number; bold?: boolean; neg?: boolean }) => <div className="row" style={{ justifyContent: 'space-between', minHeight: 34, fontWeight: bold ? 800 : 400, borderTop: bold ? '1px solid var(--line)' : undefined }}><span>{l}</span><span className="num" style={{ color: neg ? 'var(--bad)' : undefined }}>{neg ? '− ' : ''}{inr(Math.abs(v))}</span></div>;
+  const incT = r2(d.income.reduce((a, h) => a + h.amount, 0)); const expT = r2(d.expense.reduce((a, h) => a + h.amount, 0)); const profit = r2(incT - expT);
+  const HeadRow = ({ h, neg }: { h: Head; neg?: boolean }) => (
+    <div>
+      <button className="row" style={{ justifyContent: 'space-between', minHeight: 38, width: '100%', background: 'none', border: 0, padding: 0, textAlign: 'left' }} onClick={() => setOpen(open === h.key ? null : h.key)}>
+        <span>{h.label} <span className="muted">· {h.items.length}</span></span><span className="num" style={{ color: neg ? 'var(--bad)' : (h.amount < 0 ? 'var(--bad)' : undefined) }}>{neg ? '− ' : ''}{inr(Math.abs(h.amount))}</span>
+      </button>
+      {open === h.key && <div className="list" style={{ marginBottom: 8 }}>{h.items.slice(0, 60).map((it, i) => <div key={i} className="item" style={{ minHeight: 36 }}><div className="grow"><div className="s">{it.d.slice(5)} · {it.t}</div></div><span className="num">{inr(Math.abs(it.v))}</span></div>)}{h.items.length > 60 && <div className="muted">+{h.items.length - 60} more</div>}</div>}
+    </div>
+  );
   return (
     <div className="stack">
       <div className="segmented" style={{ maxWidth: 260 }}><button className={period === 'today' ? 'on' : ''} onClick={() => setPeriod('today')}>{L('Today', 'இன்று')}</button><button className={period === 'month' ? 'on' : ''} onClick={() => setPeriod('month')}>{L('This month', 'இந்த மாதம்')}</button></div>
-      <div className="kpi navy"><div className="v" style={{ color: profit < 0 ? '#ffa39a' : undefined }}>{inr(profit)}</div><div className="l">{L('net profit', 'நிகர லாபம்')} · {net ? Math.round(profit / net * 100) : 0}%</div></div>
+      <div className="kpi navy"><div className="v" style={{ color: profit < 0 ? '#ffa39a' : undefined }}>{inr(profit)}</div><div className="l">{L('net profit', 'நிகர லாபம்')} · {incT ? Math.round(profit / incT * 100) : 0}% · {L('tap a head to see entries', 'தலைப்பை தட்டினால் விவரம்')}</div></div>
       <div className="card">
-        <Row l={L('Sales (before tax)', 'விற்பனை')} v={d.sales} /><Row l={L('Returns / credit notes', 'திரும்பியது')} v={d.cn} neg /><Row l={L('Net sales', 'நிகர விற்பனை')} v={net} bold />
-        <Row l={L('Cost of goods sold (FIFO)', 'விற்ற பொருள் செலவு')} v={d.cogs} neg /><Row l={L('Gross margin', 'மொத்த லாபம்')} v={gm} bold />
-        <Row l={L('Company scheme claims', 'கம்பெனி கிளைம்')} v={d.claims} /><Row l={L('Own discounts given', 'சொந்த தள்ளுபடி')} v={d.own} neg />
-        {[...d.exp.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => <Row key={k} l={`${L('Expense', 'செலவு')} · ${k}`} v={v} neg />)}
-        <Row l={L('Net profit', 'நிகர லாபம்')} v={profit} bold />
+        <div className="eyebrow">{L('Income', 'வருமானம்')}</div>
+        {d.income.map(h => <HeadRow key={h.key} h={h} />)}
+        <div className="row" style={{ justifyContent: 'space-between', minHeight: 36, fontWeight: 800, borderTop: '1px solid var(--line)' }}><span>{L('Total income', 'மொத்த வருமானம்')}</span><span className="num">{inr(incT)}</span></div>
+      </div>
+      <div className="card">
+        <div className="eyebrow">{L('Expenses', 'செலவுகள்')}</div>
+        {d.expense.map(h => <HeadRow key={h.key} h={h} neg />)}
+        <div className="row" style={{ justifyContent: 'space-between', minHeight: 36, fontWeight: 800, borderTop: '1px solid var(--line)' }}><span>{L('Total expenses', 'மொத்த செலவு')}</span><span className="num" style={{ color: 'var(--bad)' }}>− {inr(expT)}</span></div>
+        <div className="row" style={{ justifyContent: 'space-between', minHeight: 36, fontWeight: 800, borderTop: '2px solid var(--ink)' }}><span>{L('Net profit', 'நிகர லாபம்')}</span><span className="num">{inr(profit)}</span></div>
       </div>
       <div className="kpis"><div className="kpi"><div className="v">{inr(d.cash)}</div><div className="l">{L('cash in hand', 'கையில் பணம்')}</div></div><div className="kpi"><div className="v">{inr(d.bank)}</div><div className="l">{L('in bank', 'வங்கியில்')}</div></div><div className="kpi"><div className="v" style={{ color: d.staff ? 'var(--warn)' : undefined }}>{inr(d.staff)}</div><div className="l">{L('with staff', 'ஊழியரிடம்')}</div></div></div>
     </div>
   );
 }
 
-// ---------- Position: what I own − what I owe ----------
-export function Position() {
-  const [d, setD] = useState<{ stock: number; cash: number; bank: number; recv: number; claims: number; payCo: number; loans: number } | null>(null);
+// ---------- Cash flow: what comes in, what goes out, when ----------
+export function CashFlow({ go }: { go?: (p: string) => void }) {
+  type Line = { name: string; amount: number; sub: string; id?: string };
+  const [d, setD] = useState<{ cash: number; bank: number; staff: number; recv: Line[]; recvOverdue: number; payCo: Line[]; cheques: Line[]; claims: number; loans: number } | null>(null);
+  const [openShop, setOpenShop] = useState<string | null>(null);
   useEffect(() => { (async () => {
-    const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-    const stock = r2((await db.batches.toArray()).reduce((a, b) => a + b.qty * (products.get(b.productId)?.purchaseRate ?? 0), 0));
-    const recv = r2((await invoiceBalances()).reduce((a, b) => a + Math.max(0, b.balance), 0));
-    const purchases = await db.purchases.toArray(); const payCo = r2(purchases.reduce((a, p) => a + p.total - (p.paid ?? 0), 0));
-    const claims = r2((await db.claims.toArray()).filter(c => ['submitted', 'approved'].includes(c.status)).reduce((a, c) => a + c.amount - (c.received ?? 0), 0));
-    const pays = (await db.payments.toArray()).filter(p => p.status === 'ok');
+    const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
+    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
+    const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
+    const byShop = new Map<string, { amount: number; overdue: number; n: number }>();
+    for (const b of bal) { const v = byShop.get(b.invoice.shopId) ?? { amount: 0, overdue: 0, n: 0 }; v.amount += b.balance; v.n++; if (b.overdueDays > 0) v.overdue += b.balance; byShop.set(b.invoice.shopId, v); }
+    const recv: Line[] = [...byShop.entries()].map(([id, v]) => ({ id, name: shops.get(id) ?? id, amount: r2(v.amount), sub: `${v.n} ${L('bills', 'பில்')}${v.overdue ? ` · ${L('overdue', 'தாமதம்')} ${inr(r2(v.overdue))}` : ''}` })).sort((a, b) => b.amount - a.amount);
+    const purchases = (await db.purchases.toArray()).filter(p => p.total - (p.paid ?? 0) > 0.5);
+    const byCo = new Map<string, { amount: number; n: number; oldest: string }>();
+    for (const p of purchases) { const v = byCo.get(p.companyId) ?? { amount: 0, n: 0, oldest: p.date }; v.amount += p.total - (p.paid ?? 0); v.n++; if (p.date < v.oldest) v.oldest = p.date; byCo.set(p.companyId, v); }
+    const payCo: Line[] = [...byCo.entries()].map(([id, v]) => ({ id, name: cos.get(id) ?? id, amount: r2(v.amount), sub: `${v.n} ${L('company bills', 'கம்பெனி பில்')} · ${L('oldest', 'பழையது')} ${v.oldest.slice(5)}` })).sort((a, b) => b.amount - a.amount);
+    const pays = (await db.payments.toArray());
+    const cheques: Line[] = pays.filter(p => p.mode === 'cheque' && p.status !== 'cancelled' && !p.bankLineId).map(p => ({ id: p.shopId, name: shops.get(p.shopId) ?? '', amount: p.amount, sub: `${p.ref ?? ''} · ${p.date}${p.status === 'bounced' ? ' · ' + L('BOUNCED', 'பவுன்ஸ்') : ''}` }));
+    const ok = pays.filter(p => p.status === 'ok');
     const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
-    const loans = r2((await db.expenses.toArray()).filter(e => e.category === 'loan').reduce((a, e) => a + e.amount, 0));
-    setD({ stock, cash: r2(pays.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0)), bank, recv, claims, payCo, loans });
+    const exps = await db.expenses.toArray();
+    const claims = r2((await db.claims.toArray()).filter(c => ['submitted', 'approved'].includes(c.status)).reduce((a, c) => a + c.amount - (c.received ?? 0), 0));
+    setD({ cash: r2(ok.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(ok.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)), recv, recvOverdue: r2(bal.filter(b => b.overdueDays > 0).reduce((a, b) => a + b.balance, 0)), payCo, cheques, claims, loans: r2(exps.filter(e => e.category === 'loan').reduce((a, e) => a + e.amount, 0)) });
   })(); }, []);
+  if (openShop) return <ShopStatement shopId={openShop} onBack={() => setOpenShop(null)} />;
   if (!d) return null;
-  const own = r2(d.stock + d.cash + d.bank + d.recv + d.claims); const owe = r2(d.payCo + d.loans);
-  const Row = ({ l, v, bold }: { l: string; v: number; bold?: boolean }) => <div className="row" style={{ justifyContent: 'space-between', minHeight: 34, fontWeight: bold ? 800 : 400, borderTop: bold ? '1px solid var(--line)' : undefined }}><span>{l}</span><span className="num">{inr(v)}</span></div>;
+  const recvT = r2(d.recv.reduce((a, l) => a + l.amount, 0)); const payT = r2(d.payCo.reduce((a, l) => a + l.amount, 0)); const chqT = r2(d.cheques.reduce((a, l) => a + l.amount, 0));
+  const have = r2(d.cash + d.bank + d.staff); const net = r2(have + recvT + chqT + d.claims - payT);
+  const Sec = ({ title, total, lines, tone, onTap }: { title: string; total: number; lines: Line[]; tone?: string; onTap?: (l: Line) => void }) => (
+    <div className="card">
+      <div className="row" style={{ justifyContent: 'space-between' }}><div className="eyebrow">{title}</div><b className="num" style={{ color: tone }}>{inr(total)}</b></div>
+      <div className="list">{lines.slice(0, 12).map((l, i) => <button key={i} className="item tap" onClick={() => onTap?.(l)} disabled={!onTap}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{l.name}</div><div className="s">{l.sub}</div></div><span className="amt num">{inr(l.amount)}</span></button>)}{!lines.length && <div className="muted">—</div>}{lines.length > 12 && <div className="muted">+{lines.length - 12} more</div>}</div>
+    </div>
+  );
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{inr(own - owe)}</div><div className="l">{L('net worth today', 'இன்றைய நிகர மதிப்பு')}</div></div>
-      <div className="card"><div className="eyebrow">{L('What I own', 'என்னிடம் உள்ளது')}</div><Row l={L('Stock at cost', 'ஸ்டாக்')} v={d.stock} /><Row l={L('Cash', 'பணம்')} v={d.cash} /><Row l={L('Bank', 'வங்கி')} v={d.bank} /><Row l={L('Shops owe me', 'கடைகள் தர வேண்டியது')} v={d.recv} /><Row l={L('Claims to receive', 'வர வேண்டிய கிளைம்')} v={d.claims} /><Row l={L('Total', 'மொத்தம்')} v={own} bold /></div>
-      <div className="card"><div className="eyebrow">{L('What I owe', 'நான் தர வேண்டியது')}</div><Row l={L('To companies', 'கம்பெனிக்கு')} v={d.payCo} /><Row l={L('Loans', 'கடன்')} v={d.loans} /><Row l={L('Total', 'மொத்தம்')} v={owe} bold /></div>
-      <div className="muted">{L('Loans and private borrowings: tell RoX "loan 500000 from Canara, EMI 12000". (Entry screen in the next build.)', 'கடன்: RoX-க்கு சொல்லுங்கள்.')}</div>
+      <div className="kpi navy"><div className="v">{inr(have)}</div><div className="l">{L('money I have now', 'இப்போது என்னிடம் பணம்')} · {L('cash', 'பணம்')} {inr(d.cash)} · {L('bank', 'வங்கி')} {inr(d.bank)} · {L('with staff', 'ஊழியரிடம்')} {inr(d.staff)}</div></div>
+      <div className="kpis">
+        <div className="kpi"><div className="v" style={{ color: 'var(--ok)' }}>{inr(recvT + chqT + d.claims)}</div><div className="l">{L('coming in', 'வர வேண்டியது')}{d.recvOverdue ? ` · ${inr(d.recvOverdue)} ${L('overdue', 'தாமதம்')}` : ''}</div></div>
+        <div className="kpi"><div className="v" style={{ color: 'var(--bad)' }}>{inr(payT + d.loans)}</div><div className="l">{L('going out', 'தர வேண்டியது')}</div></div>
+      </div>
+      <div className="muted">{L('If everyone pays and I pay everyone', 'எல்லாரும் தந்து நான் தந்தால்')}: <b className="num" style={{ color: net < 0 ? 'var(--bad)' : 'var(--ok)' }}>{inr(net)}</b></div>
+      <Sec title={L('Receivables from shops', 'கடைகளிடம் வர வேண்டியது')} total={recvT} lines={d.recv} tone="var(--ok)" onTap={l => l.id && setOpenShop(l.id)} />
+      <Sec title={L('Pending cheques', 'நிலுவை செக்')} total={chqT} lines={d.cheques} onTap={() => go?.('cheques')} />
+      <Sec title={L('Payables to companies', 'கம்பெனிக்கு தர வேண்டியது')} total={payT} lines={d.payCo} tone="var(--bad)" />
+      <div className="card"><div className="row" style={{ justifyContent: 'space-between' }}><span>{L('Claims to receive', 'வர வேண்டிய கிளைம்')}</span><b className="num">{inr(d.claims)}</b></div><div className="row" style={{ justifyContent: 'space-between' }}><span>{L('Loans', 'கடன்')}</span><b className="num">{inr(d.loans)}</b></div></div>
+      <div className="muted">{L('Ask RoX: "who will pay this week", "what do I owe Britannia", "cash flow".', 'RoX-இடம் கேளுங்கள்: "cash flow".')}</div>
     </div>
   );
 }

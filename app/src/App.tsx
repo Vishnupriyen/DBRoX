@@ -6,11 +6,16 @@ import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
+import { RoxOrb, type OrbState } from './ui/RoxOrb';
+import { RoxMark } from './ui/icons';
+import { UndoToast } from './ui/UndoToast';
 import { OrdersReceived } from './ui/OrdersReceived';
 import { NewShop, NewShops, Targets } from './ui/Sales';
 import { StockIn, StockPosition, Damages, Ageing, StockReports } from './ui/Inventory';
 import { DeliveryStatus, TripReports, PrintLoad } from './ui/DeliveryReports';
-import { Outstanding, Cheques, Bank, Expenses, PnL, Position, ExportPage, Gst } from './ui/Money';
+import { Outstanding, Cheques, Bank, Expenses, PnL, CashFlow, ExportPage, Gst } from './ui/Money';
+import { Reports } from './ui/Reports';
+import { VansPage } from './ui/More';
 import { CheckInGate, Today, Salary } from './ui/Payroll';
 import { CashWithStaff } from './ui/CashWithStaff';
 import { Beat } from './ui/Beat';
@@ -36,12 +41,12 @@ const TITLE: Partial<Record<Page, [string, string]>> = {
   stockin: ['Purchases / stock in', 'கொள்முதல்'], stock: ['Stock position', 'ஸ்டாக் நிலை'], damages: ['Damages', 'சேதம்'], ageing: ['Ageing', 'பழைய ஸ்டாக்'], 'stock-reports': ['Stock reports', 'ஸ்டாக் அறிக்கை'],
   plan: ['Delivery plan', 'டெலிவரி திட்டம்'], live: ['Live vans', 'வண்டிகள் இப்போது'], status: ['Delivery status', 'டெலிவரி நிலை'], trips: ['Trip reports', 'டிரிப் அறிக்கை'], load: ['Load vans', 'வண்டி ஏற்று'], print: ['Load sheet', 'லோடு ஷீட்'], trip: ['My trip', 'என் டிரிப்'], pick: ['Pick orders', 'ஆர்டர் எடு'],
   collect: ['Collect', 'வசூல்'], outstanding: ['Outstanding', 'நிலுவை'], cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], cheques: ['Cheques & UPI', 'செக் & UPI'],
-  bank: ['Bank', 'வங்கி'], expenses: ['Expenses', 'செலவு'], pnl: ['P&L', 'லாப நஷ்டம்'], position: ['Position', 'நிலை'], export: ['Export', 'ஏற்றுமதி'], reports: ['Reports', 'அறிக்கை'],
+  bank: ['Bank', 'வங்கி'], expenses: ['Expenses', 'செலவு'], pnl: ['P&L', 'லாப நஷ்டம்'], cashflow: ['Cash flow', 'பண ஓட்டம்'], vans: ['Vans & drivers', 'வண்டிகள்'], export: ['Export', 'ஏற்றுமதி'], reports: ['Reports', 'அறிக்கை'],
   gst: ['GST', 'GST'], today: ['Today', 'இன்று'], salary: ['Salary', 'சம்பளம்'], staff: ['Staff', 'ஊழியர்கள்'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'], bills: ['Bills', 'பில்கள்'],
   'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
 };
 // RoX "open a screen" names → pages (keeps old names working)
-const ALIAS: Record<string, Page> = { approve: 'orders-received', reports: 'pnl', cash: 'cash', claims: 'claims', bills: 'billed' };
+const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -51,6 +56,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('home');
   const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
+  const [orb, setOrb] = useState<OrbState>('idle');
   const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
   const [langTick, setLangTick] = useState(0);
@@ -103,7 +109,7 @@ export default function App() {
   const openRox = () => setRox(true);
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
-  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">DB<em>RoX</em></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark"><RoxMark size={26} />DB<em>RoX</em></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     switch (page) {
@@ -136,8 +142,10 @@ export default function App() {
       case 'cheques': return <Cheques />;
       case 'bank': return <Bank onRox={openRox} />;
       case 'expenses': return <Expenses onRox={openRox} />;
-      case 'pnl': case 'reports': return <PnL />;
-      case 'position': return <Position />;
+      case 'pnl': return <PnL />;
+      case 'reports': return <Reports />;
+      case 'cashflow': return <CashFlow go={go} />;
+      case 'vans': return <VansPage editable={me.role === 'owner'} />;
       case 'export': return <ExportPage />;
       case 'gst': return <Gst go={go} />;
       case 'today': return <Today />;
@@ -157,7 +165,7 @@ export default function App() {
   return (
     <div className="app" key={langTick}>
       <header className="top">
-        {page === 'home' ? <div className="wordmark">DB<em>RoX</em></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark"><RoxMark size={26} />DB<em>RoX</em></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
@@ -166,12 +174,13 @@ export default function App() {
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <main className="main" key={page}>{body()}</main>
       <DialogHost />
+      <UndoToast />
 
       {rox && (
         <div className="sheet-wrap" onClick={() => setRox(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
-            <div className="sheet-head"><span className="fab-mark small">RoX</span><b className="grow">RoX Engine</b><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
-            <div className="sheet-body"><Chat role={me.role} onGo={go} /></div>
+            <div className="sheet-head"><RoxOrb state={orb} size={44} /><div className="grow"><b>RoX Engine</b><span className="state">{orb === 'listening' ? t('listening') : orb === 'thinking' ? t('thinking') : orb === 'ready' ? t('done') : t('askMe')}</span></div><button className="icon-btn" onClick={() => setRox(false)} aria-label="Close"><X /></button></div>
+            <div className="sheet-body"><Chat role={me.role} onGo={go} onState={setOrb} /></div>
           </div>
         </div>
       )}
@@ -179,7 +188,7 @@ export default function App() {
       <nav className="tabs">
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
         {/* RoX Engine: the raised centre button on every screen, for every role. It proposes, you approve. */}
-        <button className="fab" onClick={openRox} aria-label="RoX Engine"><span className="fab-mark">RoX</span></button>
+        <button className="fab" onClick={openRox} aria-label="RoX Engine"><RoxOrb state="idle" size={64} /></button>
         <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{lang === 'ta' ? 'மேலும்' : 'More'}</button>
       </nav>
     </div>

@@ -5,18 +5,23 @@ import { counts } from '../core/pipeline';
 import { getLang } from '../core/i18n';
 import { db, today, session } from '../core/db';
 import type { Role, Settings } from '../core/types';
+import { MODULE_ICON } from './icons';
+import { Search } from 'lucide-react';
+import { invoiceBalances } from '../core/ledger';
+import { inr } from '../core/i18n';
 
 export type Page = 'home'
   | 'orders-received' | 'verify' | 'billed' | 'newshops' | 'targets' | 'beat' | 'myday' | 'newshop' | 'orders-excel'
   | 'stockin' | 'stock' | 'damages' | 'ageing' | 'stock-reports'
   | 'plan' | 'live' | 'status' | 'trips' | 'load' | 'print' | 'trip' | 'pick'
   | 'collect' | 'outstanding' | 'cash' | 'cheques'
-  | 'bank' | 'expenses' | 'pnl' | 'position' | 'export' | 'reports'
+  | 'bank' | 'expenses' | 'pnl' | 'cashflow' | 'export' | 'reports' | 'vans'
   | 'gst' | 'today' | 'salary' | 'staff' | 'claims' | 'dayclose' | 'bills'
   | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more';
 
 interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; ta: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: [string, string] }
 
+const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 export function standalone(s: Settings | undefined) { return !!s && !s.modules.bill && !s.modules.sales; }
 
 const TAG: Record<string, [string, string]> = {
@@ -34,6 +39,8 @@ const TAG: Record<string, [string, string]> = {
 export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => void; open: string | null; onOpen: (m: string | null) => void }) {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [subs, setSubs] = useState<Record<string, Tile[]>>({});
+  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; first: Page | null } | null>(null);
+  const [q, setQ] = useState('');
   const lang = getLang();
   useEffect(() => {
     (async () => {
@@ -87,6 +94,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           ...(owner ? [{ page: 'live' as Page, icon: MapPinned, en: 'Live', ta: 'வண்டிகள்', count: c.out, tone: 'ok' as const }] : []),
           { page: 'status', icon: Truck, en: 'Delivery status', ta: 'டெலிவரி நிலை', count: diffs || undefined, tone: 'bad' },
           { page: 'trips', icon: BarChart3, en: 'Trip reports', ta: 'டிரிப் அறிக்கை' },
+          ...(owner ? [{ page: 'vans' as Page, icon: Truck, en: 'Vans & drivers', ta: 'வண்டிகள்' }] : []),
         ];
         sub.collection = [
           { page: 'outstanding', icon: Wallet, en: 'Outstanding', ta: 'நிலுவை' },
@@ -97,13 +105,14 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'bank', icon: Landmark, en: 'Bank', ta: 'வங்கி' },
           { page: 'expenses', icon: Wallet, en: 'Expenses', ta: 'செலவு' },
           { page: 'pnl', icon: PieChart, en: 'P&L', ta: 'லாப நஷ்டம்' },
-          { page: 'position', icon: Scale, en: 'Position', ta: 'நிலை' },
+          { page: 'cashflow', icon: Scale, en: 'Cash flow', ta: 'பண ஓட்டம்' },
+          { page: 'reports', icon: BarChart3, en: 'Reports', ta: 'அறிக்கை' },
           { page: 'export', icon: Download, en: 'Export', ta: 'ஏற்றுமதி' },
         ];
         sub.payroll = [
           { page: 'today', icon: CalendarCheck, en: 'Today', ta: 'இன்று', count: leaves || undefined, tone: 'warn' },
-          ...(owner ? [{ page: 'salary' as Page, icon: IndianRupee, en: 'Salary', ta: 'சம்பளம்' }] : []),
           { page: 'staff', icon: Users, en: 'Staff', ta: 'ஊழியர்கள்' },
+          ...(owner ? [{ page: 'salary' as Page, icon: IndianRupee, en: 'Salary sheet', ta: 'சம்பள பட்டியல்' }] : []),
         ];
         const sum = (k: string) => sub[k].reduce((a, x) => a + (x.count ?? 0), 0) || undefined;
         const tone = (k: string) => sub[k].find(x => x.count && x.tone === 'bad') ? 'bad' : sub[k].find(x => x.count && x.tone === 'warn') ? 'warn' : 'ok';
@@ -143,19 +152,40 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         ];
       }
       setTiles(t); setSubs(sub);
+      if ((role === 'owner' || role === 'office') && !standalone(s)) {
+        const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
+        const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
+        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashStaff, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });
+      } else setMorning(null);
     })();
   }, [role, open]);
 
   const list = open ? subs[open] ?? [] : tiles;
   const label = (t: Tile) => lang === 'ta' ? t.ta : t.en;
   const tag = open ? TAG[open] : null;
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? L('Good morning', 'காலை வணக்கம்') : hour < 17 ? L('Good afternoon', 'மதிய வணக்கம்') : L('Good evening', 'மாலை வணக்கம்');
+  const all: (Tile & { mod?: string })[] = [...tiles.filter(t => t.page), ...Object.entries(subs).flatMap(([m, ts]) => ts.map(t => ({ ...t, mod: m })))];
+  const hits = q.trim() ? all.filter(t => `${t.en} ${t.ta}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
   return (
     <div className={`home n${list.length}`}>
+      {!open && <label className="home-search"><Search size={18} /><input value={q} onChange={e => setQ(e.target.value)} placeholder={L('Search a screen or ask RoX…', 'திரை தேடு அல்லது RoX-இடம் கேள்…')} /></label>}
+      {!open && hits.length > 0 && <div className="home-results">{hits.map(h => <button key={h.page} className="item tap" onClick={() => { setQ(''); go(h.page!); }}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{label(h)}</div>{h.mod && <div className="s">{h.mod}</div>}</div></button>)}</div>}
+      {!open && !q && morning && (
+        <div className="morning">
+          <div className="grow">
+            <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
+            <div className="s">{morning.orders ? L(`${morning.orders} orders waiting for your OK.`, `${morning.orders} ஆர்டர் உங்கள் ஒப்புதலுக்கு.`) : morning.toDeliver ? L(`${morning.toDeliver} bills to plan for delivery.`, `${morning.toDeliver} பில் டெலிவரி திட்டத்திற்கு.`) : L('Nothing is waiting on you right now.', 'இப்போது எதுவும் காத்திருக்கவில்லை.')}</div>
+            <div className="kv"><div><b>{morning.orders}</b><span>{L('orders', 'ஆர்டர்')}</span></div><div><b>{morning.toDeliver}</b><span>{L('to deliver', 'டெலிவரி')}</span></div><div><b>{inr(morning.overdue)}</b><span>{L('overdue', 'தாமதம்')}</span></div><div><b>{morning.cash}</b><span>{L('cash w/ staff', 'ஊழியர் பணம்')}</span></div></div>
+            {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{L('Start here', 'இங்கே தொடங்கு')} →</button>}
+          </div>
+        </div>
+      )}
       {open && <div className="home-back"><button onClick={() => onOpen(null)} aria-label="Back"><ArrowLeft /></button><span>{tiles.find(x => x.module === open) ? label(tiles.find(x => x.module === open)!) : open}</span></div>}
       {tag && <div className="home-tag">{lang === 'ta' ? tag[1] : tag[0]}</div>}
       {list.map(t => (
         <button key={t.page ?? t.module} className={`tile ${t.module ? 'module' : ''}`} onClick={() => t.module ? onOpen(t.module) : go(t.page!)}>
-          <span className="tile-ic"><t.icon size={30} /></span>
+          <span className="tile-ic">{t.module && MODULE_ICON[t.module] ? MODULE_ICON[t.module]({ size: 34 }) : t.page === 'dayclose' ? MODULE_ICON.dayclose({ size: 34 }) : t.page === 'gst' ? MODULE_ICON.gst({ size: 34 }) : <t.icon size={30} />}</span>
           <span className="tile-l">{label(t)}</span>
           {t.count ? <span className={`tile-n ${t.tone ?? ''}`}>{t.count}</span> : null}
         </button>

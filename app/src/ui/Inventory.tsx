@@ -114,6 +114,8 @@ export function StockPosition() {
                   <button className="btn small" onClick={async () => { const n = await askText(L('How many pieces in the second lot?', 'இரண்டாம் லாட்டில் எத்தனை?')); const q = Number(n); if (!q || q >= b.qty) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - q }, 'split'); cs.put<Batch>('batches', { productId: b.productId, batch: b.batch + 'B', expiry: b.expiry, mrp: b.mrp, qty: q, godown: b.godown }, 'split lot'); await cs.commit('Lot split'); setTick(x => x + 1); }}><Split size={14} /> {L('Split', 'பிரி')}</button>
                   <button className="btn small" onClick={async () => { const m = await askText(L('New expiry month (MM/YY)', 'புதிய காலாவதி (MM/YY)')); if (!m || !/^\d{2}\/\d{2}$/.test(m)) return; const exp = monthEnd(`20${m.slice(3)}-${m.slice(0, 2)}`); const cs = new ChangeSet(); cs.put('batches', { ...b, expiry: exp }, `expiry changed ${b.expiry} → ${exp}`); await cs.commit('Expiry changed'); setTick(x => x + 1); }}><Tag size={14} /> {L('Change expiry', 'காலாவதி மாற்று')}</button>
                   <button className="btn small" onClick={async () => { const n = await askText(L('Counted pieces on the shelf?', 'எண்ணிய பீஸ்?')); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText(L('Remark for the difference', 'வித்தியாசத்திற்கு குறிப்பு')); if (!why) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: q }, `count adjust ${b.qty} → ${q}: ${why}`); await cs.commit('Stock count'); setTick(x => x + 1); }}><Boxes size={14} /> {L('Count', 'எண்ணு')}</button>
+                  <button className="btn small" onClick={async () => { const m = await askText(L('New MRP for this lot', 'இந்த லாட்டின் புதிய MRP'), String(b.mrp)); const v = Number(m); if (!m || !v) return; const cs = new ChangeSet(); cs.put('batches', { ...b, mrp: v }, `mrp ${b.mrp} → ${v}`); await cs.commit('MRP changed'); setTick(x => x + 1); }}><Tag size={14} /> MRP</button>
+                  <button className="btn small" onClick={async () => { const m = await askText(L('Batch number', 'பேட்ச் எண்'), b.batch); if (m === null) return; const cs = new ChangeSet(); cs.put('batches', { ...b, batch: m }, `batch ${b.batch} → ${m}`); await cs.commit('Batch changed'); setTick(x => x + 1); }}><Tag size={14} /> {L('Batch', 'பேட்ச்')}</button>
                 </div>
               </div>
             );
@@ -155,11 +157,17 @@ export function StockPosition() {
 
 // ---------- Ageing: stock by age, near-expiry list, one tap → clearance offer ----------
 export function Ageing() {
-  const [rows, setRows] = useState<{ p: Product; b: Batch; age: number; days: number }[]>([]);
+  const [rows, setRows] = useState<{ p: Product; b: Batch; age: number; days: number; sold: number }[]>([]);
   const [msg, setMsg] = useState('');
-  useEffect(() => { (async () => { const pm = new Map((await db.products.toArray()).map(p => [p.id, p])); setRows((await db.batches.toArray()).filter(b => b.qty > 0).map(b => ({ p: pm.get(b.productId)!, b, age: Math.floor((Date.now() - new Date(b.createdAt).getTime()) / 86400000), days: Math.round((new Date(b.expiry).getTime() - Date.now()) / 86400000) })).filter(x => x.p)); })(); }, [msg]);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => { (async () => {
+    const pm = new Map((await db.products.toArray()).map(p => [p.id, p]));
+    const sold = new Map<string, number>();
+    for (const i of await db.invoices.toArray()) { if (i.cancelled) continue; for (const l of i.lines) for (const bb of l.batches) sold.set(bb.batchId, (sold.get(bb.batchId) ?? 0) + bb.qty); }
+    setRows((await db.batches.toArray()).filter(b => b.qty > 0 || (sold.get(b.id) ?? 0) > 0).map(b => ({ p: pm.get(b.productId)!, b, sold: sold.get(b.id) ?? 0, age: Math.floor((Date.now() - new Date(b.createdAt).getTime()) / 86400000), days: Math.round((new Date(b.expiry).getTime() - Date.now()) / 86400000) })).filter(x => x.p));
+  })(); }, [msg]);
   const buckets = [['0–30', 0, 30], ['31–60', 31, 60], ['61–90', 61, 90], ['90+', 91, 9999]] as const;
-  const near = rows.filter(r => r.days <= 60).sort((a, b) => a.days - b.days);
+  const near = rows.filter(r => r.b.qty > 0 && r.days <= 60).sort((a, b) => a.days - b.days);
   const offer = async (r: typeof rows[0]) => {
     if (!await confirmBox(L(`Clearance offer on ${r.p.name}?`, `${r.p.name} மீது கிளியரன்ஸ் சலுகை?`), L('10% off till month end. Applies at billing and goes to Claims for you to keep or reject.', 'மாத இறுதி வரை 10% தள்ளுபடி.'), L('Make offer', 'சலுகை'))) return;
     const cs = new ChangeSet();
@@ -168,13 +176,16 @@ export function Ageing() {
   };
   return (
     <div className="stack">
-      <div className="kpis">{buckets.map(([l, a, b]) => { const n = rows.filter(r => r.age >= a && r.age <= b).reduce((s, r) => s + r.b.qty, 0); return <div key={l} className={`kpi ${b > 90 ? '' : ''}`}><div className="v" style={{ color: b > 90 && n ? 'var(--bad)' : undefined }}>{n}</div><div className="l">{l} {L('days', 'நாட்கள்')} · pcs</div></div>; })}</div>
+      <div className="kpis">{buckets.map(([l, a, b]) => { const n = rows.filter(r => r.b.qty > 0 && r.age >= a && r.age <= b).reduce((s, r) => s + r.b.qty, 0); return <div key={l} className={`kpi ${b > 90 ? '' : ''}`}><div className="v" style={{ color: b > 90 && n ? 'var(--bad)' : undefined }}>{n}</div><div className="l">{l} {L('days', 'நாட்கள்')} · pcs</div></div>; })}</div>
       {msg && <div className="alert ok"><Check /><div>{msg}</div></div>}
       <div className="sechead"><h3>{L('Expiring within 60 days', '60 நாளில் காலாவதி')} · {near.length}</h3></div>
       <div className="list">
         {near.map(r => <div key={r.b.id} className="item"><Pack product={r.p} /><div className="grow"><div className="t">{r.p.name}</div><div className="s">{r.b.qty} pcs · {L('batch', 'பேட்ச்')} {r.b.batch} · <span className={`badge ${r.days <= 30 ? 'bad' : 'warn'}`}>{r.days}d</span></div></div><button className="btn small primary" onClick={() => offer(r)}>{L('Clear it', 'சலுகை')}</button></div>)}
         {!near.length && <div className="card muted">{L('Nothing near expiry. 🎉', 'காலாவதி நெருங்கும் ஸ்டாக் இல்லை.')}</div>}
       </div>
+      <div className="sechead"><h3>{L('Every lot', 'ஒவ்வொரு லாட்')} · {rows.filter(r => r.b.qty > 0).length}</h3><button className="btn small" onClick={() => setShowAll(v => !v)}>{showAll ? L('Hide', 'மறை') : L('Show', 'காட்டு')}</button></div>
+      {showAll && <table className="tbl"><thead><tr><th>{L('Product', 'பொருள்')}</th><th>{L('Lot', 'லாட்')}</th><th>{L('In', 'வந்தது')}</th><th>{L('Sold', 'விற்றது')}</th><th>{L('Left', 'மீதம்')}</th><th>{L('Age', 'வயது')}</th><th>{L('Expiry', 'காலாவதி')}</th></tr></thead>
+        <tbody>{[...rows].sort((a, b) => b.age - a.age).map(r => <tr key={r.b.id} style={{ opacity: r.b.qty ? 1 : .5 }}><td>{r.p.name}</td><td>{r.b.batch || '—'}<br /><span className="muted">MRP {r.b.mrp}</span></td><td className="num">{r.b.qty + r.sold}</td><td className="num">{r.sold}</td><td className="num"><b>{r.b.qty}</b></td><td className="num">{r.age}d</td><td className={`num ${r.days <= 30 ? 'bad' : ''}`} style={{ color: r.days <= 60 && r.b.qty ? 'var(--bad)' : undefined }}>{r.b.expiry.slice(0, 7)}</td></tr>)}</tbody></table>}
     </div>
   );
 }
