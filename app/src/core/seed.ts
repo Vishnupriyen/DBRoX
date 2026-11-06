@@ -15,7 +15,7 @@ export function gstinWithCheck(first14: string) {
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
-const SEED_VERSION = 'v0.6';
+const SEED_VERSION = 'v0.7';
 export async function seedDemo(tenantId = 'demo') {
   const ls = typeof localStorage === 'undefined' ? null : localStorage;
   if (await db.settings.count()) {
