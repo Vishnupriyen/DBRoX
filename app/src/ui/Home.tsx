@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ClipboardCheck, Route, MapPinned, IndianRupee, Banknote, Boxes, FileCheck2, Scale, BarChart3, Receipt, PackageOpen, Truck, Store, ListChecks, Upload } from 'lucide-react';
+import { ClipboardCheck, Route, MapPinned, IndianRupee, Banknote, Boxes, FileCheck2, Scale, BarChart3, PackageOpen, Truck, Store, ListChecks, Upload, Users } from 'lucide-react';
 import { counts } from '../core/pipeline';
 import { getLang } from '../core/i18n';
 import { db, today } from '../core/db';
@@ -8,7 +8,7 @@ import { session } from '../core/db';
 import type { Role, Settings } from '../core/types';
 
 export type Page = 'home' | 'approve' | 'plan' | 'live' | 'collect' | 'cash' | 'stock' | 'claims' | 'dayclose' | 'reports' | 'bills'
-  | 'pick' | 'load' | 'trip' | 'beat' | 'myday' | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more';
+  | 'pick' | 'load' | 'trip' | 'beat' | 'myday' | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'staff' | 'more';
 
 interface Tile { page: Page; icon: LucideIcon; en: string; ta: string; count?: number; tone?: 'bad' | 'warn' | 'ok' }
 
@@ -37,6 +37,7 @@ export function Home({ role, go }: { role: Role; go: (p: Page) => void }) {
           { page: 'lite-delivery', icon: Truck, en: 'Delivery', ta: 'டெலிவரி', count: plan ? plan.shopIds.length - done : undefined, tone: 'bad' },
           { page: 'lite-collect', icon: IndianRupee, en: 'Collection', ta: 'வசூல்' },
           { page: 'lite-export', icon: BarChart3, en: "Day's Excel", ta: 'இன்றைய Excel' },
+          { page: 'staff', icon: Users, en: 'Staff', ta: 'ஊழியர்கள்' },
         ];
         else t = [
           { page: 'lite-delivery', icon: Truck, en: 'Delivery', ta: 'டெலிவரி', count: plan ? plan.shopIds.length - done : undefined, tone: 'bad' },
@@ -53,9 +54,8 @@ export function Home({ role, go }: { role: Role; go: (p: Page) => void }) {
           { page: 'claims', icon: FileCheck2, en: 'Claims', ta: 'கிளைம்', count: c.claimsOpen },
           { page: 'dayclose', icon: Scale, en: 'Day close', ta: 'நாள் முடிவு', count: c.dayClosed ? undefined : (c.tripsToday || undefined), tone: 'ok' },
           { page: 'reports', icon: BarChart3, en: 'Reports', ta: 'அறிக்கை' },
-          { page: 'bills', icon: Receipt, en: 'Bills', ta: 'பில்கள்' },
         ];
-        if (role === 'office') t = t.filter(x => !['cash', 'dayclose'].includes(x.page));
+        if (role === 'office') t = t.filter(x => !['cash', 'dayclose', 'live'].includes(x.page));
       } else if (role === 'salesman') {
         const myShops = (await db.shops.toArray()).filter(x => x.salesmanId === me);
         const visited = new Set((await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === me).map(v => v.shopId));
@@ -81,7 +81,7 @@ export function Home({ role, go }: { role: Role; go: (p: Page) => void }) {
   }, [role]);
 
   return (
-    <div className="home">
+    <div className={`home n${tiles.length}`}>
       {tiles.map(t => (
         <button key={t.page} className="tile" onClick={() => go(t.page)}>
           <span className="tile-ic"><t.icon size={30} /></span>

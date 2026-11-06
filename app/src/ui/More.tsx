@@ -11,12 +11,13 @@ import { askText, confirmBox, notify } from './dialog';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
-export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' }) {
+export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' | 'staff' }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   const back = <button className="btn small" style={{ marginBottom: 10 }} onClick={() => setPage('menu')}>← {t('more')}</button>;
   if (page === 'bills' && initial === 'bills') return <Bills canCancel={boss} />;
   if (page === 'claims' && initial === 'claims') return <Claims />;
+  if (page === 'staff' && initial === 'staff') return <StaffPage editable={role === 'owner'} />;
   if (page === 'modules') return <>{back}<Modules editable={role === 'owner'} /></>;
   if (page === 'settings') return <>{back}<SettingsPage editable={role === 'owner'} /></>;
   if (page === 'staff') return <>{back}<StaffPage editable={role === 'owner'} /></>;

@@ -264,16 +264,18 @@ table.grid tr:last-child td { border-bottom: 0; }
 
 
 /* ---------- home: icons with counts, nothing else ---------- */
-.home { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 6px 0; }
-.tile { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px 8px 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 118px; color: var(--ink); cursor: pointer; transition: transform .08s ease; }
+.home { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 6px 0; }
+.tile { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px 8px 14px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; height: 124px; color: var(--ink); cursor: pointer; transition: transform .08s ease; }
 .tile:active { transform: scale(.97); }
-.tile-ic { width: 54px; height: 54px; border-radius: 16px; background: var(--info-soft); color: var(--navy); display: grid; place-items: center; }
+.tile-ic { width: 54px; height: 54px; border-radius: 16px; background: var(--info-soft); color: var(--navy); display: grid; place-items: center; flex: none; }
 .tile-ic svg { width: 28px; height: 28px; }
-.tile-l { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; color: var(--ink-2); }
+.tile-l { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-n { position: absolute; top: 8px; right: 8px; min-width: 26px; height: 26px; padding: 0 7px; border-radius: 999px; background: var(--navy); color: var(--on-navy); font-family: var(--display); font-weight: 800; font-size: 14px; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .tile-n.bad { background: var(--bad); color: #fff; }
 .tile-n.warn { background: var(--marigold); color: var(--on-marigold); }
 .tile-n.ok { background: var(--ok); color: #fff; }
+/* 2 or 4 tiles: two columns so no row is left with a single orphan */
+.home.n2, .home.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .home-greet { grid-column: 1 / -1; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.01em; margin: 4px 2px 0; }
 .home-sub { grid-column: 1 / -1; color: var(--ink-3); font-size: 13px; margin: -8px 2px 2px; }
 .top .icon-btn { width: 40px; height: 40px; background: transparent; border-color: transparent; color: var(--on-navy); }
@@ -295,8 +297,9 @@ table.grid tr:last-child td { border-bottom: 0; }
 .sheet-body .chat { height: 100%; }
 
 @media (min-width: 900px) {
-  .home { grid-template-columns: repeat(5, 1fr); max-width: 900px; gap: 16px; }
-  .tile { min-height: 140px; }
+  .home { grid-template-columns: repeat(3, 1fr); max-width: 720px; gap: 16px; }
+  .home.n2, .home.n4 { grid-template-columns: repeat(2, 1fr); max-width: 480px; }
+  .tile { height: 150px; }
   .fab { right: 28px; bottom: 28px; }
   .sheet-wrap { align-items: center; }
   .sheet { border-radius: 22px; height: min(80vh, 720px); }

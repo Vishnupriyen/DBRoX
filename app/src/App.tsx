@@ -28,7 +28,7 @@ const TITLE: Partial<Record<Page, [string, string]>> = {
   cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], stock: ['Stock alerts', 'ஸ்டாக் எச்சரிக்கை'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'],
   reports: ['Reports', 'அறிக்கை'], bills: ['Bills', 'பில்கள்'], pick: ['Pick orders', 'ஆர்டர் எடு'], load: ['Load vans', 'வண்டி ஏற்று'], trip: ['My trip', 'என் டிரிப்'],
   beat: ["Today's beat", 'இன்றைய பீட்'], myday: ['My day', 'என் நாள்'], 'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'],
-  'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
+  'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], staff: ['Staff', 'ஊழியர்கள்'], more: ['More', 'மேலும்'],
 };
 
 export default function App() {
@@ -101,6 +101,7 @@ export default function App() {
       case 'lite-delivery': return <LiteDelivery />;
       case 'lite-collect': return <LiteCollect />;
       case 'lite-export': return <LiteExport />;
+      case 'staff': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="staff" />;
       case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} />;
     }
   };
