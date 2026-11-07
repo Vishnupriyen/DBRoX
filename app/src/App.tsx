@@ -8,6 +8,8 @@ import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
 import { TesraxCore } from './ui/TesraxCore';
 import { ErrorBoundary } from './ui/Safety';
+import { Billing } from './ui/Billing';
+import { refreshLicence, type LicenceState } from './core/licence';
 import { sound } from './core/sound';
 import { Volume2, VolumeX } from 'lucide-react';
 import { UndoToast } from './ui/UndoToast';
@@ -45,7 +47,7 @@ const TITLE: Partial<Record<Page, [string, string]>> = {
   collect: ['Collect', 'வசூல்'], outstanding: ['Outstanding', 'நிலுவை'], cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], cheques: ['Cheques & UPI', 'செக் & UPI'],
   bank: ['Bank', 'வங்கி'], expenses: ['Expenses', 'செலவு'], pnl: ['P&L', 'லாப நஷ்டம்'], cashflow: ['Cash flow', 'பண ஓட்டம்'], vans: ['Vans & drivers', 'வண்டிகள்'], export: ['Export', 'ஏற்றுமதி'], reports: ['Reports', 'அறிக்கை'],
   gst: ['GST', 'GST'], today: ['Today', 'இன்று'], salary: ['Salary', 'சம்பளம்'], staff: ['Staff', 'ஊழியர்கள்'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'], bills: ['Bills', 'பில்கள்'],
-  'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'],
+  'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'], billing: ['Plan & billing', 'திட்டம்'],
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -61,6 +63,13 @@ export default function App() {
   const [soundOn, setSoundOn] = useState(sound.isOn());
   const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
+  const [lic, setLic] = useState<LicenceState | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setLic((e as CustomEvent).detail);
+    window.addEventListener('hanubix:licence', on);
+    void refreshLicence(); const id = setInterval(() => void refreshLicence(), 60000); // dates are re-checked every minute, even offline
+    return () => { window.removeEventListener('hanubix:licence', on); clearInterval(id); };
+  }, [me]);
   const [langTick, setLangTick] = useState(0);
   const lang = getLang();
 
@@ -160,7 +169,8 @@ export default function App() {
       case 'lite-collect': return <LiteCollect />;
       case 'lite-export': return <LiteExport />;
       case 'orders-excel': return <MyDay />;
-      case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} />;
+      case 'billing': return <Billing role={me.role} />;
+      case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} onPlan={() => setPage('billing')} />;
     }
   };
 
@@ -175,6 +185,7 @@ export default function App() {
         <button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
+      <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       <DialogHost />
       <UndoToast />
@@ -201,6 +212,20 @@ export default function App() {
       </nav>
     </div>
   );
+}
+
+// Plan banner: trial ending (10 days), payment pending (grace), locked, or licence needs internet.
+function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => void }) {
+  if (!lic || lic.demo) return null;
+  const left = lic.paidThrough ? Math.round((Date.parse(`${lic.paidThrough}T00:00:00`) - Date.parse(`${new Date().toDateString()}`)) / 86400000) : 99;
+  const fmt = (d?: string) => d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const lockDay = lic.lockOn ? new Date(Date.parse(`${lic.lockOn}T00:00:00`) - 86400000).toISOString().slice(0, 10) : undefined;
+  const text = lic.status === 'locked' ? 'Plan not renewed — new orders and bills are paused. Tap to renew.'
+    : lic.status === 'expired' ? 'Connect to the internet to renew your licence.'
+    : lic.status === 'grace' ? `Payment pending — renew by ${fmt(lockDay)} to keep billing.`
+    : lic.status === 'trial' && left <= 10 ? `Free trial ends in ${Math.max(0, left)} day${left === 1 ? '' : 's'} — set up Autopay.` : '';
+  if (!text) return null;
+  return <button className={`plan-bar ${lic.status === 'locked' ? 'bad' : ''}`} onClick={onOpen}>{text}</button>;
 }
 
 // The signature gradient as an SVG paint server, so icon accents can use fill="url(#hg)".

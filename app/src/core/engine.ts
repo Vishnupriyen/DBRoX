@@ -1,6 +1,7 @@
 // TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, Tamil + English). The AI is only used to
 // read photos, never to decide money.
+import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { applySchemes, activeSchemes, stockOf } from './billing';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
@@ -12,6 +13,7 @@ import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, r
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
 import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Scheme, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
+const ENV_SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '';
 
 export interface Reply {
   text: string;
@@ -136,7 +138,7 @@ Examples:
 export async function handle(textIn: string, files: File[]): Promise<Reply> {
   const text = norm(textIn);
   const settings = await getSettings();
-  const mods = settings.modules;
+  const mods = (await licenceState(!!ENV_SERVER_URL, settings)).mods; // what the distributor has paid for, never a phone setting
   const role = await myRole();
   const file = files[0];
 

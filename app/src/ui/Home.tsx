@@ -4,7 +4,9 @@ import { ArrowLeft, ClipboardCheck, Route, MapPinned, IndianRupee, Banknote, Box
 import { counts } from '../core/pipeline';
 import { getLang } from '../core/i18n';
 import { db, today, session } from '../core/db';
-import type { Role, Settings } from '../core/types';
+import type { ModuleKey, Role } from '../core/types';
+import { licenceState } from '../core/licence';
+import { ENV_SERVER } from '../core/sync';
 import { MODULE_ICON } from './icons';
 import { Search } from 'lucide-react';
 import { invoiceBalances } from '../core/ledger';
@@ -17,12 +19,18 @@ export type Page = 'home'
   | 'collect' | 'outstanding' | 'cash' | 'cheques'
   | 'bank' | 'expenses' | 'pnl' | 'cashflow' | 'export' | 'reports' | 'vans'
   | 'gst' | 'today' | 'salary' | 'staff' | 'claims' | 'dayclose' | 'bills'
-  | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more';
+  | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more' | 'billing';
 
 interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; ta: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: [string, string] }
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
-export function standalone(s: Settings | undefined) { return !!s && !s.modules.bill && !s.modules.sales; }
+export function standalone(mods: Record<ModuleKey, boolean> | undefined) { return !!mods && !mods.bill && !mods.sales; }
+// which paid module each home tile belongs to: a tile shows only if that module is in the licence
+const NEED: Partial<Record<Page, ModuleKey>> = {
+  beat: 'sales', newshop: 'sales', myday: 'sales', collect: 'collection', pick: 'bill', load: 'delivery', print: 'delivery',
+  stockin: 'inventory', stock: 'inventory', damages: 'inventory', trip: 'delivery', gst: 'gst', dayclose: 'bill',
+  'lite-delivery': 'delivery', 'lite-plan': 'delivery', 'lite-collect': 'collection',
+};
 
 const TAG: Record<string, [string, string]> = {
   sales: ['Take orders in 30 seconds. No typing.', '30 நொடியில் ஆர்டர். டைப்பிங் இல்ல.'],
@@ -45,6 +53,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
   useEffect(() => {
     (async () => {
       const s = await db.settings.toCollection().first();
+      const mods = (await licenceState(!!ENV_SERVER, s)).mods;
       const c = await counts();
       const me = session().userId;
       const newShops = (await db.shops.toArray()).filter(x => !x.approved).length;
@@ -54,7 +63,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
       const diffs = (await db.invoices.toArray()).filter(i => !i.cancelled && i.delivery && !i.diffAction && ((i.delivery.shortages?.length ?? 0) > 0 || (i.delivery.excess?.length ?? 0) > 0)).length;
       const sub: Record<string, Tile[]> = {};
       let t: Tile[] = [];
-      if (standalone(s)) {
+      if (standalone(mods)) {
         const plan = await db.dayPlans.where('date').equals(today()).first();
         const done = (await db.liteEntries.where('date').equals(today()).toArray()).filter(e => e.kind !== 'payment').length;
         const shops = await db.shops.count();
@@ -151,8 +160,9 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'collect', icon: IndianRupee, en: 'Collect', ta: 'வசூல்' },
         ];
       }
-      setTiles(t); setSubs(sub);
-      if ((role === 'owner' || role === 'office') && !standalone(s)) {
+      const allowed = (x: Tile) => x.module ? mods[x.module as ModuleKey] !== false : !(x.page && NEED[x.page]) || mods[NEED[x.page]!];
+      setTiles(t.filter(allowed)); setSubs(sub);
+      if ((role === 'owner' || role === 'office') && !standalone(mods)) {
         const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
         const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
         setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashStaff, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });

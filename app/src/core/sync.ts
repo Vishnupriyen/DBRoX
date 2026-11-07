@@ -1,5 +1,6 @@
 // Our own sync layer (scale plan): phone ⇄ Hanubix server. Phones work offline; this runs when
 // there is signal. Server is swappable because the app only knows this small protocol.
+import { saveLicence } from './licence';
 import { db, getSettings } from './db';
 import type { Base, TableName } from './types';
 
@@ -23,6 +24,7 @@ export async function signup(body: { firmName: string; ownerName: string; phone:
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? 'Sign-up failed');
   localStorage.setItem('dbrox.token', j.token);
+  await saveLicence(j.licence);
   return { tenantId: j.tenantId as string, userId: j.userId as string };
 }
 
@@ -36,6 +38,7 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
         const j = await r.json();
         if (j.choose) return { choose: j.choose }; // same phone under two distributors → the app asks which firm
         localStorage.setItem('dbrox.token', j.token);
+        await saveLicence(j.licence);
         return { tenantId: j.tenantId, userId: j.userId };
       }
       if (r.status === 401) return null;
@@ -53,7 +56,7 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
   if (!url) return null;
   if (!navigator.onLine) throw new Error('offline');
   const r = await fetch(`${url}/v1/number`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ kind, count }) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not get a bill number');
+  if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).error ?? 'Could not get a bill number'), { name: r.status === 402 || r.status === 403 ? 'GuardError' : 'Error' });
   return await r.json();
 }
 
@@ -86,7 +89,8 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
     if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Your access was removed or expired. Please log in again.'); }
     if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);
-    const res: { cursor: number; changes: Change[]; accepted: string[]; more?: boolean } = await r.json();
+    const res: { cursor: number; changes: Change[]; accepted: string[]; more?: boolean; licence?: string } = await r.json();
+    await saveLicence(res.licence); // every sync renews the licence
     const accepted = new Set(res.accepted);
     await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
       for (const c of changes) {

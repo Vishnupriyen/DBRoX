@@ -124,7 +124,13 @@ export function stamp<T extends object>(rec: T & Partial<Base>): T & Base {
 // tries to break them. A broken rule throws GuardError and the whole save is rolled back.
 export class GuardError extends Error { constructor(msg: string) { super(msg); this.name = 'GuardError'; } }
 const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+// set by the licence: when the plan is locked (or the licence can't be renewed), new orders and bills are refused
+let writeBlock: string | null = null;
+export function setWriteBlock(msg: string | null) { writeBlock = msg; }
 async function guard(writes: { table: TableName; rec: Base }[]) {
+  if (writeBlock) for (const w of writes) {
+    if ((w.table === 'orders' || w.table === 'invoices') && !(await db.table(w.table).get(w.rec.id))) throw new GuardError(writeBlock);
+  }
   const last = new Map<string, { table: TableName; rec: Base }>();
   for (const w of writes) last.set(`${w.table}|${w.rec.id}`, w); // the final state of each record in this save
   for (const { table, rec } of last.values()) {

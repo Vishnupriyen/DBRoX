@@ -70,7 +70,7 @@ const audit = () => {
     }
     // More menu + engine
     await p.click('nav >> text=More'); await check('More');
-    for (const item of ['Bills', 'Claims tracker', 'Staff & access', 'Settings']) {
+    for (const item of ['Bills', 'Claims tracker', 'Staff & access', 'Settings', 'Plan & billing']) {
       if (await p.$(`.item:has-text("${item}")`)) { await p.click(`.item:has-text("${item}")`); await check('More › ' + item); await p.click('nav >> text=More'); await p.waitForTimeout(200); const back = await p.$('button:has-text("← More")'); if (back) await back.click(); }
     }
     await p.click('.fab'); await check('Engine fresh');

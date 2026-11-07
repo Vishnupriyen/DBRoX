@@ -37,6 +37,13 @@ jobs:
             DATABASE_URL=dbrox-database-url:latest
             JWT_SECRET=dbrox-jwt-secret:latest
             ANTHROPIC_API_KEY=dbrox-anthropic-key:latest
+            LICENCE_PRIVATE_KEY=hanubix-licence-key:latest
+            ADMIN_KEY=hanubix-admin-key:latest
+            CRON_KEY=hanubix-cron-key:latest
+            RAZORPAY_KEY_ID=hanubix-razorpay-key-id:latest
+            RAZORPAY_KEY_SECRET=hanubix-razorpay-key-secret:latest
+            RAZORPAY_WEBHOOK_SECRET=hanubix-razorpay-webhook-secret:latest
+            RAZORPAY_PLANS=hanubix-razorpay-plans:latest
           env_vars: |
             NODE_ENV=production
             AI_MODEL=claude-haiku-5-5
@@ -48,10 +55,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - run: test -n "$VITE_LICENCE_PUBLIC_KEY" || (echo "LICENCE_PUBLIC_KEY secret is missing" && exit 1)
+        env: { VITE_LICENCE_PUBLIC_KEY: '${{ secrets.LICENCE_PUBLIC_KEY }}' }
       - run: npm ci && npm run build
         working-directory: app
         env:
           VITE_SERVER_URL: ${{ needs.server.outputs.url }}
+          VITE_LICENCE_PUBLIC_KEY: ${{ secrets.LICENCE_PUBLIC_KEY }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { billingState, isUpgrade, istToday, makeLicence, PACKS, sealLicence, TIERS, type Billing } from './licence.js';
 import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
@@ -23,14 +24,29 @@ const err = (statusCode: number, message: string) => Object.assign(new Error(mes
 export async function buildApp(pool: pg.Pool) {
   const app = Fastify({ logger: process.env.NODE_ENV === 'production', bodyLimit: 12 * 1024 * 1024 });
   await app.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',') });
+  // keep the raw text of every JSON body: Razorpay's signature is over the exact bytes it sent
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
+    try { done(null, (body as string).length ? JSON.parse(body as string) : {}); } catch (e) { done(Object.assign(e as Error, { statusCode: 400 }), undefined); }
+  });
+
+  // ---------------------------------------------------------------- plans & licences
+  const billingOf = async (tenantId: string): Promise<Billing & { name: string; pendingPack: string | null; pendingTier: string | null; sub: string | null } | null> => {
+    const r = (await pool.query('SELECT name, tier, pack, trial_ends, paid_until, pending_pack, pending_tier, rzp_subscription_id FROM tenants WHERE id=$1', [tenantId])).rows[0];
+    if (!r) return null;
+    const d = (v: Date | string | null) => v ? (typeof v === 'string' ? v.slice(0, 10) : new Date(v.getTime() - v.getTimezoneOffset() * 60000).toISOString().slice(0, 10)) : null;
+    return { name: r.name, tier: r.tier, pack: r.pack, trialEnds: d(r.trial_ends), paidUntil: d(r.paid_until), pendingPack: r.pending_pack, pendingTier: r.pending_tier, sub: r.rzp_subscription_id };
+  };
+  const licenceFor = async (tenantId: string) => { const b = await billingOf(tenantId); return b ? sealLicence(makeLicence(tenantId, b, istToday())) : null; };
+  const stateFor = async (tenantId: string) => { const b = await billingOf(tenantId); return b ? { ...billingState(b, istToday()), mods: new Set(PACKS[b.pack] ?? PACKS.complete) } : null; };
+  const LOCKED_MSG = 'Hanubix is locked because the plan is not renewed. You can still collect money and download your data. Renew to take orders and make bills again.';
 
   const auth = async (req: FastifyRequest): Promise<Claims> => {
     const c = readToken(req.headers.authorization);
     if (!c) throw err(401, 'Please log in');
     const u = (await pool.query('SELECT active, token_epoch, role FROM users WHERE tenant_id=$1 AND id=$2', [c.t, c.u])).rows[0];
     if (!u || !u.active || u.token_epoch !== c.e) throw err(403, 'Access removed');
-    const t = (await pool.query('SELECT status FROM tenants WHERE id=$1', [c.t])).rows[0];
-    if (t?.status === 'locked') throw err(402, 'Account locked — please renew the plan');
+    // a locked distributor can still log in, see everything, collect and export — only new orders/bills are refused
     return { ...c, r: u.role };
   };
 
@@ -62,7 +78,7 @@ export async function buildApp(pool: pg.Pool) {
       await client.query('INSERT INTO docs(tenant_id,tbl,id,data,updated_at) VALUES ($1,$2,$3,$4,$5),($1,$6,$7,$8,$5)', [tenantId, 'settings', settings.id, settings, now, 'staff', userId, staff]);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
-    return { tenantId, userId, token: signToken({ t: tenantId, u: userId, r: 'owner', e: 0 }) };
+    return { tenantId, userId, token: signToken({ t: tenantId, u: userId, r: 'owner', e: 0 }), licence: await licenceFor(tenantId) };
   });
 
   app.post('/v1/login', async (req, reply) => {
@@ -77,7 +93,7 @@ export async function buildApp(pool: pg.Pool) {
     // the same phone under two distributors: the app shows "Which firm?" and sends tenantId
     if (ok.length > 1) return { choose: ok.map(u => ({ tenantId: u.tenant_id, firm: u.firm })) };
     const u = ok[0];
-    return { tenantId: u.tenant_id, userId: u.id, role: u.role, token: signToken({ t: u.tenant_id, u: u.id, r: u.role, e: u.token_epoch }) };
+    return { tenantId: u.tenant_id, userId: u.id, role: u.role, token: signToken({ t: u.tenant_id, u: u.id, r: u.role, e: u.token_epoch }), licence: await licenceFor(u.tenant_id) };
   });
 
   // Numbers are issued here, never on the phone: one running series per distributor, no duplicates across phones.
@@ -86,6 +102,9 @@ export async function buildApp(pool: pg.Pool) {
     if (c.r !== 'owner' && c.r !== 'office') throw err(403, 'Only the owner or office can make bills');
     const b = req.body as { kind?: 'bill' | 'cn' | 'receipt'; count?: number };
     const kind = b.kind ?? 'bill'; const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
+    const st = await stateFor(c.t);
+    if (st?.status === 'locked' && kind === 'bill') throw err(402, LOCKED_MSG);
+    if (st && kind === 'bill' && !st.mods.has('bill')) throw err(403, 'Billing is not in your plan.');
     const col = kind === 'bill' ? 'next_bill_no' : kind === 'cn' ? 'next_cn_no' : 'next_receipt_no';
     const r = await pool.query(`UPDATE tenants SET ${col} = ${col} + $2 WHERE id=$1 RETURNING ${col} - $2 AS first, prefix`, [c.t, n]);
     if (!r.rows[0]) throw err(404, 'Distributor not found');
@@ -106,7 +125,15 @@ export async function buildApp(pool: pg.Pool) {
       // one writer per distributor at a time → versions commit in order, so no phone ever skips a change
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [c.t]);
       const tbls: string[] = [], ids: string[] = [], datas: string[] = [], ups: string[] = [];
+      const st = await stateFor(c.t);
+      const blockNew = st?.status === 'locked' ? new Set(['orders', 'invoices']) : new Set<string>();
+      const existing = new Set<string>();
+      if (blockNew.size) {
+        const want = changes.filter(ch => blockNew.has(ch.table));
+        if (want.length) for (const r of (await client.query('SELECT tbl, id FROM docs WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)', [c.t, [...blockNew], want.map(w => w.id)])).rows) existing.add(`${r.tbl}|${r.id}`);
+      }
       for (const ch of changes) {
+        if (blockNew.has(ch.table) && !existing.has(`${ch.table}|${ch.id}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         if (!canWrite.has(ch.table) || typeof ch.id !== 'string' || !ch.id || !ch.updatedAt || isNaN(Date.parse(ch.updatedAt))) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         const data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
         if (ch.table === 'staff') {
@@ -136,6 +163,7 @@ export async function buildApp(pool: pg.Pool) {
     const maxVersion = rows.length ? Number(rows[rows.length - 1].version) : cursor;
     return {
       cursor: maxVersion,
+      licence: await licenceFor(c.t), // every sync renews the phone's licence
       more: rows.length === config.pullLimit,
       accepted, rejected,
       // owner-only fields (purchase rate, UPI id …) never reach a staff phone
@@ -153,6 +181,105 @@ export async function buildApp(pool: pg.Pool) {
       `INSERT INTO scan_usage(tenant_id, month, count) VALUES ($1,$2,1) ON CONFLICT (tenant_id, month) DO UPDATE SET count = scan_usage.count + 1 RETURNING count`, [c.t, month])).rows[0].count;
     if (used > (config.scanAllowance[plan] ?? 300)) throw err(402, 'Monthly photo-reading allowance used up. Send Excel/PDF files, or add a top-up.');
     return await scanWithAI(b.kind, b.file);
+  });
+
+  app.get('/v1/licence', async req => { const c = await auth(req); return { licence: await licenceFor(c.t) }; });
+
+  // Owner sets up UPI Autopay: we create a Razorpay subscription and send back its payment page.
+  app.post('/v1/billing/subscribe', async req => {
+    const c = await auth(req);
+    if (c.r !== 'owner') throw err(403, 'Only the owner can manage the plan');
+    const b = await billingOf(c.t); if (!b) throw err(404, 'Distributor not found');
+    const rz = config.razorpay;
+    const planId = rz.plans[`${b.tier}:${b.pack}`];
+    if (!rz.keyId || !rz.keySecret || !planId) throw err(503, 'Online payment is not set up yet. Please pay by bank transfer; support will mark it paid.');
+    const r = await fetch('https://api.razorpay.com/v1/subscriptions', {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Basic ' + Buffer.from(`${rz.keyId}:${rz.keySecret}`).toString('base64') },
+      body: JSON.stringify({ plan_id: planId, total_count: 120, customer_notify: 1, notes: { tenantId: c.t, firm: b.name } }),
+    });
+    const j = await r.json() as { id?: string; short_url?: string; error?: { description?: string } };
+    if (!r.ok || !j.id) throw err(502, j.error?.description ?? 'Could not start the payment. Try again.');
+    await pool.query('UPDATE tenants SET rzp_subscription_id=$2 WHERE id=$1', [c.t, j.id]);
+    return { url: j.short_url };
+  });
+
+  // Razorpay tells us about every payment. Signature checked over the exact bytes; each event counted once.
+  app.post('/v1/razorpay/webhook', async (req, reply) => {
+    const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
+    const sig = String(req.headers['x-razorpay-signature'] ?? '');
+    const secret = config.razorpay.webhookSecret;
+    const expect = secret ? createHmac('sha256', secret).update(raw).digest('hex') : '';
+    if (!secret || sig.length !== expect.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) { reply.code(401); return { error: 'bad signature' }; }
+    const body = req.body as { event?: string; payload?: { subscription?: { entity?: { id?: string; current_end?: number; notes?: { tenantId?: string } } }; payment?: { entity?: { id?: string } } } };
+    const eventId = String(req.headers['x-razorpay-event-id'] ?? `${body.event}:${body.payload?.payment?.entity?.id ?? body.payload?.subscription?.entity?.id}:${body.payload?.subscription?.entity?.current_end ?? ''}`);
+    const sub = body.payload?.subscription?.entity;
+    let tenantId = sub?.notes?.tenantId ?? null;
+    if (!tenantId && sub?.id) tenantId = (await pool.query('SELECT id FROM tenants WHERE rzp_subscription_id=$1', [sub.id])).rows[0]?.id ?? null;
+    const fresh = await pool.query('INSERT INTO payment_events(id, tenant_id, event, body) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING RETURNING id', [eventId, tenantId, body.event ?? '', body]);
+    if (!fresh.rowCount) return { ok: true, duplicate: true };
+    if (!tenantId) return { ok: true, ignored: 'no distributor' };
+    if ((body.event === 'subscription.charged' || body.event === 'subscription.activated') && sub?.current_end) {
+      // paid up to the end of this billing period (Razorpay sends unix seconds); a waiting downgrade starts now
+      const until = istToday(sub.current_end * 1000 - 1000);
+      await pool.query(`UPDATE tenants SET paid_until = GREATEST(COALESCE(paid_until, $2::date), $2::date),
+        pack = COALESCE(pending_pack, pack), tier = COALESCE(pending_tier, tier), pending_pack = NULL, pending_tier = NULL,
+        rzp_subscription_id = COALESCE(rzp_subscription_id, $3) WHERE id=$1`, [tenantId, until, sub.id ?? null]);
+    }
+    // payment failed / halted / cancelled: nothing to do — the dates run out and grace → lock happens by itself
+    return { ok: true };
+  });
+
+  // ---------------------------------------------------------------- the Hanubix console (our side only)
+  const admin = (req: FastifyRequest) => {
+    const k = String(req.headers['x-admin-key'] ?? '');
+    if (!config.adminKey || k.length !== config.adminKey.length || !timingSafeEqual(Buffer.from(k), Buffer.from(config.adminKey))) throw err(401, 'Admin key needed');
+  };
+  app.get('/v1/admin/tenants', async req => {
+    admin(req);
+    const rows = (await pool.query('SELECT id FROM tenants ORDER BY created_at DESC LIMIT 1000')).rows;
+    const today = istToday();
+    return { tenants: await Promise.all(rows.map(async r => { const b = (await billingOf(r.id))!; return { id: r.id, ...b, ...billingState(b, today) }; })) };
+  });
+  app.post('/v1/admin/tenants/:id/plan', async req => {
+    admin(req);
+    const id = (req.params as { id: string }).id;
+    const { tier, pack } = req.body as { tier?: string; pack?: string };
+    const b = await billingOf(id); if (!b) throw err(404, 'Distributor not found');
+    if (pack && !PACKS[pack]) throw err(400, 'Unknown pack');
+    if (tier && !TIERS.includes(tier)) throw err(400, 'Unknown tier');
+    const packNow = pack && isUpgrade(b.pack, pack);
+    const tierNow = tier && TIERS.indexOf(tier) > TIERS.indexOf(b.tier);
+    // upgrades start now; downgrades wait for the end of the paid month
+    await pool.query(`UPDATE tenants SET pack = CASE WHEN $2::boolean THEN $3 ELSE pack END, pending_pack = CASE WHEN $3::text IS NOT NULL AND NOT $2::boolean THEN $3 ELSE pending_pack END,
+      tier = CASE WHEN $4::boolean THEN $5 ELSE tier END, pending_tier = CASE WHEN $5::text IS NOT NULL AND NOT $4::boolean THEN $5 ELSE pending_tier END WHERE id=$1`,
+      [id, !!packNow, pack ?? null, !!tierNow, tier ?? null]);
+    return { ok: true, startsNow: { pack: !!packNow, tier: !!tierNow }, billing: await billingOf(id) };
+  });
+  // a payment received outside Razorpay (bank transfer, cash): mark paid up to a date
+  app.post('/v1/admin/tenants/:id/paid', async req => {
+    admin(req);
+    const id = (req.params as { id: string }).id;
+    const { until } = req.body as { until?: string };
+    if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until)) throw err(400, 'until must be YYYY-MM-DD');
+    await pool.query('UPDATE tenants SET paid_until = GREATEST(COALESCE(paid_until, $2::date), $2::date), pack = COALESCE(pending_pack, pack), tier = COALESCE(pending_tier, tier), pending_pack = NULL, pending_tier = NULL WHERE id=$1', [id, until]);
+    return { ok: true, billing: await billingOf(id) };
+  });
+
+  // Daily job (Cloud Scheduler, 00:05 IST): a downgrade starts once the paid month is over; status kept for reports.
+  app.post('/v1/cron/daily', async req => {
+    const k = String(req.headers['x-cron-key'] ?? '');
+    if (!config.cronKey || k !== config.cronKey) throw err(401, 'Cron key needed');
+    const today = istToday();
+    await pool.query(`UPDATE tenants SET pack = COALESCE(pending_pack, pack), tier = COALESCE(pending_tier, tier), pending_pack = NULL, pending_tier = NULL
+      WHERE (pending_pack IS NOT NULL OR pending_tier IS NOT NULL) AND COALESCE(paid_until, trial_ends) < $1::date`, [today]);
+    const rows = (await pool.query('SELECT id FROM tenants')).rows;
+    const reminders: { id: string; status: string; daysLeft: number }[] = [];
+    for (const r of rows) {
+      const b = (await billingOf(r.id))!; const s = billingState(b, today);
+      await pool.query('UPDATE tenants SET status=$2 WHERE id=$1 AND status IS DISTINCT FROM $2', [r.id, s.status]);
+      if ((s.status === 'trial' && s.daysLeft === 10) || s.status === 'grace') reminders.push({ id: r.id, status: s.status, daysLeft: s.daysLeft });
+    }
+    return { ok: true, tenants: rows.length, reminders };
   });
 
   // Owner allows support to see data for 24 hours (Part 12, level 3).

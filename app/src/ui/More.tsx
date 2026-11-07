@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
+import { CreditCard, Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
 import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { getLang, inr, setLang, t } from '../core/i18n';
 import { norm } from '../core/match';
@@ -14,7 +14,7 @@ import { errorLog } from './Safety';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
-export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' | 'staff' }) {
+export function More({ role, onLogout, onLang, initial, onPlan }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   const back = <button className="btn small" style={{ marginBottom: 10 }} onClick={() => setPage('menu')}>← {t('more')}</button>;
@@ -32,6 +32,7 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
       {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
       {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
+      {role === 'owner' && onPlan && <button className="item" onClick={onPlan}><CreditCard /> <span className="grow">Plan & billing</span></button>}
       {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
