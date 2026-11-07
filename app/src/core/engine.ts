@@ -178,6 +178,13 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
   if (has(text, W.damage) && !has(text, W.outstanding)) { const r = need('inventory', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
   if (shop && has(text, W.ret)) { if (!can(role, 'return')) return deny(); return returnProposal(shop.id, rest); }
+  // Corrections in plain words: "it is not 500, it is 300", "300 not 500", "change payment 500 to 300", "wrong, it is 300"
+  const fix = correctionIn(text);
+  if (fix) {
+    const r = need('collection', mods); if (r) return r;
+    if (!can(role, 'payment')) return deny();
+    return paymentCorrection(shop?.id, fix.old, fix.next, role);
+  }
   if (shop && has(text, W.paid) && findAmount(rest) != null) {
     const r = need('collection', mods); if (r) return r;
     if (!can(role, 'payment')) return deny();
@@ -198,6 +205,14 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
 
   // ------------------------ orders ------------------------
   const lines = parseItemLines(shop ? rest : textIn);
+  // never guess an order from words that aren't products: if nothing matches a product, ask instead
+  if (lines.length) {
+    const active = (await db.products.toArray()).filter(p => p.active);
+    if (!lines.some(l => bestProduct(active, l.productText).product)) {
+      const who = shop?.name ?? 'Murugan Stores';
+      return { text: `I'm not sure what you want${shop ? ` for ${shop.name}` : ''}. Try one of these:\n• "${who} paid 500 cash"\n• "${who} 2 case Surf, 24 Good Day"\n• "${who} outstanding"\n• "${who} it is not 500, it is 300" (to correct a payment)`, tone: 'warn' };
+    }
+  }
   if (shop && lines.length) {
     const r = need('sales', mods) ?? (mods.bill ? null : null); if (r) return r;
     if (!can(role, 'order')) return deny();
@@ -209,6 +224,60 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   }
   const sc = screenFor(text, role); if (sc) return sc;
   return { text: `I didn't understand that yet.\n\n${HELP_TEXT}`, tone: 'warn' };
+}
+
+// "not 500 … 300", "300 not 500", "500 to 300" (with change/adjust/correct), "wrong … it is 300"
+function correctionIn(t: string): { old?: number; next: number } | null {
+  const nums = [...t.replace(/,/g, '').matchAll(/(?:₹|rs\.?\s*)?\b(\d{1,5}(?:\.\d{1,2})?)\b/g)].map(m => Number(m[1])).filter(n => n > 0);
+  if (!nums.length) return null;
+  const notN = t.match(/\bnot\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
+  if (notN) { const old = Number(notN[1]); const next = nums.find(n => n !== old); return next ? { old, next } : null; }
+  const fixWord = /\b(adjust|correct|correction|change|edit|update|wrong|mistake|actually|instead)\b|தவறு|மாற்று/.test(t);
+  if (!fixWord) return null;
+  const to = t.match(/(\d{1,5}(?:\.\d{1,2})?)\s*(?:to|->|→|into)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)/);
+  if (to) return { old: Number(to[1]), next: Number(to[2]) };
+  if (/\b(wrong|mistake|actually|correct)\b|தவறு/.test(t) && nums.length === 1) return { next: nums[0] };
+  return null;
+}
+
+async function paymentCorrection(shopId: string | undefined, old: number | undefined, next: number, role: Role): Promise<Reply> {
+  const since = daysFrom(-7);
+  const me = session().userId;
+  const shopName = shopId ? (await db.shops.get(shopId))?.name ?? 'this shop' : '';
+  const pays = (await db.payments.toArray())
+    .filter(p => p.status === 'ok' && p.date >= since && (shopId ? p.shopId === shopId : p.collectedBy === me) && (old == null || Math.abs(p.amount - old) < 0.01))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const p = pays[0];
+  if (!p) return { text: `I couldn't find a payment${old != null ? ` of ₹${old}` : ''}${shopName ? ` for ${shopName}` : ' recorded by you'} in the last 7 days. To change a bill instead, open Bill → Billed → Edit.`, tone: 'warn' };
+  if (role !== 'owner' && role !== 'office' && p.collectedBy !== me) return deny();
+  // balances as if the old payment never happened, then the new amount goes to the oldest bills first
+  const back = new Map(p.allocations.map(a => [a.invoiceId, a.amount]));
+  const bills = (await invoiceBalances(p.shopId)).map(b => ({ b, base: r2(b.balance + (back.get(b.invoice.id) ?? 0)) })).filter(x => x.base > 0.5);
+  let left = next;
+  const rows: Row[] = bills.map(({ b, base }) => { const pay = r2(Math.max(0, Math.min(left, base))); left = r2(left - pay); return { invoiceId: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: base, overdue: b.overdueDays ? `${b.overdueDays} days` : '', pay }; });
+  const name = (await db.shops.get(p.shopId))?.name ?? '';
+  const counted = p.mode === 'cash' && (await db.dayCloses.where('date').equals(p.date).count()) > 0; // only if that day was really closed
+  return {
+    text: `Correcting the ${p.mode} payment from ${name} on ${p.date}: ₹${p.amount} → ₹${next}. Check and tap ✓.` + (counted ? `\nThis cash was already counted at day close — the ₹${r2(Math.abs(p.amount - next))} difference will need to be settled with the person who collected it.` : ''),
+    proposal: {
+      id: newId(), kind: 'paymentFix', title: 'Correct payment',
+      fields: [
+        { key: 'shopId', label: 'Shop', type: 'select', options: await shopOptions(), value: p.shopId, readonly: true },
+        { key: 'was', label: 'Was ₹', type: 'number', value: p.amount, readonly: true },
+        { key: 'amount', label: 'Correct amount ₹', type: 'number', value: next },
+        { key: 'mode', label: 'Mode', type: 'select', value: p.mode, options: [{ value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' }, { value: 'cheque', label: 'Cheque' }] },
+        { key: 'ref', label: 'UPI / cheque no', value: p.ref ?? '' },
+      ],
+      columns: [
+        { key: 'number', label: 'Bill', readonly: true, width: 150 },
+        { key: 'date', label: 'Date', readonly: true, width: 95 },
+        { key: 'balance', label: 'Balance ₹', type: 'number', readonly: true, width: 90 },
+        { key: 'overdue', label: 'Overdue', readonly: true, width: 80 },
+        { key: 'pay', label: 'Pay now ₹', type: 'number', width: 90 },
+      ],
+      rows, meta: { paymentId: p.id },
+    },
+  };
 }
 
 function deny(): Reply { return { text: 'Your role cannot do this. Ask the owner.', tone: 'warn' }; }

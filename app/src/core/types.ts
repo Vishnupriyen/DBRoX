@@ -230,6 +230,8 @@ export interface Payment extends Base {
   settled: boolean;
   bankLineId?: string;
   status: 'ok' | 'waiting_shop' | 'bounced' | 'cancelled';
+  correctionOf?: string; // this payment replaces a wrong one (kept, cancelled, for the audit trail)
+  note?: string;
 }
 
 export interface Purchase extends Base {

@@ -59,7 +59,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
   if (closed) return <div className="muted">✓ {closed}</div>;
 
   const bad = v ? hasErrors(v) : true;
-  const fixedRows = ['bank', 'payment'].includes(p.kind);
+  const fixedRows = ['bank', 'payment', 'paymentFix'].includes(p.kind);
   return (
     <div className="prop">
       <h4>{p.title}</h4>

@@ -20,7 +20,7 @@ export interface Col {
 
 export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
-  | 'products' | 'shops' | 'newshop' | 'schemes' | 'view';
+  | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix';
 
 export interface Proposal {
   id: string;
@@ -139,7 +139,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       }
       break;
     }
-    case 'payment': {
+    case 'payment': case 'paymentFix': {
       if (!s(fieldValue(p, 'shopId'))) v.fieldErrors.shopId = 'Pick the shop';
       const total = n(fieldValue(p, 'amount'));
       if (total <= 0) v.fieldErrors.amount = 'Amount missing';
@@ -325,6 +325,22 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         settled: inOffice, status: 'ok',
       }, 'payment');
       message = `Payment ₹${amount} recorded.`;
+      break;
+    }
+    case 'paymentFix': {
+      // money records are never overwritten: the old payment is cancelled (kept for the audit) and a corrected one is made
+      const old = await db.payments.get(String(p.meta.paymentId ?? ''));
+      if (!old || old.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
+      const allocations = p.rows.filter(r => n(r.pay) > 0).map(r => ({ invoiceId: s(r.invoiceId), amount: n(r.pay) }));
+      const amount = n(fieldValue(p, 'amount'));
+      const advance = r2(amount - allocations.reduce((a, x) => a + x.amount, 0));
+      cs.put<Payment>('payments', { ...old, status: 'cancelled', note: `corrected to ₹${amount}` }, 'payment corrected (old)');
+      cs.put<Payment>('payments', {
+        shopId: old.shopId, amount, mode: s(fieldValue(p, 'mode')) as Payment['mode'], ref: s(fieldValue(p, 'ref')), date: old.date,
+        collectedBy: old.collectedBy, shopConfirmed: old.shopConfirmed, confirmPhoto: old.confirmPhoto, allocations,
+        advance: advance > 0.5 ? advance : 0, settled: old.settled, status: 'ok', correctionOf: old.id,
+      }, 'payment corrected (new)');
+      message = `Payment corrected: ₹${old.amount} → ₹${amount}.`;
       break;
     }
     case 'claim': {
