@@ -9,6 +9,8 @@ import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Sett
 import { PrintBill } from './PrintBill';
 import { ask, askText, confirmBox, notify } from './dialog';
 import { BillEditor } from './BillEditor';
+import { cancelInvoice } from '../core/pipeline';
+import { errorLog } from './Safety';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
@@ -34,6 +36,7 @@ export function More({ role, onLogout, onLang, initial }: { role: Role; onLogout
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
+        dump.errorLog = errorLog(); // what went wrong on this phone, for support
         downloadText(`Hanubix-backup-${today()}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
@@ -199,11 +202,8 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   const cancel = async (i: Invoice) => {
     const reason = await askText(`Cancel bill ${i.number}? Bills are never deleted — give a reason`);
     if (!reason) return;
-    const cs = new ChangeSet();
-    cs.put('invoices', { ...i, cancelled: { at: new Date().toISOString(), by: 'owner', reason } }, 'cancel bill');
-    const batches = await db.batches.toArray();
-    for (const l of i.lines) for (const b of l.batches) { const x = batches.find(y => y.id === b.batchId); if (x) { x.qty += b.qty; cs.put('batches', { ...x }, 'stock back (cancel)'); } }
-    await cs.commit('Bill cancelled'); load();
+    try { await cancelInvoice(i.id, reason); } catch (e) { await notify('Could not cancel', (e as Error).message); }
+    load();
   };
   const shown = list.filter(i => !q || norm(i.number).includes(norm(q)) || norm(i.shopName).includes(norm(q)));
   return (

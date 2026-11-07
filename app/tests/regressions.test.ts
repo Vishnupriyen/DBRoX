@@ -76,6 +76,19 @@ describe('review fixes', () => {
     expect(a[0]).toMatch(new RegExp(`^CN/${finYear(today())}/\\d{5}$`));
   });
 
+  it('guards refuse impossible saves and write nothing', async () => {
+    const b = (await db.batches.toArray()).find(x => x.qty > 0)!;
+    const cs = new ChangeSet(); cs.put('batches', { ...b, qty: -1 }); cs.put('expenses', { date: today(), category: 'test', amount: 5 });
+    await expect(cs.commit('bad')).rejects.toThrow(/below zero/);
+    expect((await db.batches.get(b.id))!.qty).toBe(b.qty);
+    expect((await db.expenses.toArray()).some(e => e.category === 'test')).toBe(false); // whole save rolled back
+    const inv = (await db.invoices.toArray())[0];
+    const cs2 = new ChangeSet(); cs2.put('invoices', { ...inv, id: undefined });
+    await expect(cs2.commit('dup')).rejects.toThrow(/already used/);
+    const cs3 = new ChangeSet(); cs3.put('payments', { shopId: inv.shopId, amount: 100, mode: 'cash', date: today(), collectedBy: 't', shopConfirmed: true, allocations: [{ invoiceId: inv.id, amount: 150 }], advance: 0, settled: false, status: 'ok' });
+    await expect(cs3.commit('over')).rejects.toThrow(/more than its amount/);
+  });
+
   it('month end is the real last day of the month (no UTC shift)', () => {
     expect(monthEnd('2027-03')).toBe('2027-03-31');
     expect(monthEnd('2026-12')).toBe('2026-12-31');

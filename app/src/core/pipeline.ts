@@ -347,3 +347,69 @@ export async function counts() {
     dayClosed: !!(await db.dayCloses.where('date').equals(today()).first()),
   };
 }
+
+// ---- Delivery and cancel live here (not in screens) so the money & stock laws can be tested ----
+export const DELIVERY_REASONS = [
+  { value: 'short', label: 'Not loaded / short', restock: true },
+  { value: 'damaged', label: 'Damaged in van', restock: false },
+  { value: 'refused', label: 'Shop refused', restock: true },
+] as const;
+export type DeliveryInput = {
+  returnAll?: boolean;
+  short?: Record<string, { qty: number; reason: string }>; // key `${invoiceId}|${productId}`
+  extra?: Record<string, number>;
+  shopPhoto?: string; billPhoto?: string; pos?: { lat: number; lng: number } | null; distanceM?: number;
+};
+/** Records what the shop accepted for a stop. A bill that already has a delivery result is skipped (double tap safe). */
+export async function recordDelivery(invoiceIds: string[], input: DeliveryInput) {
+  const cs = new ChangeSet();
+  const batches = await db.batches.toArray();
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  let done = 0;
+  for (const id of invoiceIds) {
+    const inv = await db.invoices.get(id);
+    if (!inv || inv.cancelled || ['delivered', 'partial', 'returned'].includes(inv.deliveryStatus)) continue;
+    const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b })) }));
+    const shortages: { productId: string; qty: number; reason: string }[] = [];
+    const excess: { productId: string; qty: number }[] = [];
+    for (const l of lines) {
+      const k = `${inv.id}|${l.productId}`;
+      const s = input.returnAll ? { qty: l.qty + l.freeQty, reason: 'refused' } : input.short?.[k];
+      const e = input.extra?.[k];
+      if (e && e > 0) {
+        // extra pieces given from the van: taken from stock and recorded on the bill line, so a cancel puts them back
+        const b = batches.filter(x => x.productId === l.productId && x.qty >= e).sort((a, c) => a.expiry.localeCompare(c.expiry))[0];
+        if (b) { b.qty -= e; cs.put('batches', { ...b }, 'extra given from van'); l.batches.push({ batchId: b.id, batch: b.batch, qty: e, expiry: b.expiry }); excess.push({ productId: l.productId, qty: e }); }
+      }
+      if (!s?.qty) continue;
+      const qty = Math.min(s.qty, l.batches.reduce((a, b) => a + b.qty, 0));
+      if (qty <= 0) continue;
+      const reason = DELIVERY_REASONS.find(r => r.value === s.reason) ?? DELIVERY_REASONS[0];
+      shortages.push({ productId: l.productId, qty, reason: reason.label });
+      // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
+      let left = qty;
+      for (const lb of l.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (reason.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'back to stock'); } } }
+      if (!reason.restock) cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: input.shopPhoto }, 'transit damage');
+    }
+    const diff = shortages.length || excess.length;
+    const pos = input.pos ?? undefined;
+    cs.put('invoices', { ...inv, lines, deliveryStatus: input.returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo: input.shopPhoto, shopPhoto: input.shopPhoto, billPhoto: input.billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM: input.distanceM, shortages, excess } }, 'delivery');
+    done++;
+  }
+  if (!done) return null;
+  return cs.commit(input.returnAll ? 'Refused at door' : 'Delivered');
+}
+
+/** Cancels a bill with a reason. Pieces still out on the bill go back to stock; money paid becomes shop advance. */
+export async function cancelInvoice(invoiceId: string, reason: string) {
+  const inv = await db.invoices.get(invoiceId);
+  if (!inv) throw new Error('Bill not found.');
+  if (inv.cancelled) throw new Error('This bill is already cancelled.');
+  if (!reason.trim()) throw new Error('A reason is needed to cancel a bill.');
+  const cs = new ChangeSet();
+  const batches = await db.batches.toArray();
+  for (const l of inv.lines) for (const b of l.batches) { if (b.qty <= 0) continue; const x = batches.find(y => y.id === b.batchId); if (x) { x.qty += b.qty; cs.put('batches', { ...x }, 'stock back (cancel)'); } }
+  const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b, qty: 0 })) }));
+  cs.put('invoices', { ...inv, lines, cancelled: { at: nowIso(), by: session().userId, reason: reason.trim() } }, 'cancel bill');
+  return cs.commit('Bill cancelled');
+}

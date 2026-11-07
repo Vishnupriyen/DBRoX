@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PhotoButton } from './PhotoButton';
 import { Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
-import { endTrip, startTrip, trackPoint } from '../core/pipeline';
+import { endTrip, startTrip, trackPoint, recordDelivery, DELIVERY_REASONS } from '../core/pipeline';
 import { Pack } from './Pack';
-import { ChangeSet, db, getSettings, nowIso, session, today } from '../core/db';
+import { ChangeSet, db, getSettings, session, today } from '../core/db';
 import { PayBox } from './PayBox';
 import { r2 } from '../core/ledger';
 import { getLang, inr, t } from '../core/i18n';
@@ -94,11 +94,7 @@ function EndTrip({ trip, stops, onDone }: { trip: Trip; stops: Stop[]; onDone: (
   );
 }
 
-const REASONS = [
-  { value: 'short', label: 'Not loaded / short', restock: true },
-  { value: 'damaged', label: 'Damaged in van', restock: false },
-  { value: 'refused', label: 'Shop refused', restock: true },
-];
+const REASONS = DELIVERY_REASONS;
 
 function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
@@ -126,30 +122,9 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
 
   // Delivered: record what the shop accepted. No credit note here — the owner chooses modified bill / credit note at day close.
   const confirmDelivery = async (returnAll = false) => {
-    const cs = new ChangeSet();
-    const batches = await db.batches.toArray();
-    for (const inv of stop.invoices) {
-      const shortages: { productId: string; qty: number; reason: string }[] = [];
-      const excess: { productId: string; qty: number }[] = [];
-      for (const l of inv.lines) {
-        const s = returnAll ? { qty: l.qty, reason: 'refused' } : short[key(inv, l.productId)];
-        const e = extra[key(inv, l.productId)];
-        if (e) { excess.push({ productId: l.productId, qty: e }); const b = batches.find(x => x.productId === l.productId && x.qty >= e); if (b) { b.qty -= e; cs.put('batches', { ...b }, 'extra given from van'); } }
-        if (!s?.qty) continue;
-        const qty = Math.min(s.qty, l.qty);
-        const reason = REASONS.find(r => r.value === s.reason) ?? REASONS[0];
-        shortages.push({ productId: l.productId, qty, reason: reason.label });
-        // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
-        let left = qty;
-        for (const lb of l.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (reason.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'back to stock'); } } }
-        if (!reason.restock) cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: shopPhoto }, 'transit damage');
-      }
-      const diff = shortages.length || excess.length;
-      // shop location fills itself from the first delivery
-      if (pos && !stop.shop.lat) cs.put('shops', { ...stop.shop, lat: pos.lat, lng: pos.lng }, 'location from delivery');
-      cs.put('invoices', { ...inv, deliveryStatus: returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo: shopPhoto, shopPhoto, billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM, shortages, excess } }, 'delivery');
-    }
-    await cs.commit(returnAll ? 'Refused at door' : 'Delivered');
+    // shop location fills itself from the first delivery
+    if (pos && !stop.shop.lat) { const cs = new ChangeSet(); cs.put('shops', { ...stop.shop, lat: pos.lat, lng: pos.lng }, 'location from delivery'); await cs.commit('Shop location'); }
+    await recordDelivery(stop.invoices.map(i => i.id), { returnAll, short, extra, shopPhoto, billPhoto, pos, distanceM });
     if (returnAll) { setStep('done'); return; }
     setStep('pay');
   };

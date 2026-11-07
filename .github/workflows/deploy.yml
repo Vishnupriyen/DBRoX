@@ -9,7 +9,11 @@ env:
   SERVICE: dbrox-server
 
 jobs:
+  gate:   # nothing deploys unless the full quality gate passes on this exact code
+    uses: ./.github/workflows/quality.yml
+
   server:
+    needs: gate
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.deploy.outputs.url }}

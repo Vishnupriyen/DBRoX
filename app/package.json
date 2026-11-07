@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gate": "bash gate.sh",
+    "test:chaos": "TZ=Asia/Kolkata CHAOS_SEEDS=20 CHAOS_STEPS=1000 vitest run tests/laws.test.ts"
   },
   "dependencies": {
     "dexie": "^4.4.7",

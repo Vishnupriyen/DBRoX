@@ -7,6 +7,7 @@ import { getLang, setLang, t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
 import { TesraxCore } from './ui/TesraxCore';
+import { ErrorBoundary } from './ui/Safety';
 import { sound } from './core/sound';
 import { Volume2, VolumeX } from 'lucide-react';
 import { UndoToast } from './ui/UndoToast';
@@ -174,7 +175,7 @@ export default function App() {
         <button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
-      <main className="main" key={page}>{body()}</main>
+      <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       <DialogHost />
       <UndoToast />
 

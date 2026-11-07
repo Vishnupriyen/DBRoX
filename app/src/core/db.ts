@@ -119,6 +119,47 @@ export function stamp<T extends object>(rec: T & Partial<Base>): T & Base {
   } as T & Base;
 }
 
+// ---------------------------------------------------------------- the guards
+// Every save in the app goes through ChangeSet.commit, so these rules hold everywhere, whatever screen or bug
+// tries to break them. A broken rule throws GuardError and the whole save is rolled back.
+export class GuardError extends Error { constructor(msg: string) { super(msg); this.name = 'GuardError'; } }
+const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+async function guard(writes: { table: TableName; rec: Base }[]) {
+  const last = new Map<string, { table: TableName; rec: Base }>();
+  for (const w of writes) last.set(`${w.table}|${w.rec.id}`, w); // the final state of each record in this save
+  for (const { table, rec } of last.values()) {
+    const r = rec as unknown as Record<string, unknown>;
+    if (table === 'batches') {
+      if (!fin(r.qty) || !Number.isInteger(r.qty)) throw new GuardError(`Stock count must be a whole number (got ${String(r.qty)}).`);
+      if ((r.qty as number) < 0) throw new GuardError('Not enough stock for this. Stock can never go below zero — check the stock position first.');
+    }
+    if (table === 'invoices') {
+      for (const k of ['total', 'taxable', 'cgst', 'sgst', 'igst']) if (!fin(r[k])) throw new GuardError(`Bill amount "${k}" is not a valid number.`);
+      if ((r.total as number) < 0) throw new GuardError('A bill total can never be negative.');
+      if (!r.number) throw new GuardError('Every bill needs a number.');
+      const same = await db.invoices.where('number').equals(r.number as string).toArray();
+      if (same.some(x => x.id !== rec.id) || writes.some(x => x.table === 'invoices' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number))
+        throw new GuardError(`Bill number ${String(r.number)} is already used. A bill number can never repeat.`);
+      for (const l of (r.lines as { qty: number; batches: { qty: number }[] }[]) ?? []) {
+        if (!fin(l.qty) || l.qty < 0) throw new GuardError('A bill line has an invalid quantity.');
+        if (l.batches.some(b => !fin(b.qty) || b.qty < 0)) throw new GuardError('A bill line has an invalid batch quantity.');
+      }
+    }
+    if (table === 'creditNotes') {
+      if (!fin(r.total) || (r.total as number) < 0) throw new GuardError('Credit note amount is not valid.');
+      const dup = (await db.creditNotes.toArray()).some(x => x.id !== rec.id && x.number === r.number) || writes.some(x => x.table === 'creditNotes' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number);
+      if (dup) throw new GuardError(`Credit note number ${String(r.number)} is already used.`);
+    }
+    if (table === 'payments') {
+      if (!fin(r.amount) || (r.amount as number) <= 0) throw new GuardError('Payment amount must be more than zero.');
+      const alloc = ((r.allocations as { amount: number }[]) ?? []).reduce((a, x) => a + x.amount, 0);
+      if (alloc - (r.amount as number) > 0.01) throw new GuardError('A payment cannot be split across bills for more than its amount.');
+    }
+    if (table === 'expenses' && (!fin(r.amount) || (r.amount as number) < 0)) throw new GuardError('Expense amount is not valid.');
+    if (table === 'orders' && ((r.lines as { qty: number }[]) ?? []).some(l => !fin(l.qty) || l.qty < 0)) throw new GuardError('An order line has an invalid quantity.');
+  }
+}
+
 // A Change set = everything one ✓ approval writes. Written in one transaction with an
 // audit entry per record, so the whole approval can be undone later.
 export class ChangeSet {
@@ -134,6 +175,7 @@ export class ChangeSet {
     const tables = Array.from(new Set(this.writes.map(w => w.table)));
     const dexTables = [...tables.map(t => db.table(t)), db.audit];
     await db.transaction('rw', dexTables, async () => {
+      await guard(this.writes); // the laws: if any write breaks one, nothing at all is saved
       for (const w of this.writes) {
         const before = await db.table(w.table).get(w.rec.id);
         await db.table(w.table).put(w.rec);
@@ -150,6 +192,11 @@ export class ChangeSet {
 
 // Undo one approval: put every record back the way it was before (never a hard delete
 // of history: the audit log keeps both versions).
+const sameRecord = (a: unknown, b: unknown) => {
+  if (!a || !b) return a === b;
+  const strip = (r: unknown) => { const { dirty: _d, ...rest } = r as Record<string, unknown>; void _d; return JSON.stringify(rest); };
+  return strip(a) === strip(b);
+};
 // Returns the number of records put back, 0 if it was already undone, or -1 if it can't be undone safely because
 // something later changed the same records (e.g. another bill took stock from the same batch).
 export async function undoBatch(batchId: string): Promise<number> {
@@ -158,9 +205,9 @@ export async function undoBatch(batchId: string): Promise<number> {
   const tables = Array.from(new Set(entries.map(e => e.table)));
   for (const e of entries) {
     if (e.table === 'settings') continue; // the bill counter only moves forward; never re-issue a number
-    const cur = await db.table(e.table).get(e.recordId) as { updatedAt?: string } | undefined;
-    const after = e.after as { updatedAt?: string } | undefined;
-    if (cur && after && cur.updatedAt !== after.updatedAt) return -1;
+    // compare the record itself, not its save time: two saves in the same millisecond share a timestamp
+    const cur = await db.table(e.table).get(e.recordId);
+    if (sameRecord(cur, e.after) === false) return -1;
   }
   await db.transaction('rw', [...tables.map(t => db.table(t)), db.audit], async () => {
     for (const e of entries.slice().reverse()) {
