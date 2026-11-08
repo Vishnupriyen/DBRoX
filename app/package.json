@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "gate": "bash gate.sh",
-    "test:chaos": "TZ=Asia/Kolkata CHAOS_SEEDS=20 CHAOS_STEPS=1000 vitest run tests/laws.test.ts"
+    "test:chaos": "TZ=Asia/Kolkata CHAOS_SEEDS=20 CHAOS_STEPS=1000 vitest run tests/laws.test.ts",
+    "train:million": "vitest run -c vitest.million.config.ts && node tests/million/report.mjs"
   },
   "dependencies": {
     "dexie": "^4.4.7",

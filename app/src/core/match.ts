@@ -16,6 +16,7 @@ export function similarity(query: string, target: string): number {
       if (a === b) best = Math.max(best, 1);
       else if (a.length >= 3 && (b.startsWith(a) || a.startsWith(b))) best = Math.max(best, 0.8);
       else if (a.length >= 4 && b.includes(a)) best = Math.max(best, 0.6);
+      else if (a.length >= 5 && b.length >= 5 && lev(a, b) === 1) best = Math.max(best, 0.85); // one slip: "lifeboy", "classamte"
     }
     if (best < 0.8 && a.length >= 5 && tt.join('').includes(a)) best = 0.8; // written together: "goodday" ~ "Good Day"
     hit += best;
@@ -75,7 +76,7 @@ export function findShopInText(shops: Shop[], text: string): { shop?: Shop; rest
     const words = name.trim().split(/\s+/).map(escape).join('[\\s.,-]*');
     rest = rest.replace(new RegExp(words, 'i'), ' ');
   }
-  for (const w of norm(best.name).split(' ').concat(scored[0].phrase.split(' '))) if (w.length >= 2) rest = rest.replace(new RegExp(`(^|[\\s,:;-])${escape(w)}(?=[\\s,:;.-]|$)`, 'ig'), ' ');
+  for (const w of norm(best.name).split(' ').concat(scored[0].phrase.split(' '))) if (w.length >= 2) rest = rest.replace(new RegExp(`(^|[^a-z0-9])${escape(w)}(?=[^a-z0-9]|$)`, 'ig'), ' ');
   return { shop: best, rest: rest.replace(/^[\s,;:-]+/, '').replace(/\s+/g, ' ') };
 }
 
@@ -144,12 +145,15 @@ export function findAmount(text: string): number | undefined {
 }
 
 // ---------------------------------------------------------------- reading messy typing
-/** edit distance (for one-letter typos: "murgan" ~ "murugan") */
+/** edit distance, two letters swapped counting as one slip ("murgan", "selvma", "annia" ~ Murugan, Selvam, Annai) */
 export function lev(a: string, b: string): number {
   if (Math.abs(a.length - b.length) > 2) return 3;
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
-  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
   return d[a.length][b.length];
 }
 
@@ -162,12 +166,12 @@ export function wordsToNumbers(t: string): string {
   const out: string[] = [];
   let i = 0;
   while (i < w.length) {
-    const lw = w[i].toLowerCase();
+    const lw = w[i].toLowerCase().replace(/[^a-z]/g, '');
     if (ONES[lw] == null && TENS[lw] == null && !(SCALE[lw] && out.length === 0)) { out.push(w[i]); i++; continue; }
     let total = 0, cur = 0, j = i, used = 0;
     while (j < w.length) {
-      const x = w[j].toLowerCase();
-      if (/^\s+$/.test(x) || x === 'and') { j++; continue; }
+      const x = w[j].toLowerCase().replace(/[^a-z]/g, '');
+      if (/^\s+$/.test(w[j]) || x === 'and') { j++; continue; }
       if (ONES[x] != null) cur += ONES[x];
       else if (TENS[x] != null) cur += TENS[x];
       else if (x === 'hundred') cur = (cur || 1) * 100;
@@ -176,7 +180,7 @@ export function wordsToNumbers(t: string): string {
       used = j + 1; j++;
     }
     if (!used) { out.push(w[i]); i++; continue; }
-    out.push(String(total + cur));
+    out.push(String(total + cur) + w[used - 1].replace(/^[A-Za-z]+/, '')); // keep a comma or full stop typed after it
     // keep the space that followed the last number word
     i = used;
   }
@@ -185,7 +189,7 @@ export function wordsToNumbers(t: string): string {
 
 // shorthand and Tanglish → plain words TESRAX knows (whole words only)
 const SAY: [RegExp, string][] = [
-  [/\b(\d+(?:\.\d+)?)\s?k\b/gi, '__K$1'],
+  [/\b(rs|inr)\.\s*/gi, 'rs '], [/\b(\d+(?:\.\d+)?)\s?k\b/gi, '__K$1'],
   [/\s*(→|->|=>|-->)\s*/g, ' changed to '], [/(\d+(?:\.\d+)?)\s+(?:ah|aa|a)\s+(\d+(?:\.\d+)?)\s*(?:nu|nnu|ndru)?\b/gi, '$1 changed to $2'],
   [/\b(\d+(?:\.\d+)?)\s*(lakh|lakhs|lac|lacs)\b/gi, '__L$1'],
   [/\b(onnu|onu|oru)\b/gi, '1'], [/\b(rendu|randu|rendu)\b/gi, '2'], [/\b(moonu|munu|moonu)\b/gi, '3'], [/\b(naalu|nalu)\b/gi, '4'], [/\b(anju|anchu)\b/gi, '5'], [/\b(aaru)\b/gi, '6'], [/\b(pathu|paththu)\b/gi, '10'],
@@ -218,7 +222,7 @@ const SAY: [RegExp, string][] = [
   [/\b(serthu|serthudu|sethudu|serunga|serthuko|sethu)\b/gi, 'add'],
   [/\b(pannanum|pannu|pannalam|pannunga|pannidu|panniru|pannu da|pannuga|panni|pannen|panniten|pannitom|pannittom)\b/gi, ' '],
   [/\b(ku|la|le|kku|ukku)\b/gi, ' '], [/\b(illa|illai)\b/gi, 'not'],
-  [/\b(sir|anna|bro|boss|madam|mam)\b/gi, ' '],
+  [/\b(sir|anna|bro|boss|madam|mam|ji|da)\b/gi, ' '],
 ];
 /** one clean-up pass before TESRAX reads a message */
 export function cleanSaid(t: string): string {

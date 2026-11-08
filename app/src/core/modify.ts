@@ -2,7 +2,7 @@
 // a product's rate, or the last thing saved. Each one is a table the person checks and approves with ✓. Nothing
 // changes before that, and every change is saved through the same laws (guard) and can be undone.
 import { db, daysFrom, newId, session } from './db';
-import { bestProduct, hasWord as has, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, hasWord as has, lev, norm, parseItemLines, toPieces } from './match';
 import { orderRow, productOptions, shopOptions, type Row } from './proposals';
 import { r2 } from './ledger';
 import { orderBlock } from './pipeline';
@@ -55,10 +55,10 @@ export function categoryOf(t: string) {
 
 function isUndo(t: string) {
   if (/^(please )?(undo|revert)( (it|that|this|the|my|last|previous|latest|one|1|entry|action|save|change|thing|record|please|what i did|just now|now))*$/.test(t)) return true;
-  if (/^(please )?(cancel|delete|remove|reverse|scrap|take back)( (it|that|this|the|my))* (last|previous|latest) (entry|one|thing|action|save|change|record|saved)( please)?$/.test(t)) return true;
-  if (/^(please )?(cancel|delete|reverse|take back) (that|it|this)( please| now)?$/.test(t)) return true;
-  if (/^(that|it|this) (was|is) (wrong|a mistake|mistake)( please)?( (undo|cancel|remove|delete) (it|that))?$/.test(t)) return true;
-  if (/^(i made a mistake|my mistake|wrong entry|mistake|entry wrong|last entry wrong|last entry is wrong)( please)?( (undo|cancel|remove|delete)( it| that)?)?$/.test(t)) return true;
+  if (/^(please )?(cancel|delete|remove|reverse|scrap|take back)( (it|that|this|the|my))* (last|previous|latest) (entry|one|thing|action|save|change|record|saved)( please)*$/.test(t)) return true;
+  if (/^(please )?(cancel|delete|reverse|take back) (that|it|this)( please| now)*$/.test(t)) return true;
+  if (/^(please )?(that|it|this) (was|is) (wrong|a mistake|mistake)( please)?( (undo|cancel|remove|delete) (it|that))?$/.test(t)) return true;
+  if (/^(please )?(i made a mistake|my mistake|wrong entry|mistake|entry wrong|last entry wrong|last entry is wrong)( please)?( (undo|cancel|remove|delete)( it| that)?)?$/.test(t)) return true;
   return /\b(undo|revert)\b/.test(t) && !/\d{2,}/.test(t);
 }
 
@@ -140,8 +140,15 @@ function maskProducts(t: string, products: Product[]) {
     ph = [...new Set(products.flatMap(p => [p.name, ...p.aliases]).map(norm).filter(x => x.includes(' ') && KEYWORDS.test(x)))].sort((a, b) => b.length - a.length);
     masks.set(products, ph);
   }
-  for (const x of ph) t = t.replace(new RegExp(`\\b${x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), x.replace(/ /g, '_'));
-  return t;
+  // word by word, so a slip in the name still counts ("cliinc plus")
+  const words = t.split(' ');
+  for (const x of ph) {
+    const pw = x.split(' ');
+    for (let i = 0; i + pw.length <= words.length; i++) {
+      if (pw.every((w, k) => words[i + k] === w || (w.length >= 5 && words[i + k].length >= 4 && lev(words[i + k], w) <= 1))) { words.splice(i, pw.length, x.replace(/ /g, '_')); }
+    }
+  }
+  return words.join(' ');
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -202,7 +209,9 @@ async function orderChange(c: ModCtx, explicit: boolean): Promise<Reply | null> 
   const order = await findOrder(c.shop?.id, c.role);
   const ops = orderOps(c.shop ? c.rest : c.textIn, c.products);
   const addOnly = ops.length > 0 && ops.every(o => o.mode === 'add');
-  const cancelAll = !ops.length && has(c.text, CANCEL);
+  // the whole order is cancelled only when nothing else was said ("cancel X order"), never when an item was named but not recognised
+  const leftover = norm(c.shop ? c.rest : c.textIn).replace(/\b(order|orders|the|for|of|in|from|my|last|that|this|please|now|today|whole|full|fully|all|entire|complete|completely|approved|new|pending|open|it|cancel|cancelled|delete|deleted|remove|drop|scrap|void|discard|no need|not needed|dont want|don t want|do not want|call off|undo|revert|withdraw|need|want|wants|doesn t|doesnt|did|shop|sir|da|pannunga|pannu)\b/g, ' ').trim();
+  const cancelAll = !ops.length && has(c.text, CANCEL) && !leftover;
   if (!explicit && !ops.length) return null;
   const shopName = c.shop?.name ?? (order ? (await db.shops.get(order.shopId))?.name : '') ?? '';
   if (!order || (addOnly && orderBlock(order, c.role, me))) {

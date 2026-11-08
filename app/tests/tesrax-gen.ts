@@ -51,8 +51,15 @@ export const FIX_EXPENSES: [string, number, string][] = [['van 1 diesel 1500', 1
 const QTY: [string, number][] = [['1 case', 1], ['2 case', 2], ['3 cs', 3], ['5 cases', 5], ['2cs', 2], ['12', 12], ['24 pcs', 24], ['6', 6], ['48 nos', 48], ['2 dozen', 2], ['10', 10], ['4 box', 4], ['1 dozen', 1], ['36', 36]];
 const AMOUNTS = [300, 450, 500, 750, 1000, 1200, 1755, 2000, 2450, 3000, 5000, 12500];
 
-export function generate(facts: Facts): Case[] {
-  const R = rng(20261108);
+/** wild = the million run: spelling slips in names, numbers in words, more unit spellings, more filler and punctuation */
+export interface GenOpts { seed?: number; wild?: boolean }
+const TYPO_SHOP: Record<string, string> = { 'Murugan Stores': 'murugan', 'Selvam Kirana': 'selvam', 'Kumar Mart': 'kumar', 'Annai Super Market': 'annai', 'Sri Lakshmi Traders': 'lakshmi', 'Ganapathi Stores': 'ganapathi', 'Velan Provision': 'velan' };
+const NUM_WORDS: Record<number, string> = { 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 10: 'ten', 12: 'twelve', 24: 'twenty four', 36: 'thirty six', 48: 'forty eight' };
+const AMT_WORDS: Record<number, string> = { 300: 'three hundred', 450: 'four hundred fifty', 500: 'five hundred', 750: 'seven hundred fifty', 1000: 'one thousand', 1200: 'twelve hundred', 2000: 'two thousand', 3000: 'three thousand', 5000: 'five thousand' };
+
+export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
+  const R = rng(opts.seed ?? 20261108);
+  const wild = !!opts.wild;
   const pick = <T,>(a: T[]) => a[Math.floor(R() * a.length)];
   const out: Case[] = [];
   const seen = new Set<string>();
@@ -62,10 +69,26 @@ export function generate(facts: Facts): Case[] {
     if (seen.has(k)) return;
     seen.add(k); out.push({ said, want, role, intent });
   };
-  const sv = (shop: string) => pick(SHOPS[shop]);
-  const pv = (i: number) => pick(PRODUCTS[i][1]);
+  // one slip in a long name: a letter dropped, doubled or two letters swapped (never the first letter)
+  const slip = (w: string) => {
+    const i = 1 + Math.floor(R() * (w.length - 2)); const k = R();
+    return k < 0.34 ? w.slice(0, i) + w.slice(i + 1) : k < 0.67 ? w.slice(0, i) + w[i] + w.slice(i) : w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2);
+  };
+  const sv = (shop: string) => {
+    let v = pick(SHOPS[shop]);
+    if (wild && TYPO_SHOP[shop] && R() < 0.15) { const w = TYPO_SHOP[shop]; v = v.replace(new RegExp(w, 'i'), m => slip(m.toLowerCase())); }
+    if (wild && R() < 0.1) v = `${v} ${pick(['ku', 'la', 'kitta'])}`;
+    return v;
+  };
+  const pv = (i: number) => {
+    const v = pick(PRODUCTS[i][1]);
+    if (!wild || R() > 0.15) return v;
+    return v.replace(/\b[a-z]{6,}\b/i, m => slip(m.toLowerCase()));
+  };
   const amt = (a: number) => {
     const forms = [`${a}`, `${a}`, `rs ${a}`, `₹${a}`, `rs.${a}`, `${a}/-`];
+    if (wild && AMT_WORDS[a]) forms.push(AMT_WORDS[a], `rs ${AMT_WORDS[a]}`);
+    if (wild) forms.push(`Rs. ${a}`, `INR ${a}`, `${a} rs`, `${a} rupees`);
     if (a >= 1000) forms.push(`${a.toLocaleString('en-IN')}`, `rs.${a.toLocaleString('en-IN')}`);
     if (a % 1000 === 0) forms.push(`${a / 1000}k`);
     if (a % 500 === 0 && a > 1000) forms.push(`${a / 1000}k`);
@@ -73,6 +96,13 @@ export function generate(facts: Facts): Case[] {
   };
   // typing noise that must never change the meaning
   const noisy = (s: string) => {
+    if (wild) {
+      const r0 = R();
+      if (r0 < 0.12) s = `${pick(['pls', 'please', 'sir', 'anna', 'bro'])} ${s}`;
+      else if (r0 < 0.3) s = `${s} ${pick(['da', 'anna', 'bro', 'please', 'pls', 'sir', 'boss', 'ji'])}`;
+      const r1 = R();
+      if (r1 < 0.08) s = `${s} 🙏`; else if (r1 < 0.16) s = `${s}!!`; else if (r1 < 0.22) s = `${s}...`;
+    }
     const r = R();
     if (r < 0.15) return s.toUpperCase();
     if (r < 0.3) return s.replace(/\b\w/g, x => x.toUpperCase());
@@ -93,12 +123,20 @@ export function generate(facts: Facts): Case[] {
     (s, q, p) => `${s} needs ${q} ${p}`, (s, q, p) => `${s} ku ${q} ${p} anuppunga`, (s, q, p) => `${s} la ${q} ${p} venum`,
     (s, q, p) => `pls book ${q} ${p} for ${s}`, (s, q, p, q2, p2) => `${s} ${p} ${q} ${p2} ${q2}`,
   ];
+  const qv = () => {
+    const [q] = pick(QTY);
+    if (!wild) return q;
+    const r = R();
+    if (r < 0.15) return q.replace(/^\d+(?= )/, n => NUM_WORDS[Number(n)] ?? n);
+    if (r < 0.3) return q.replace(/\b(case|cases)\b/, () => pick(['cse', 'ctn', 'carton', 'cs', 'c', 'box'])).replace(/\bpcs\b/, () => pick(['pc', 'pieces', 'nos', 'pkts', 'packets'])).replace(/\bdozen\b/, () => pick(['dz', 'doz', 'dzn']));
+    return q;
+  };
   for (let i = 0; i < 1000; i++) {
     const shop = pick(SHOP_NAMES); const a = Math.floor(R() * 12); let b = Math.floor(R() * 12); if (b === a) b = (b + 1) % 12;
     const t = pick(ORDER_T);
-    both('order', t(sv(shop), pick(QTY)[0], pv(a), pick(QTY)[0], pv(b)), `order:${shop}`, pick(['owner', 'office', 'salesman'] as Role[]));
+    both('order', t(sv(shop), qv(), pv(a), qv(), pv(b)), `order:${shop}`, pick(['owner', 'office', 'salesman'] as Role[]));
   }
-  for (let i = 0; i < 40; i++) add('ask', `${pick(QTY)[0]} ${pv(Math.floor(R() * 12))}`, 'ask', pick(['owner', 'salesman'] as Role[])); // which shop?
+  for (let i = 0; i < 40; i++) add('ask', `${qv()} ${pv(Math.floor(R() * 12))}`, 'ask', pick(['owner', 'salesman'] as Role[])); // which shop?
 
   // ------------------------------------------------------------------------------------- payments
   const MODES: [string, string][] = [['cash', 'cash'], ['gpay', 'upi'], ['upi', 'upi'], ['phonepe', 'upi'], ['google pay', 'upi'], ['paytm', 'upi'], ['cheque', 'cheque'], ['chq', 'cheque']];
@@ -242,10 +280,10 @@ export function generate(facts: Facts): Case[] {
     const changeWant = (role: Role) => st === 'none' ? 'orderEdit:none' : st === 'locked' || (st === 'approved' && role === 'salesman') ? 'orderEdit:locked' : `orderEdit:${shop}`;
     const addWant = (role: Role) => st === 'open' || (st === 'approved' && role !== 'salesman') ? `orderEdit:${shop}` : `order:${shop}`;
     for (const role of ['owner', 'office', 'salesman'] as Role[]) {
-      for (const t of OE_SET) for (let k = 0; k < 2; k++) both('orderEdit', t(sv(shop), pv(Math.floor(R() * 12)), pick(QTY)[0]), changeWant(role), role);
+      for (const t of OE_SET) for (let k = 0; k < 2; k++) both('orderEdit', t(sv(shop), pv(Math.floor(R() * 12)), qv()), changeWant(role), role);
       for (const t of OE_REMOVE) for (let k = 0; k < 2; k++) both('orderEdit', t(sv(shop), pv(Math.floor(R() * 12))), changeWant(role), role);
       for (const t of OE_SUB) add('orderEdit', t(sv(shop), pv(Math.floor(R() * 12)), pick(['2', '6', '1 case'])), changeWant(role), role);
-      for (const t of OE_ADD) for (let k = 0; k < 2; k++) both('orderEdit', t(sv(shop), pv(Math.floor(R() * 12)), pick(QTY)[0]), addWant(role), role);
+      for (const t of OE_ADD) for (let k = 0; k < 2; k++) both('orderEdit', t(sv(shop), pv(Math.floor(R() * 12)), qv()), addWant(role), role);
       add('orderEdit', `edit ${sv(shop)} order`, changeWant(role), role);
       add('orderEdit', `${sv(shop)} order change ${pv(0)} 2 case, ${pv(4)} 24`, changeWant(role), role);
       add('orderEdit', `remove ${pv(4)} and add 2 case ${pv(1)} in ${sv(shop)} order`, changeWant(role), role);
@@ -358,7 +396,7 @@ export function generate(facts: Facts): Case[] {
   // ------------------------------------------------------------------------------------- undo
   for (const s of ['undo', 'undo last', 'undo that', 'undo it', 'undo the last entry', 'cancel last entry', 'delete the last entry', 'i made a mistake', 'that was wrong',
     'reverse that', 'revert', 'undo please', 'cancel that', 'delete that', 'undo last action', 'remove last entry', 'my mistake undo it', 'wrong entry', 'undo what i did', 'take back last entry'])
-    { both('undo', s, 'undo'); add('undo', s, 'undo', 'office'); }
+    both('undo', s, 'undo'); // the owner always has today's saves; other roles depend on what they saved earlier
 
   // ================================================================================== SEVERAL THINGS IN ONE MESSAGE
   const SEP = [', ', ' and ', '. ', ' also ', ' then ', ', and '];
@@ -371,13 +409,13 @@ export function generate(facts: Facts): Case[] {
     const [ew, ecat] = pick(EXP.filter(x => x[1] !== 'Salary')); const [ew2, ecat2] = pick(EXP.filter(x => x[1] !== ecat && x[1] !== 'Salary'));
     const ea = pick([80, 120, 250, 850, 1500]); const eb = pick([60, 95, 400, 2500]);
     switch (Math.floor(R() * 7)) {
-      case 0: add('combo', `${sv(shop)} paid ${a} ${mw}${sep}${pick(['send ', '', 'order '])}${pick(QTY)[0]} ${pv(p1)}`, `payment:${shop}:${a}:${mode} + order:${shop}`, role); break;
-      case 1: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${sv(s2)} ${pick(QTY)[0]} ${pv(p2)}`, `order:${shop} + order:${s2}`, role); break;
+      case 0: add('combo', `${sv(shop)} paid ${a} ${mw}${sep}${pick(['send ', '', 'order '])}${qv()} ${pv(p1)}`, `payment:${shop}:${a}:${mode} + order:${shop}`, role); break;
+      case 1: add('combo', `${sv(shop)} ${qv()} ${pv(p1)}${sep}${sv(s2)} ${qv()} ${pv(p2)}`, `order:${shop} + order:${s2}`, role); break;
       case 2: add('combo', `${sv(shop)} paid ${a} ${mw}${sep}${sv(s2)} paid ${b}`, `payment:${shop}:${a}:${mode} + payment:${s2}:${b}:cash`, pick(['owner', 'office', 'salesman', 'delivery'] as Role[])); break;
       case 3: add('combo', `${pick(ew)} ${ea}${pick([', ', ' and ', '. '])}${pick(ew2)} ${eb}`, `expense:${ea}:${ecat} + expense:${eb}:${ecat2}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
       case 4: add('combo', `${sv(shop)} paid ${a} ${mw}${pick([', ', '. ', ' and '])}${pick(ew)} ${ea}`, `payment:${shop}:${a}:${mode} + expense:${ea}:${ecat}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
-      case 5: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${pick(QTY)[0]} ${pv(p2)}`, `order:${shop}`, role); break; // one order, two items
-      case 6: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${sv(s2)} outstanding`, `order:${shop} + t:Outstanding`, role); break;
+      case 5: add('combo', `${sv(shop)} ${qv()} ${pv(p1)}${sep}${qv()} ${pv(p2)}`, `order:${shop}`, role); break; // one order, two items
+      case 6: add('combo', `${sv(shop)} ${qv()} ${pv(p1)}${sep}${sv(s2)} outstanding`, `order:${shop} + t:Outstanding`, role); break;
     }
   }
 
@@ -394,13 +432,13 @@ export function generate(facts: Facts): Case[] {
     const role = pick(['owner', 'office', 'salesman'] as Role[]);
     const [ew, ecat] = pick(EXP.filter(x => x[1] !== 'Salary' && x[1] !== 'Other')); const [ew2, ecat2] = pick(EXP.filter(x => x[1] !== ecat && x[1] !== 'Salary' && x[1] !== 'Other'));
     const ea = pick([80, 120, 250, 850, 1500]);
-    const pay = `${sv(shop)} paid ${a}`; const ord = `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}`;
+    const pay = `${sv(shop)} paid ${a}`; const ord = `${sv(shop)} ${qv()} ${pv(p1)}`;
     switch (Math.floor(R() * 11)) {
-      case 0: dlg('follow', [`${pick(QTY)[0]} ${pv(p1)}`, pick([sv(shop), `for ${sv(shop)}`, `${sv(shop)} pls`])], `order:${shop}`, role); break;
+      case 0: dlg('follow', [`${qv()} ${pv(p1)}`, pick([sv(shop), `for ${sv(shop)}`, `${sv(shop)} pls`])], `order:${shop}`, role); break;
       case 1: dlg('follow', [pay, pick([`make it ${b}`, `${b}`, `${b} not ${a}`, `no ${b}`, `change to ${b}`, `amount ${b}`])], `payment:${shop}:${b}:cash`, role); break;
       case 2: dlg('follow', [pay, pick([mw, `by ${mw}`, `${mw} la`, `it was ${mw}`])], `payment:${shop}:${a}:${mode}`, role); break;
       case 3: dlg('follow', [pay, pick([`no, ${sv(s2)}`, `not ${sv(shop)}, ${sv(s2)}`, `${sv(s2)}`, `wrong shop, ${sv(s2)}`, `${sv(shop)} illa ${sv(s2)}`])], `payment:${s2}:${a}:cash`, role); break;
-      case 4: dlg('follow', [ord, pick([`add ${pick(QTY)[0]} ${pv(p2)}`, `${pick(QTY)[0]} ${pv(p2)} also`, `${pv(p2)} ${pick(QTY)[0]}`, `remove ${pv(p1)}`, `make it ${pick(['2', '3', '5'])} case`, `${pick(['2', '3'])} case only`])], `order:${shop}`, role); break;
+      case 4: dlg('follow', [ord, pick([`add ${qv()} ${pv(p2)}`, `${qv()} ${pv(p2)} also`, `${pv(p2)} ${qv()}`, `remove ${pv(p1)}`, `make it ${pick(['2', '3', '5'])} case`, `${pick(['2', '3'])} case only`])], `order:${shop}`, role); break;
       case 5: dlg('follow', [ord, pick([`for ${sv(s2)}`, `no, ${sv(s2)}`, `wrong shop, ${sv(s2)}`, `${sv(shop)} illa ${sv(s2)}`])], `order:${s2}`, role); break;
       case 6: dlg('follow', [`${pick(ew)} ${ea}`, pick([`${ea + 20}`, `make it ${ea + 20}`, `no ${ea + 20}`, `${ea + 20} not ${ea}`])], `expense:${ea + 20}:${ecat}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
       case 7: dlg('follow', [`${pick(ew)} ${ea}`, pick([`it is ${pick(ew2)}`, `${pick(ew2)}`, `no, ${pick(ew2)}`])], `expense:${ea}:${ecat2}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
