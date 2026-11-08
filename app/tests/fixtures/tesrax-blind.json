@@ -1,0 +1,602 @@
+[
+ [
+  "Murugan Stores - Lifebuoy 2 cs, Surf excel 1kg 10 pcs",
+  "order:Murugan Stores",
+  "salesman"
+ ],
+ [
+  "velan provision order clinic plus 5 strips marie gold 20",
+  "order:Velan Provision",
+  "salesman"
+ ],
+ [
+  "sri lakshmi traders aashirvaad atta 5kg 10 bags",
+  "order:Sri Lakshmi Traders",
+  "owner"
+ ],
+ [
+  "ganapathi stores good day 3box dark fantasy 2box",
+  "order:Ganapathi Stores",
+  "salesman"
+ ],
+ [
+  "kumar mart red label 250g 12 nos",
+  "order:Kumar Mart",
+  "owner"
+ ],
+ [
+  "Annai super market: vim bar 48, lifebuoy 72, surf 20",
+  "order:Annai Super Market",
+  "owner"
+ ],
+ [
+  "pennadam wholesale agency 50 bags aashirvaad atta",
+  "order:Pennadam Wholesale Agency",
+  "owner"
+ ],
+ [
+  "selvam kirana bingo mad angles 2cs",
+  "order:Selvam Kirana",
+  "salesman"
+ ],
+ [
+  "order for murugan stores classmate notebook 5 dozen",
+  "order:Murugan Stores",
+  "owner"
+ ],
+ [
+  "Kumar mart ku Britannia cake 3 box anuppunga",
+  "order:Kumar Mart",
+  "owner"
+ ],
+ [
+  "velan provison - red lable tea 6, vim bar 24",
+  "order:Velan Provision",
+  "salesman"
+ ],
+ [
+  "SRI LAKSHMI TRADERS GOOD DAY CASHEW 10 BOX",
+  "order:Sri Lakshmi Traders",
+  "salesman"
+ ],
+ [
+  "ganapathy stores marie gold twenty packets clinic plus ten strips",
+  "order:Ganapathi Stores",
+  "salesman"
+ ],
+ [
+  "annai supermarket 2cs surf excel",
+  "order:Annai Super Market",
+  "owner"
+ ],
+ [
+  "pennadam wholesale - lifebuoy 10cs, vim 5cs, red label 2cs",
+  "order:Pennadam Wholesale Agency",
+  "owner"
+ ],
+ [
+  "selvam kirana order: dark fantasy 24 pcs, good day 24 pcs",
+  "order:Selvam Kirana",
+  "salesman"
+ ],
+ [
+  "murugan stores la lifebuoy 3 case venum",
+  "order:Murugan Stores",
+  "salesman"
+ ],
+ [
+  "take order kumar mart classmate 172pg 40 nos",
+  "order:Kumar Mart",
+  "owner"
+ ],
+ [
+  "velan provision atta 5kg x 4",
+  "order:Velan Provision",
+  "salesman"
+ ],
+ [
+  "sri lakshmi - bingo 3 box, britannia fruit cake 2 box",
+  "order:Sri Lakshmi Traders",
+  "salesman"
+ ],
+ [
+  "Ganapathi stores avinangudi: surf excel 1kg - 6, vim bar 200g - 12",
+  "order:Ganapathi Stores",
+  "owner"
+ ],
+ [
+  "annai super market order pannunga red label 10 nos",
+  "order:Annai Super Market",
+  "office"
+ ],
+ [
+  "selvam kirana 5 box marie gold",
+  "order:Selvam Kirana",
+  "salesman"
+ ],
+ [
+  "pennadam wholesale agency ku clinic plus 20 strips good day 10 box",
+  "order:Pennadam Wholesale Agency",
+  "office"
+ ],
+ [
+  "murugan stores paid 5000",
+  "payment:Murugan Stores:5000",
+  "owner"
+ ],
+ [
+  "Velan provision 2500 cash rcvd",
+  "payment:Velan Provision:2500:cash",
+  "delivery"
+ ],
+ [
+  "sri lakshmi traders gpay 3200",
+  "payment:Sri Lakshmi Traders:3200:upi",
+  "owner"
+ ],
+ [
+  "ganapathi stores pd rs.1500",
+  "payment:Ganapathi Stores:1500",
+  "salesman"
+ ],
+ [
+  "Kumar Mart ₹12,000 cheque received",
+  "payment:Kumar Mart:12000:cheque",
+  "office"
+ ],
+ [
+  "annai super market 5k cash kuduthaanga",
+  "payment:Annai Super Market:5000:cash",
+  "salesman"
+ ],
+ [
+  "pennadam wholesale agency paid 25000 by phonepe",
+  "payment:Pennadam Wholesale Agency:25000:upi",
+  "owner"
+ ],
+ [
+  "selvam kirana amt rcvd 750/-",
+  "payment:Selvam Kirana:750",
+  "delivery"
+ ],
+ [
+  "received two thousand five hundred from murugan stores",
+  "payment:Murugan Stores:2500",
+  "owner"
+ ],
+ [
+  "velan provision payment 1800 upi",
+  "payment:Velan Provision:1800:upi",
+  "office"
+ ],
+ [
+  "Sri Lakshmi Traders Rs 4,500 collected",
+  "payment:Sri Lakshmi Traders:4500",
+  "salesman"
+ ],
+ [
+  "ganapathi stores cheque 10000 kuduthanga",
+  "payment:Ganapathi Stores:10000:cheque",
+  "salesman"
+ ],
+ [
+  "kumar mart paytm 950",
+  "payment:Kumar Mart:950:upi",
+  "owner"
+ ],
+ [
+  "annai super market paid 3000 rupees",
+  "payment:Annai Super Market:3000",
+  "owner"
+ ],
+ [
+  "pennadam wholesale 1.5k cash",
+  "payment:Pennadam Wholesale Agency:1500:cash",
+  "delivery"
+ ],
+ [
+  "selvam kirana 600 gpay pannanga",
+  "payment:Selvam Kirana:600:upi",
+  "delivery"
+ ],
+ [
+  "murugan stores la 4000 vangitten",
+  "payment:Murugan Stores:4000",
+  "salesman"
+ ],
+ [
+  "Velan Provision - Rs.2200/- recd",
+  "payment:Velan Provision:2200",
+  "office"
+ ],
+ [
+  "sri lakshmi traders one thousand cash",
+  "payment:Sri Lakshmi Traders:1000:cash",
+  "delivery"
+ ],
+ [
+  "collected 8000 from ganapathi stores",
+  "payment:Ganapathi Stores:8000",
+  "salesman"
+ ],
+ [
+  "kumar mart pd 3500 cash",
+  "payment:Kumar Mart:3500:cash",
+  "owner"
+ ],
+ [
+  "Annai Super Market ₹7500 UPI",
+  "payment:Annai Super Market:7500:upi",
+  "owner"
+ ],
+ [
+  "pennadam wholesale agency 20k cheque",
+  "payment:Pennadam Wholesale Agency:20000:cheque",
+  "owner"
+ ],
+ [
+  "selvam kirana paid fifteen hundred",
+  "payment:Selvam Kirana:1500",
+  "owner"
+ ],
+ [
+  "murugan stores payment it was 400 not 500",
+  "fix:",
+  "owner"
+ ],
+ [
+  "sorry last payment wrong, 2000 illa 1200",
+  "fix:",
+  "office"
+ ],
+ [
+  "velan provision returned 5 lifebuoy soap",
+  "return:Velan Provision",
+  "owner"
+ ],
+ [
+  "kumar mart 2 box good day return",
+  "return:Kumar Mart",
+  "delivery"
+ ],
+ [
+  "selvam kirana expiry marie gold 10 pkt return panranga",
+  "return:Selvam Kirana",
+  "salesman"
+ ],
+ [
+  "godown la 6 surf excel packet leak aayiduchu",
+  "claim",
+  "godown"
+ ],
+ [
+  "3 box britannia cake expired in godown",
+  "claim",
+  "godown"
+ ],
+ [
+  "rats damaged 2 atta bags in godown",
+  "claim",
+  "godown"
+ ],
+ [
+  "add new shop Balaji Stores Tittakudi 9876543210",
+  "newshop",
+  "owner"
+ ],
+ [
+  "pudhu kadai add pannanum - Sakthi Agencies, Pennadam",
+  "newshop",
+  "salesman"
+ ],
+ [
+  "create offer buy 10 good day get 1 free",
+  "schemes",
+  "owner"
+ ],
+ [
+  "5% discount on surf excel this month for all shops",
+  "schemes",
+  "owner"
+ ],
+ [
+  "diesel 1500",
+  "expense:1500",
+  "delivery"
+ ],
+ [
+  "toll 85",
+  "expense:85",
+  "delivery"
+ ],
+ [
+  "tea snacks 120",
+  "expense:120",
+  "owner"
+ ],
+ [
+  "godown rent 8000",
+  "expense:8000",
+  "owner"
+ ],
+ [
+  "eb bill 2340",
+  "expense:2340",
+  "office"
+ ],
+ [
+  "van 1 tyre puncture 250",
+  "expense:250",
+  "delivery"
+ ],
+ [
+  "loading labour 600 kuduthen",
+  "expense:600",
+  "godown"
+ ],
+ [
+  "auto 2 diesel five hundred",
+  "expense:500",
+  "delivery"
+ ],
+ [
+  "printer repair rs.1200",
+  "expense:1200",
+  "office"
+ ],
+ [
+  "Mani leave tomorrow",
+  "leave",
+  "owner"
+ ],
+ [
+  "naan innaiku leave sir, fever",
+  "leave",
+  "salesman"
+ ],
+ [
+  "Ravi advance 2000",
+  "advance:2000",
+  "owner"
+ ],
+ [
+  "Karthik ku 1000 advance kudunga",
+  "advance:1000",
+  "office"
+ ],
+ [
+  "who all have baaki?",
+  "t:Outstanding",
+  "owner"
+ ],
+ [
+  "murugan stores bal evlo",
+  "t:Outstanding",
+  "salesman"
+ ],
+ [
+  "outstanding list pls",
+  "go:outstanding",
+  "owner"
+ ],
+ [
+  "how much velan provision owes",
+  "t:Outstanding",
+  "owner"
+ ],
+ [
+  "sri lakshmi traders dues?",
+  "t:Outstanding",
+  "salesman"
+ ],
+ [
+  "kumar mart pending amount enna",
+  "t:Outstanding",
+  "office"
+ ],
+ [
+  "which shops not paid",
+  "t:Outstanding",
+  "owner"
+ ],
+ [
+  "selvam kirana baaki ethana",
+  "t:Outstanding",
+  "delivery"
+ ],
+ [
+  "total outstanding how much",
+  "t:Outstanding",
+  "owner"
+ ],
+ [
+  "lifebuoy stock?",
+  "t:Stock",
+  "owner"
+ ],
+ [
+  "surf excel 1kg irukka",
+  "t:Stock",
+  "salesman"
+ ],
+ [
+  "how many aashirvaad atta in godown",
+  "t:Stock",
+  "owner"
+ ],
+ [
+  "red label tea stock evlo",
+  "t:Stock",
+  "office"
+ ],
+ [
+  "good day cashew available ah",
+  "t:Stock",
+  "salesman"
+ ],
+ [
+  "vim bar qty left",
+  "t:Stock",
+  "godown"
+ ],
+ [
+  "classmate notebook stock check",
+  "t:Stock",
+  "owner"
+ ],
+ [
+  "mad angles iruka",
+  "t:Stock",
+  "salesman"
+ ],
+ [
+  "today sales how much",
+  "t:Sales",
+  "owner"
+ ],
+ [
+  "innaiku billing evlo",
+  "t:Sales",
+  "owner"
+ ],
+ [
+  "which stock expiring soon",
+  "t:Near",
+  "owner"
+ ],
+ [
+  "near expiry items",
+  "t:Near",
+  "godown"
+ ],
+ [
+  "cash in hand how much",
+  "t:Cash",
+  "owner"
+ ],
+ [
+  "kaila evlo cash irukku",
+  "t:Cash",
+  "owner"
+ ],
+ [
+  "send tally export",
+  "export:tally",
+  "office"
+ ],
+ [
+  "gstr1 file venum",
+  "export:gstr1",
+  "office"
+ ],
+ [
+  "e-invoice json download",
+  "export:einvoice",
+  "office"
+ ],
+ [
+  "claims file export pannu",
+  "export:claims",
+  "owner"
+ ],
+ [
+  "tomorrow delivery plan",
+  "go:plan",
+  "owner"
+ ],
+ [
+  "pending orders to approve",
+  "go:orders-received",
+  "owner"
+ ],
+ [
+  "where is van 1 now",
+  "go:live",
+  "owner"
+ ],
+ [
+  "day close pannalam",
+  "ask",
+  "office"
+ ],
+ [
+  "this month profit evlo",
+  "go:pnl",
+  "owner"
+ ],
+ [
+  "cash flow statement",
+  "go:cashflow",
+  "owner"
+ ],
+ [
+  "gst summary",
+  "go:gst",
+  "office"
+ ],
+ [
+  "slow moving items",
+  "go:reports",
+  "owner"
+ ],
+ [
+  "show bank entries",
+  "go:bank",
+  "office"
+ ],
+ [
+  "show expenses list",
+  "go:expenses",
+  "owner"
+ ],
+ [
+  "ageing report",
+  "go:ageing",
+  "owner"
+ ],
+ [
+  "salary sheet this month",
+  "ask",
+  "office"
+ ],
+ [
+  "who came today attendance",
+  "go:today",
+  "owner"
+ ],
+ [
+  "show billed invoices list",
+  "go:billed",
+  "office"
+ ],
+ [
+  "company wise sales report",
+  "go:reports",
+  "owner"
+ ],
+ [
+  "hi",
+  "help",
+  "owner"
+ ],
+ [
+  "what can you do",
+  "help",
+  "salesman"
+ ],
+ [
+  "2 box good day",
+  "ask",
+  "salesman"
+ ],
+ [
+  "asdf hello potato",
+  "ask",
+  "owner"
+ ],
+ [
+  "ok that one",
+  "ask",
+  "owner"
+ ]
+]

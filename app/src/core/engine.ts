@@ -5,7 +5,7 @@ import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { applySchemes, activeSchemes, stockOf } from './billing';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
-import { bestProduct, findAmount, findShopInText, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, findAmount, findShopInText, norm, parseItemLines, toPieces } from './match';
 import {
   companyOptions, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
@@ -26,9 +26,9 @@ export interface Reply {
 
 // Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
-  { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approval', 'needs ok', 'waiting for me', 'new orders', 'ஒப்புதல்', 'வந்த ஆர்டர்'] },
+  { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approve orders', 'orders to approve', 'pending orders', 'orders pending', 'orders waiting', 'approval', 'approvals', 'pending approvals', 'needs my approval', 'needs ok', 'waiting for me', 'new orders', 'ஒப்புதல்', 'வந்த ஆர்டர்'] },
   { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'சரிபார்'] },
-  { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'today bills', 'பில் ஆனது'] },
+  { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'billed bills', 'today bills', 'பில் ஆனது'] },
   { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['new shops', 'shops to approve', 'புதிய கடைகள்'] },
   { page: 'targets', name: 'Targets', roles: ['owner', 'office'], words: ['target', 'targets', 'இலக்கு'] },
   { page: 'stockin', name: 'Purchases', roles: ['owner', 'office', 'godown'], words: ['stock in', 'purchases', 'purchase', 'கொள்முதல்'] },
@@ -40,22 +40,22 @@ const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] 
   { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'upi list', 'செக்'] },
   { page: 'bank', name: 'Bank', roles: ['owner', 'office'], words: ['bank', 'statement', 'வங்கி'] },
   { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list', 'செலவுகள்'] },
-  { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'pnl', 'profit', 'profit and loss', 'லாபம்'] },
+  { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'p l', 'pnl', 'p and l', 'profit', 'profit and loss', 'how much profit', 'லாபம்'] },
   { page: 'cashflow', name: 'Cash flow', roles: ['owner'], words: ['cash flow', 'cashflow', 'position', 'net worth', 'loans', 'who will pay', 'what do i owe', 'payables', 'receivables', 'pending cheques', 'பண ஓட்டம்', 'நிலை'] },
-  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'அறிக்கைகள்'] },
+  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'அறிக்கைகள்'] },
   { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van list', 'add van', 'my vans', 'vans and drivers', 'assign driver', 'வண்டிகள்'] },
   { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export', 'ஏற்றுமதி'] },
-  { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
-  { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'வருகை'] },
+  { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gst summary', 'gst report', 'gst status', 'gst due', 'tax summary', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
+  { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'who is absent', 'absent', 'who is present', 'check in', 'checked in', 'வருகை'] },
   { page: 'salary', name: 'Salary', roles: ['owner'], words: ['salary', 'salary sheet', 'payroll', 'சம்பளம்'] },
   { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
-  { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan', 'டெலிவரி திட்டம்', 'திட்டம்'] },
-  { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'where is the van', 'where is van', 'track', 'tracking', 'வண்டி எங்கே'] },
+  { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan route', 'plan', 'டெலிவரி திட்டம்', 'திட்டம்'] },
+  { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking', 'வண்டி எங்கே'] },
   { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'ஊழியர் பணம்'] },
   { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'ஸ்டாக் நிலை'] },
   { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'கிளைம்'] },
   { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'close day', 'close the day', 'reconcile', 'reconciliation', 'நாள் முடி'] },
-  { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report', 'fast moving', 'slow moving', 'அறிக்கை'] },
+  { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report', 'அறிக்கை'] },
   { page: 'billed', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list', 'பில்கள்'] },
   { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection', 'வசூல்'] },
   { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack', 'ஆர்டர் எடு'] },
@@ -65,7 +65,17 @@ const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] 
   { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'பீட்'] },
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders', 'என் நாள்'] },
 ];
-function screenFor(text: string, role: Role): Reply | null {
+function screenFor(text: string, role: Role, exact = false): Reply | null {
+  if (exact) {
+    // only a screen's full name: a phrase of 2+ words found whole, or the whole message being that one word
+    const bare = text.replace(/^(open|show|show me|go to|goto|see|view)\s+/, '').replace(/\s+(screen|page|please|now|this month|today|for this month|for today)$/, '').trim();
+    const hit = SCREENS.filter(s => s.words.some(w => !/[^\x00-\x7f]/.test(w) && (w.includes(' ') ? ` ${bare} `.includes(` ${w} `) : bare === w)))
+      .sort((a, b) => Math.max(...b.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)) - Math.max(...a.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)));
+    const mine = hit.find(h => h.roles.includes(role)) ?? hit[0];
+    if (!mine) return null;
+    if (!mine.roles.includes(role)) return null; // not this person's screen: let the rest of TESRAX answer
+    return { text: `Opening ${mine.name}.`, go: mine.page };
+  }
   const hit = SCREENS.filter(s => s.words.some(w => text === w || text.startsWith(w + ' ') || text.endsWith(' ' + w) || text.includes(' ' + w + ' ') || (w.length > 5 && text.includes(w))))
     .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))[0];
   if (!hit) return null;
@@ -73,29 +83,36 @@ function screenFor(text: string, role: Role): Reply | null {
   return { text: `Opening ${hit.name}.`, go: hit.page };
 }
 
-const has = (t: string, words: string[]) => words.some(w => t.includes(w));
+const wordRx = new Map<string, RegExp>();
+// whole words only ("rent" is not in "current", "tea" is not in "team"); a plural s/es is allowed; Tamil matches inside
+const has = (t: string, words: string[]) => words.some(w => {
+  if (/[^\x00-\x7f]/.test(w)) return t.includes(w);
+  let r = wordRx.get(w);
+  if (!r) { r = new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|es)?(?=[^a-z0-9]|$)`); wordRx.set(w, r); }
+  return r.test(t);
+});
 const W = {
-  help: ['help', 'what can you do', 'உதவி', 'எப்படி'],
+  help: ['help', 'what can you do', 'what can i ask', 'what can i say', 'options', 'menu', 'commands', 'how to use', 'உதவி', 'எப்படி'],
   stockIn: ['inventory', 'stock in', 'add to stock', 'purchase', 'add this', 'goods received', 'ஸ்டாக்', 'சரக்கு', 'கொள்முதல்', 'சேர்'],
-  expense: ['expense', 'diesel', 'petrol', 'fuel', 'toll', 'repair', 'rent', 'batta', 'salary', 'tea', 'செலவு', 'டீசல்', 'பெட்ரோல்', 'வாடகை', 'சம்பளம்'],
+  expense: ['expense', 'spent', 'spend', 'diesel', 'petrol', 'fuel', 'toll', 'repair', 'service', 'tyre', 'puncture', 'rent', 'batta', 'salary', 'tea', 'snacks', 'food', 'lunch', 'electricity', 'eb bill', 'current bill', 'power bill', 'internet', 'wifi', 'phone bill', 'mobile recharge', 'recharge', 'wages', 'hamali', 'coolie', 'labour', 'loading charges', 'unloading', 'charges', 'parking', 'courier', 'transport', 'freight', 'lorry', 'stationery', 'printing', 'maintenance', 'water', 'cleaning', 'insurance', 'செலவு', 'டீசல்', 'பெட்ரோல்', 'வாடகை', 'சம்பளம்'],
   bank: ['bank', 'statement', 'match payment', 'வங்கி', 'ஸ்டேட்மென்ட்'],
   products: ['product list', 'products', 'item master', 'பொருட்கள்'],
   shops: ['shop list', 'shops list', 'retailer list', 'customer list', 'கடைகள்'],
-  newShop: ['new shop', 'add shop', 'புதிய கடை'],
-  paid: ['paid', 'payment', 'received', 'collected', 'gave', 'கொடுத்தார்', 'பணம்', 'வசூல்', 'செலுத்தினார்'],
-  ret: ['return', 'returned', 'திரும்ப', 'ரிட்டர்ன்'],
-  damage: ['damage', 'damaged', 'expired', 'expiry claim', 'leak', 'broken', 'சேதம்', 'காலாவதி', 'உடைந்த'],
+  newShop: ['new shop', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer', 'புதிய கடை'],
+  paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer', 'kuduthaanga', 'kuduthanga', 'kuduthar', 'kudutha', 'koduthanga', 'koduthar', 'kodutha', 'kudthanga', 'கொடுத்தார்', 'பணம்', 'வசூல்', 'செலுத்தினார்'],
+  ret: ['return', 'returned', 'sent back', 'send back', 'gave back', 'give back', 'taken back', 'திரும்ப', 'ரிட்டர்ன்'],
+  damage: ['damage', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'சேதம்', 'காலாவதி', 'உடைந்த'],
   order: ['order', 'ஆர்டர்'],
-  outstanding: ['outstanding', 'pending', 'owes', 'balance', 'due', 'நிலுவை', 'பாக்கி', 'கடன்'],
-  sales: ['sales', 'sale today', 'today summary', 'summary', 'விற்பனை', 'இன்றைய'],
+  outstanding: ['outstanding', 'pending', 'owes', 'owe', 'balance', 'due', 'dues', 'has to pay', 'have to pay', 'yet to pay', 'to pay', 'not paid', 'unpaid', 'credit', 'overdue', 'late payment', 'defaulters', 'நிலுவை', 'பாக்கி', 'கடன்'],
+  sales: ['sales', 'sale today', 'today summary', 'summary', 'sold today', 'sold', 'sell today', 'total sales', 'billing today', 'today billing', 'today s billing', 'how much billed', 'turnover', 'விற்பனை', 'இன்றைய'],
   stock: ['stock of', 'how much stock', 'stock', 'கையிருப்பு', 'ஸ்டாக்'],
   loadSheet: ['load sheet', 'loading', 'லோடு', 'ஏற்று'],
-  nearExpiry: ['near expiry', 'expiring', 'expiry soon', 'காலாவதி ஆக'],
-  cashHand: ['cash in hand', 'cash with', 'கையில் பணம்', 'கையிருப்பு பணம்'],
+  nearExpiry: ['near expiry', 'expiring', 'expiry soon', 'expire soon', 'going to expire', 'expiry items', 'காலாவதி ஆக'],
+  cashHand: ['cash in hand', 'cash with', 'how much cash', 'cash do i have', 'cash balance', 'கையில் பணம்', 'கையிருப்பு பணம்'],
   tally: ['tally', 'டேலி'],
   gstr: ['gstr', 'gst return', 'gstr1', 'gstr-1'],
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
-  claimFile: ['claim file', 'claim report', 'claims for', 'make claim', 'கிளைம்'],
+  claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export', 'கிளைம்'],
   needsOk: ['needs ok', 'approval', 'waiting', 'ஒப்புதல்'],
   scheme: ['scheme', 'offer', 'ஸ்கீம்', 'சலுகை'],
 };
@@ -128,14 +145,17 @@ Examples:
 • "Murugan Stores paid 2450 cash"
 • "van 1 diesel 1500"
 • "5 Good Day damaged" · "Selvam return 2 Surf"
-• "who owes more than 10000" · "today sales" · "stock of surf"
+• "Selvam it is not 500, it is 300" (correct a payment)
+• "who owes more than 10000" · "today sales" · "how much surf" · "is good day available"
 • "load sheet" · "near expiry" · "cash in hand"
 • say a screen name to open it: "delivery plan", "approve", "live vans", "day close"
 • "HUL Surf 5% off till 30 Nov" · "Good Day buy 24 get 2"
 • "tally export" · "gstr1 october" · "e-invoice" · "claim file"
-• (attach product or shop list Excel) "add products" / "add shops"`;
+• (attach product or shop list Excel) "add products" / "add shops"
+Short forms, typos, numbers in words and Tanglish work too: "murugan 5k pd", "selvam evlo baaki", "surf irukka".`;
 
-export async function handle(textIn: string, files: File[]): Promise<Reply> {
+export async function handle(said: string, files: File[]): Promise<Reply> {
+  const textIn = cleanSaid(said); // numbers in words, "5k", shorthand and Tanglish → plain words
   const text = norm(textIn);
   const settings = await getSettings();
   const mods = (await licenceState(!!ENV_SERVER_URL, settings)).mods; // what the distributor has paid for, never a phone setting
@@ -144,6 +164,10 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
 
   if (!text && !file) return { text: HELP_TEXT };
   if (has(text, W.help)) return { text: HELP_TEXT };
+  if (!file && /^(hi+|hello|hey|hai|vanakkam|good (morning|afternoon|evening|night)|how are you|thanks|thank you|ok|okay)( (tesrax|there|ji|da|you))*$/.test(text)) {
+    const me = await db.staff.get(session().userId);
+    return { text: `Vanakkam${me ? `, ${me.name.split(' ')[0]}` : ''}! Here's what I can do:\n\n${HELP_TEXT}` };
+  }
 
   // ------------------------ with a file ------------------------
   if (file) {
@@ -170,8 +194,11 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
   if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
+  // ------------------------ a screen asked for by its exact name ("dead stock", "stock position", "day close") ------------------------
+  if (!/\d{2,}/.test(text)) { const sc = screenFor(text, role, true); if (sc) return sc; }
+
   // ------------------------ actions ------------------------
-  const shops = await db.shops.toArray();
+  const shops = (await db.shops.toArray()).filter(s => s.active !== false);
   const { shop, rest } = findShopInText(shops, textIn);
 
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
@@ -185,7 +212,12 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
     if (!can(role, 'payment')) return deny();
     return paymentCorrection(shop?.id, fix.old, fix.next, role);
   }
-  if (shop && has(text, W.paid) && findAmount(rest) != null) {
+  const restLines = parseItemLines(rest);
+  const productsActive = (await db.products.toArray()).filter(p => p.active);
+  // money words are never products ("cash" is not "Cashew")
+  const MONEY = new Set([...W.paid, 'rs', 'inr', 'rupees', 'amount', 'from', 'by', 'via', 'ref', 'no', 'number', 'bill', 'bills']);
+  const hasProduct = restLines.some(l => { const q = l.productText.split(' ').filter(w => !MONEY.has(w)).join(' '); return !!q && !!bestProduct(productsActive, q).product; });
+  if (shop && has(text, W.paid) && findAmount(rest) != null && !hasProduct) {
     const r = need('collection', mods); if (r) return r;
     if (!can(role, 'payment')) return deny();
     return paymentProposal(shop.id, findAmount(rest)!, modeIn(text), refIn(textIn));
@@ -202,12 +234,17 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
   if (has(text, W.sales)) return salesToday();
+  // "how much surf", "is good day available", "how many lifebuoy left"
+  if (!shop && /\b(how much|how many|available|left|in stock|stock|quantity|balance stock|do we have|have we got)\b/.test(text)) {
+    const q = text.replace(/\b(how much|how many|is|are|available|left|in stock|stock of|stock|check|quantity|balance|do we have|have we got|we have|there|any|of|the|in|at|godown|warehouse|now|today|currently|pieces|pcs|cases|units|qty)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    if (q && bestProduct(productsActive, q).product) return stockTable(q);
+  }
 
   // ------------------------ orders ------------------------
   const lines = parseItemLines(shop ? rest : textIn);
   // never guess an order from words that aren't products: if nothing matches a product, ask instead
-  if (lines.length) {
-    const active = (await db.products.toArray()).filter(p => p.active);
+  if (lines.length && shop) {
+    const active = productsActive;
     if (!lines.some(l => bestProduct(active, l.productText).product)) {
       const who = shop?.name ?? 'Murugan Stores';
       return { text: `I'm not sure what you want${shop ? ` for ${shop.name}` : ''}. Try one of these:\n• "${who} paid 500 cash"\n• "${who} 2 case Surf, 24 Good Day"\n• "${who} outstanding"\n• "${who} it is not 500, it is 300" (to correct a payment)`, tone: 'warn' };
@@ -219,7 +256,7 @@ export async function handle(textIn: string, files: File[]): Promise<Reply> {
     return orderProposal(shop.id, shop ? rest : textIn);
   }
   if (has(text, W.stock)) return stockTable(text.replace(/stock of|how much stock|stock|ஸ்டாக்|கையிருப்பு/g, '').trim());
-  if (lines.length && !shop) {
+  if (lines.length && !shop && lines.some(l => bestProduct(productsActive, l.productText).product)) {
     return { text: 'Which shop is this order for? Start with the shop name, e.g. "Murugan Stores 5 case Surf".', tone: 'warn' };
   }
   const sc = screenFor(text, role); if (sc) return sc;
@@ -236,6 +273,8 @@ function correctionIn(t: string): { old?: number; next: number } | null {
   if (!fixWord) return null;
   const to = t.match(/(\d{1,5}(?:\.\d{1,2})?)\s*(?:to|->|→|into)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)/);
   if (to) return { old: Number(to[1]), next: Number(to[2]) };
+  const isN = t.match(/\b(?:it is|it s|its|correct is|correct amount is|should be|actually|is actually)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
+  if (isN && nums.length >= 2) { const next = Number(isN[1]); const old = nums.find(n => n !== next); return { old, next }; }
   if (/\b(wrong|mistake|actually|correct)\b|தவறு/.test(t) && nums.length === 1) return { next: nums[0] };
   return null;
 }
@@ -530,7 +569,7 @@ async function expenseFromText(textIn: string): Promise<Reply> {
   const vans = await db.vans.toArray();
   const me = await db.staff.get(session().userId);
   const van = vans.find(v => t.includes(norm(v.name)) || t.includes(norm(v.number))) ?? (me?.vanId ? vans.find(v => v.id === me.vanId) : undefined);
-  return expenseProposal([{ date: today(), category: categoryOf(t), amount: findAmount(t.replace(/van \d+/, '')) ?? 0, vanId: van?.id ?? '', note: textIn }]);
+  return expenseProposal([{ date: today(), category: categoryOf(t), amount: findAmount(vans.reduce((x, v) => x.replace(new RegExp(`\\b${norm(v.name)}\\b`, 'g'), ' ').replace(new RegExp(`\\b${norm(v.number)}\\b`, 'g'), ' '), t).replace(/\b(van|auto|vehicle|lorry|tempo)\s*\d+\b/g, ' ')) ?? 0, vanId: van?.id ?? '', note: textIn }]);
 }
 
 async function expenseFromFile(file: File, textIn: string): Promise<Reply> {
@@ -555,14 +594,17 @@ async function expenseFromFile(file: File, textIn: string): Promise<Reply> {
 }
 
 function categoryOf(t: string) {
-  if (/diesel|petrol|fuel|டீசல்|பெட்ரோல்/.test(t)) return 'Fuel';
-  if (/toll/.test(t)) return 'Toll';
-  if (/repair|service|tyre|tire/.test(t)) return 'Van repair';
-  if (/rent|வாடகை/.test(t)) return 'Rent';
-  if (/salary|சம்பளம்/.test(t)) return 'Salary';
-  if (/batta/.test(t)) return 'Batta';
-  if (/tea|snacks|food/.test(t)) return 'Tea & food';
-  if (/hire/.test(t)) return 'Van hire';
+  if (/\b(diesel|petrol|fuel)\b|டீசல்|பெட்ரோல்/.test(t)) return 'Fuel';
+  if (/\btoll\b/.test(t)) return 'Toll';
+  if (/\b(repair|service|tyre|tire|puncture|maintenance)s?\b/.test(t)) return 'Van repair';
+  if (/\b(electricity|eb|current|power)\b/.test(t)) return 'Electricity';
+  if (/\brent\b|வாடகை/.test(t)) return 'Rent';
+  if (/\bsalary\b|சம்பளம்/.test(t)) return 'Salary';
+  if (/\bbatta\b/.test(t)) return 'Batta';
+  if (/\b(hamali|coolie|labour|labor|wages|loading|unloading)\b/.test(t)) return 'Loading & labour';
+  if (/\b(tea|snacks|food|lunch|coffee)\b/.test(t)) return 'Tea & food';
+  if (/\b(internet|wifi|phone|mobile|recharge)\b/.test(t)) return 'Phone & internet';
+  if (/\bhire\b/.test(t)) return 'Van hire';
   return 'Other';
 }
 
