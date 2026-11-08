@@ -90,6 +90,14 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
+  // two things in one message, then follow-ups to the table just shown
+  const say = async (t) => { await p.fill('textarea', t); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); };
+  await say('Kumar Mart paid 500, toll 85'); await shot('rox-two-things');
+  if (await p.locator('.engine .prop').count() < 2) throw new Error('two things in one message should show two tables');
+  await say('toll 90'); await say('make it 95'); await shot('rox-follow-up');
+  if (!(await p.locator('.engine', { hasText: 'Changed — see below' }).count())) throw new Error('a follow-up should replace the table just shown');
+  await say('no'); await shot('rox-dropped');
+  if (!(await p.locator('.engine', { hasText: 'Dropped — nothing saved' }).count())) throw new Error('"no" should drop the table');
   await p.click('.engine-x[aria-label="Close"]'); await logout();
 
   // Owner: live, delivery status, day close checklist with differences, cash count, close

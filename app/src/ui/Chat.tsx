@@ -10,7 +10,7 @@ import { notify } from './dialog';
 import { TesraxCore, type CoreState } from './TesraxCore';
 import { sound } from '../core/sound';
 
-interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[] }
+interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[]; closed?: boolean; replaced?: string }
 
 const SUGGEST: Record<Role, string[]> = {
   owner: ['orders received', 'delivery plan', 'diesel 1500', 'who owes more than 5000', 'P&L', 'GST', 'Karthik leave tomorrow', 'help'],
@@ -45,8 +45,13 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
     const fs = files;
     setText(''); setFiles([]); setBusy(true);
     try {
-      const reply = await handle(said, fs);
-      push({ from: 'bot', text: reply.text, reply });
+      // the table or question just shown, so a reply like "make it 600" or "Murugan" can refer to it
+      const lastBot = [...msgs].reverse().find(m => m.from === 'bot' && m.reply && !m.reply.parts);
+      const open = lastBot && !lastBot.closed && (lastBot.reply!.proposal || lastBot.reply!.pending) ? lastBot : undefined;
+      const reply = await handle(said, fs, { last: open?.reply });
+      if (reply.replaces && open) setMsgs(x => x.map(y => y.id === open.id ? { ...y, closed: true, replaced: reply.follow === 'dropped' ? 'Dropped — nothing saved.' : 'Changed — see below.' } : y));
+      push({ from: 'bot', text: reply.text, reply: reply.parts ? { text: reply.text, parts: [] } : reply });
+      for (const part of reply.parts ?? []) push({ from: 'bot', text: part.text, reply: part });
       setBusy(false);
       if (reply.tone === 'warn' || reply.tone === 'error') sound.warn(); else { sound.done(); setReady(true); setTimeout(() => setReady(false), 1600); }
       if (reply.go && onGo) setTimeout(() => onGo(reply.go!), 350);
@@ -70,9 +75,9 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
   };
 
   const onDone = (msgId: number) => (res: { message: string; batchId: string; invoices?: Invoice[] } | null) => {
+    setMsgs(x => x.map(y => y.id === msgId ? { ...y, closed: true } : y));
     if (!res) return;
     push({ from: 'bot', text: res.message, batchId: res.batchId, invoices: res.invoices });
-    void msgId;
   };
 
   const undo = async (m: Msg) => {
@@ -102,7 +107,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
           <div key={m.id} className={`msg ${m.from} ${m.reply?.tone ?? ''} ${m.reply?.proposal || m.reply?.table ? 'wide' : ''}`}>
             {m.text}
             {m.files?.map(f => <div key={f} className="att"><Paperclip size={12} style={{ verticalAlign: -2 }} /> {f}</div>)}
-            {m.reply?.proposal && <div style={{ marginTop: 10 }}><ApproveTable proposal={m.reply.proposal} onDone={onDone(m.id)} /></div>}
+            {m.reply?.proposal && (m.replaced ? <div className="muted" style={{ marginTop: 6 }}>{m.replaced}</div> : <div style={{ marginTop: 10 }}><ApproveTable proposal={m.reply.proposal} onDone={onDone(m.id)} /></div>)}
             {m.reply?.table && <div style={{ marginTop: 10 }}><ReadTable table={m.reply.table} /></div>}
             {m.reply?.actions?.length ? <div className="row" style={{ marginTop: 8 }}>{m.reply.actions.map(a => <button key={a.label} className="btn primary small" onClick={() => a.run()}>{a.label}</button>)}</div> : null}
             {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div> : null}

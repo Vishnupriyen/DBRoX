@@ -20,6 +20,8 @@ export async function loadNames() {
 }
 
 export function code(r: Reply): string {
+  if (r.parts?.length) return r.parts.map(code).join(' + ');
+  if (r.follow) return r.follow;
   const p = r.proposal;
   if (p) {
     const f = (k: string) => p.fields.find(x => x.key === k)?.value;
@@ -72,4 +74,18 @@ export function code(r: Reply): string {
   if (r.tone === 'ok' && /advance/i.test(t)) return `advance:${(t.match(/₹(\d+)/) ?? [])[1]}`;
   if (r.tone === 'warn') return 'ask';
   return `other:${t.slice(0, 50)}`;
+}
+
+/** run a dialogue the way the chat screen does: each message sees the table or question just shown */
+export async function converse(msgs: string[], run: (said: string, last?: Reply) => Promise<Reply>): Promise<Reply> {
+  let open: Reply | undefined;
+  let r: Reply = { text: '' };
+  for (const said of msgs) {
+    r = await run(said, open);
+    if (r.replaces && r.follow === 'dropped') open = undefined;
+    else if (r.parts) open = [...r.parts].reverse().find(x => x.proposal || x.pending);
+    else if (r.proposal || r.pending) open = r;
+    else if (!r.follow) open = undefined;
+  }
+  return r;
 }

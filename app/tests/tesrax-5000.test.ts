@@ -9,7 +9,7 @@ import { seedDemo } from '../src/core/seed';
 import { handle } from '../src/core/engine';
 import { commit } from '../src/core/proposals';
 import type { Role } from '../src/core/types';
-import { code, loadNames } from './tesrax-code';
+import { code, converse, loadNames } from './tesrax-code';
 import { FIX_EXPENSES, FIX_PAYMENTS, generate, type Case } from './tesrax-gen';
 
 let ids: Record<Role, string>;
@@ -32,10 +32,13 @@ describe('TESRAX 5000', () => {
     expect(CASES.length).toBeGreaterThanOrEqual(5000);
     const wrong: string[] = [];
     const per = new Map<string, { n: number; ok: number }>();
+    let i = 0;
     for (const c of CASES) {
+      // fake-indexeddb (tests only) slows down after thousands of transactions; reopening resets it, data stays
+      if (++i % 500 === 0) { db.close(); await db.open(); }
       setSession('demo', ids[c.role]);
       let got: string;
-      try { got = code(await handle(c.said, [])); } catch (e) { got = `CRASH ${(e as Error).message}`; }
+      try { got = code(c.dialogue ? await converse(c.dialogue, (m, last) => handle(m, [], { last })) : await handle(c.said, [])); } catch (e) { got = `CRASH ${(e as Error).message}`; }
       const ok = got === c.want || (c.want.endsWith(':') && got.startsWith(c.want));
       const s = per.get(c.intent) ?? { n: 0, ok: 0 }; s.n++; if (ok) s.ok++; per.set(c.intent, s);
       if (!ok) wrong.push(`  [${c.role}] ${c.intent} "${c.said}"\n      expected ${c.want}\n      got      ${got}`);

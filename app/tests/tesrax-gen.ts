@@ -2,7 +2,7 @@
 // Deterministic (seeded), so the same 5,000+ phrases are tested on every run. Expected codes: see tesrax-code.ts.
 import type { Role } from '../src/core/types';
 
-export type Case = { said: string; want: string; role: Role; intent: string };
+export type Case = { said: string; want: string; role: Role; intent: string; dialogue?: string[] };
 export interface Facts { stock: Record<string, number> }
 
 // --------------------------------------------------------------------------------------------- seeded randomness
@@ -359,5 +359,55 @@ export function generate(facts: Facts): Case[] {
   for (const s of ['undo', 'undo last', 'undo that', 'undo it', 'undo the last entry', 'cancel last entry', 'delete the last entry', 'i made a mistake', 'that was wrong',
     'reverse that', 'revert', 'undo please', 'cancel that', 'delete that', 'undo last action', 'remove last entry', 'my mistake undo it', 'wrong entry', 'undo what i did', 'take back last entry'])
     { both('undo', s, 'undo'); add('undo', s, 'undo', 'office'); }
+
+  // ================================================================================== SEVERAL THINGS IN ONE MESSAGE
+  const SEP = [', ', ' and ', '. ', ' also ', ' then ', ', and '];
+  const other = (shop: string) => { let o = pick(SHOP_NAMES); while (o === shop) o = pick(SHOP_NAMES); return o; };
+  for (let i = 0; i < 1400; i++) {
+    const shop = pick(SHOP_NAMES); const s2 = other(shop); const sep = pick(SEP);
+    const a = pick(AMOUNTS); const b = pick(AMOUNTS.filter(x => x !== a)); const [mw, mode] = pick(MODES);
+    const p1 = Math.floor(R() * 12); let p2 = Math.floor(R() * 12); if (p2 === p1) p2 = (p2 + 1) % 12;
+    const role = pick(['owner', 'office', 'salesman'] as Role[]);
+    const [ew, ecat] = pick(EXP.filter(x => x[1] !== 'Salary')); const [ew2, ecat2] = pick(EXP.filter(x => x[1] !== ecat && x[1] !== 'Salary'));
+    const ea = pick([80, 120, 250, 850, 1500]); const eb = pick([60, 95, 400, 2500]);
+    switch (Math.floor(R() * 7)) {
+      case 0: add('combo', `${sv(shop)} paid ${a} ${mw}${sep}${pick(['send ', '', 'order '])}${pick(QTY)[0]} ${pv(p1)}`, `payment:${shop}:${a}:${mode} + order:${shop}`, role); break;
+      case 1: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${sv(s2)} ${pick(QTY)[0]} ${pv(p2)}`, `order:${shop} + order:${s2}`, role); break;
+      case 2: add('combo', `${sv(shop)} paid ${a} ${mw}${sep}${sv(s2)} paid ${b}`, `payment:${shop}:${a}:${mode} + payment:${s2}:${b}:cash`, pick(['owner', 'office', 'salesman', 'delivery'] as Role[])); break;
+      case 3: add('combo', `${pick(ew)} ${ea}${pick([', ', ' and ', '. '])}${pick(ew2)} ${eb}`, `expense:${ea}:${ecat} + expense:${eb}:${ecat2}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
+      case 4: add('combo', `${sv(shop)} paid ${a} ${mw}${pick([', ', '. ', ' and '])}${pick(ew)} ${ea}`, `payment:${shop}:${a}:${mode} + expense:${ea}:${ecat}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
+      case 5: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${pick(QTY)[0]} ${pv(p2)}`, `order:${shop}`, role); break; // one order, two items
+      case 6: add('combo', `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}${sep}${sv(s2)} outstanding`, `order:${shop} + t:Outstanding`, role); break;
+    }
+  }
+
+  // ================================================================================== FOLLOW-UP REPLIES
+  const dlg = (intent: string, msgs: string[], want: string, role: Role = 'owner') => {
+    const k = `${role}|${msgs.join(' » ').toLowerCase()}`;
+    if (seen.has(k)) return; seen.add(k);
+    out.push({ said: msgs.join(' » '), want, role, intent, dialogue: msgs });
+  };
+  for (let i = 0; i < 1200; i++) {
+    const shop = pick(SHOP_NAMES); const s2 = other(shop);
+    const a = pick(AMOUNTS); const b = pick(AMOUNTS.filter(x => x !== a)); const [mw, mode] = pick(MODES.filter(m => m[1] !== 'cash'));
+    const p1 = Math.floor(R() * 12); let p2 = Math.floor(R() * 12); if (p2 === p1) p2 = (p2 + 1) % 12;
+    const role = pick(['owner', 'office', 'salesman'] as Role[]);
+    const [ew, ecat] = pick(EXP.filter(x => x[1] !== 'Salary' && x[1] !== 'Other')); const [ew2, ecat2] = pick(EXP.filter(x => x[1] !== ecat && x[1] !== 'Salary' && x[1] !== 'Other'));
+    const ea = pick([80, 120, 250, 850, 1500]);
+    const pay = `${sv(shop)} paid ${a}`; const ord = `${sv(shop)} ${pick(QTY)[0]} ${pv(p1)}`;
+    switch (Math.floor(R() * 11)) {
+      case 0: dlg('follow', [`${pick(QTY)[0]} ${pv(p1)}`, pick([sv(shop), `for ${sv(shop)}`, `${sv(shop)} pls`])], `order:${shop}`, role); break;
+      case 1: dlg('follow', [pay, pick([`make it ${b}`, `${b}`, `${b} not ${a}`, `no ${b}`, `change to ${b}`, `amount ${b}`])], `payment:${shop}:${b}:cash`, role); break;
+      case 2: dlg('follow', [pay, pick([mw, `by ${mw}`, `${mw} la`, `it was ${mw}`])], `payment:${shop}:${a}:${mode}`, role); break;
+      case 3: dlg('follow', [pay, pick([`no, ${sv(s2)}`, `not ${sv(shop)}, ${sv(s2)}`, `${sv(s2)}`, `wrong shop, ${sv(s2)}`, `${sv(shop)} illa ${sv(s2)}`])], `payment:${s2}:${a}:cash`, role); break;
+      case 4: dlg('follow', [ord, pick([`add ${pick(QTY)[0]} ${pv(p2)}`, `${pick(QTY)[0]} ${pv(p2)} also`, `${pv(p2)} ${pick(QTY)[0]}`, `remove ${pv(p1)}`, `make it ${pick(['2', '3', '5'])} case`, `${pick(['2', '3'])} case only`])], `order:${shop}`, role); break;
+      case 5: dlg('follow', [ord, pick([`for ${sv(s2)}`, `no, ${sv(s2)}`, `wrong shop, ${sv(s2)}`, `${sv(shop)} illa ${sv(s2)}`])], `order:${s2}`, role); break;
+      case 6: dlg('follow', [`${pick(ew)} ${ea}`, pick([`${ea + 20}`, `make it ${ea + 20}`, `no ${ea + 20}`, `${ea + 20} not ${ea}`])], `expense:${ea + 20}:${ecat}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
+      case 7: dlg('follow', [`${pick(ew)} ${ea}`, pick([`it is ${pick(ew2)}`, `${pick(ew2)}`, `no, ${pick(ew2)}`])], `expense:${ea}:${ecat2}`, pick(['owner', 'office', 'delivery'] as Role[])); break;
+      case 8: dlg('follow', [pick([pay, ord, `${pick(ew)} ${ea}`]), pick(['yes', 'ok', 'save it', 'ok save', 'confirm', 'yes please', 'correct', 'fine'])], 'tap', role); break;
+      case 9: dlg('follow', [pick([pay, ord, `${pick(ew)} ${ea}`]), pick(['no', 'cancel it', 'leave it', 'drop it', 'no cancel', 'forget it', 'dont save'])], 'dropped', role); break;
+      case 10: dlg('follow', [pay, `${sv(s2)} outstanding`], 't:Outstanding', role); break;
+    }
+  }
   return out;
 }
