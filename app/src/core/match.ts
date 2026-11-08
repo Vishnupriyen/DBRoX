@@ -186,22 +186,29 @@ export function wordsToNumbers(t: string): string {
 // shorthand and Tanglish → plain words TESRAX knows (whole words only)
 const SAY: [RegExp, string][] = [
   [/\b(\d+(?:\.\d+)?)\s?k\b/gi, '__K$1'],
+  [/\s*(→|->|=>|-->)\s*/g, ' changed to '], [/(\d+(?:\.\d+)?)\s+(?:ah|aa|a)\s+(\d+(?:\.\d+)?)\s*(?:nu|nnu|ndru)?\b/gi, '$1 changed to $2'],
+  [/\b(\d+(?:\.\d+)?)\s*(lakh|lakhs|lac|lacs)\b/gi, '__L$1'],
+  [/\b(onnu|onu|oru)\b/gi, '1'], [/\b(rendu|randu|rendu)\b/gi, '2'], [/\b(moonu|munu|moonu)\b/gi, '3'], [/\b(naalu|nalu)\b/gi, '4'], [/\b(anju|anchu)\b/gi, '5'], [/\b(aaru)\b/gi, '6'], [/\b(pathu|paththu)\b/gi, '10'],
+  [/\b(ordr|odr|ordar|oder)\b/gi, 'order'], [/\bphone\s*pe\b/gi, 'phonepe'], [/\b(vaangura|vangura|vaangum|vangum|vaangiya|vangiya)\b/gi, 'buying'],
+  [/\b(kuduth|koduth|kudth)\w*/gi, 'paid'], [/\b(vandhuchu|vanthuchu|vandhudhu|vanthathu|vandhadhu)\b/gi, 'received'],
+  [/\b(dhaan|thaan|dhan|dan)\b/gi, 'only'], [/\b(vaadagai|vadagai|vaadakai)\b/gi, 'rent'], [/\bexpiry\s+aaga\w*\s+pog\w*/gi, 'expiring soon'],
+  [/\b(enna panna mudiyum|enna seiya mudiyum|enna pannalam)\b/gi, 'what can you do'], [/\b(ila)\b(?=\s+\d)/gi, 'illa'],
   [/\bpd\b/gi, 'paid'], [/\b(rcvd|recd|recvd|recieved|receieved|recived|revd)\b/gi, 'received'], [/\bfrm\b/gi, 'from'],
   [/\bu\b/gi, 'you'], [/\bamt\b/gi, 'amount'], [/\b(pls|plz|plss)\b/gi, 'please'], [/\b(tmrw|tmr|tmrrw|tomo|tommorow|tomorow)\b/gi, 'tomorrow'],
   [/\bbal\b/gi, 'balance'], [/\bo\/s\b/gi, 'outstanding'], [/\b(qty)\b/gi, 'quantity'],
-  [/\b(baaki|baki|bakki|baakki)\b/gi, 'balance'], [/\b(evlo|evvalavu|ethana|evalavu|yevlo)\b/gi, 'how much'], [/\b(irukka|iruka|irukkaa|irukku|iruku)\b/gi, 'available'],
-  [/\b(kitta|kita|kitte|ta)\b/gi, ' '], [/\b(venum|vendum|venam)\b/gi, 'need'], [/\b(naalai|nalaiku|naalaiku)\b/gi, 'tomorrow'], [/\b(innaiku|inniku|indru)\b/gi, 'today'],
+  [/\b(baaki|baki|bakki|baakki)\b/gi, 'balance'], [/\b(evlo|evvalavu|ethana|evalavu|yevlo)\b/gi, 'how much'], [/\b(irukka|iruka|irukkaa)\b/gi, 'available'], [/\b(irukku|iruku|irukkudhu|irukkuthu)\b/gi, 'stock is'],
+  [/\b(kitta|kita|kitte|ta)\b/gi, ' '], [/\b(venum|vendum|veenum)\b/gi, 'need'], [/\b(venam|venaam|venaa|veenam)\b/gi, 'cancel'], [/\b(naalai|nalaiku|naalaiku)\b/gi, 'tomorrow'], [/\b(innaiku|inniku|indru)\b/gi, 'today'],
   [/\b(settled|settle|cleared)\b/gi, 'paid'],
   // "2000 illa 1200" = "not 2000, it is 1200"
-  [/(\d+(?:\.\d+)?)\s+(illa|illai|alla|illey)\s+(\d+(?:\.\d+)?)/gi, 'not $1 it is $3'],
+  [/(\d+(?:\.\d+)?)\s+(illa|illai|alla|illey)\s+(\d+(?:\.\d+)?)/gi, 'not $1 it is $3'], [/(\d+(?:\.\d+)?)\s+(illa|illai|alla|illey)\b/gi, 'not $1'],
   [/\b(vangitten|vaangitten|vangiten|vaanginen|vanginen|vaangunen|vangunen|vangittom|vaangittom|vangikitten)\b/gi, 'received'],
   [/\b(anuppunga|anupunga|anuppu|anupu|anuppidunga|kudunga|kodunga|podunga|podu)\b/gi, 'send'],
   [/\b(pudhu|puthu|pudu)\s+(kadai|kada)\b/gi, 'new shop'], [/\b(kadai|kada)\b/gi, 'shop'],
-  [/\b(maathu|mathu|maathunga|mathunga|maathidu|mathidu|maathi|mathi|maattru|maatru)\b/gi, 'change'], [/\b(thappu|thapu|tappu|thappa|thapa)\b/gi, 'wrong'],
+  [/\b(maathu|mathu|maathunga|mathunga|maathidu|mathidu|maathi|mathi|maattru|maatru|maathanum|mathanum|maathunom)\b/gi, 'change'], [/\b(aakku|aakunga|aakkunga|aakkidu|aakidu|akku|aaku)\b/gi, 'make'], [/\b(thappu|thapu|tappu|thappa|thapa)\b/gi, 'wrong'],
   [/\b(vendam|vendaam|venda|vendaa|veandam|vaendam)\b/gi, 'cancel'], [/\b(eduthudu|eduthudunga|edunga|eduthuru|eduthu|thookku|thooku)\b/gi, 'remove'],
   [/\b(kammi|kammiya|korai|koraichu|kuraichu|kurai|kuraiu)\b/gi, 'reduce'], [/\b(jaasthi|jasthi|jasti|adhigam|athigam|extra va)\b/gi, 'more'],
   [/\b(serthu|serthudu|sethudu|serunga|serthuko|sethu)\b/gi, 'add'],
-  [/\b(pannanum|pannu|pannalam|pannunga|pannidu|panniru|pannu da|pannuga|panni)\b/gi, ' '],
+  [/\b(pannanum|pannu|pannalam|pannunga|pannidu|panniru|pannu da|pannuga|panni|pannen|panniten|pannitom|pannittom)\b/gi, ' '],
   [/\b(ku|la|le|kku|ukku)\b/gi, ' '], [/\b(illa|illai)\b/gi, 'not'],
   [/\b(sir|anna|bro|boss|madam|mam)\b/gi, ' '],
 ];
@@ -209,7 +216,7 @@ const SAY: [RegExp, string][] = [
 export function cleanSaid(t: string): string {
   let s = wordsToNumbers(t);
   for (const [rx, to] of SAY) s = s.replace(rx, to);
-  s = s.replace(/__K(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 1000)));
+  s = s.replace(/__K(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 1000))).replace(/__L(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 100000)));
   return s.replace(/\/-/g, ' ').replace(/\s+/g, ' ').trim();
 }
 

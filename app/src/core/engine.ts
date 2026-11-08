@@ -38,13 +38,13 @@ const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] 
   { page: 'status', name: 'Delivery status', roles: ['owner', 'office'], words: ['delivery status', 'delivered today', 'டெலிவரி நிலை'] },
   { page: 'trips', name: 'Trip reports', roles: ['owner', 'office'], words: ['trip report', 'trip reports', 'km', 'டிரிப் அறிக்கை'] },
   { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding list', 'who owes', 'dues', 'நிலுவை பட்டியல்'] },
-  { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'upi list', 'செக்'] },
+  { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'pending cheques', 'upi list', 'செக்'] },
   { page: 'bank', name: 'Bank', roles: ['owner', 'office'], words: ['bank', 'statement', 'வங்கி'] },
   { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list', 'செலவுகள்'] },
   { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'p l', 'pnl', 'p and l', 'profit', 'profit and loss', 'how much profit', 'லாபம்'] },
   { page: 'cashflow', name: 'Cash flow', roles: ['owner'], words: ['cash flow', 'cashflow', 'position', 'net worth', 'loans', 'who will pay', 'what do i owe', 'payables', 'receivables', 'pending cheques', 'பண ஓட்டம்', 'நிலை'] },
   { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'அறிக்கைகள்'] },
-  { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van list', 'add van', 'my vans', 'vans and drivers', 'assign driver', 'வண்டிகள்'] },
+  { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van list', 'vans', 'add van', 'my vans', 'vans and drivers', 'assign driver', 'வண்டிகள்'] },
   { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export', 'ஏற்றுமதி'] },
   { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gst summary', 'gst report', 'gst status', 'gst due', 'tax summary', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
   { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'who is absent', 'absent', 'who is present', 'check in', 'checked in', 'வருகை'] },
@@ -88,14 +88,14 @@ const has = hasWord;
 const W = {
   help: ['help', 'what can you do', 'what can i ask', 'what can i say', 'options', 'menu', 'commands', 'how to use', 'உதவி', 'எப்படி'],
   stockIn: ['inventory', 'stock in', 'add to stock', 'purchase', 'add this', 'goods received', 'ஸ்டாக்', 'சரக்கு', 'கொள்முதல்', 'சேர்'],
-  expense: ['expense', 'spent', 'spend', 'diesel', 'petrol', 'fuel', 'toll', 'repair', 'service', 'tyre', 'puncture', 'rent', 'batta', 'salary', 'tea', 'snacks', 'food', 'lunch', 'electricity', 'eb bill', 'current bill', 'power bill', 'internet', 'wifi', 'phone bill', 'mobile recharge', 'recharge', 'wages', 'hamali', 'coolie', 'labour', 'loading charges', 'unloading', 'charges', 'parking', 'courier', 'transport', 'freight', 'lorry', 'stationery', 'printing', 'maintenance', 'water', 'cleaning', 'insurance', 'செலவு', 'டீசல்', 'பெட்ரோல்', 'வாடகை', 'சம்பளம்'],
+  expense: ['expense', 'eb', 'hire', 'hired', 'spent', 'spend', 'diesel', 'petrol', 'fuel', 'toll', 'repair', 'service', 'tyre', 'puncture', 'rent', 'batta', 'salary', 'tea', 'snacks', 'food', 'lunch', 'electricity', 'eb bill', 'current bill', 'power bill', 'internet', 'wifi', 'phone bill', 'mobile recharge', 'recharge', 'wages', 'hamali', 'coolie', 'labour', 'loading charges', 'unloading', 'charges', 'parking', 'courier', 'transport', 'freight', 'lorry', 'stationery', 'printing', 'maintenance', 'water', 'cleaning', 'insurance', 'செலவு', 'டீசல்', 'பெட்ரோல்', 'வாடகை', 'சம்பளம்'],
   bank: ['bank', 'statement', 'match payment', 'வங்கி', 'ஸ்டேட்மென்ட்'],
   products: ['product list', 'products', 'item master', 'பொருட்கள்'],
   shops: ['shop list', 'shops list', 'retailer list', 'customer list', 'கடைகள்'],
-  newShop: ['new shop', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer', 'புதிய கடை'],
+  newShop: ['new shop', 'new outlet', 'add outlet', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer', 'புதிய கடை'],
   paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer', 'kuduthaanga', 'kuduthanga', 'kuduthar', 'kudutha', 'koduthanga', 'koduthar', 'kodutha', 'kudthanga', 'கொடுத்தார்', 'பணம்', 'வசூல்', 'செலுத்தினார்'],
   ret: ['return', 'returned', 'sent back', 'send back', 'gave back', 'give back', 'taken back', 'திரும்ப', 'ரிட்டர்ன்'],
-  damage: ['damage', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'சேதம்', 'காலாவதி', 'உடைந்த'],
+  damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'சேதம்', 'காலாவதி', 'உடைந்த'],
   order: ['order', 'ஆர்டர்'],
   outstanding: ['outstanding', 'pending', 'owes', 'owe', 'balance', 'due', 'dues', 'has to pay', 'have to pay', 'yet to pay', 'to pay', 'not paid', 'unpaid', 'credit', 'overdue', 'late payment', 'defaulters', 'நிலுவை', 'பாக்கி', 'கடன்'],
   sales: ['sales', 'sale today', 'today summary', 'summary', 'sold today', 'sold', 'sell today', 'total sales', 'billing today', 'today billing', 'today s billing', 'how much billed', 'turnover', 'விற்பனை', 'இன்றைய'],
@@ -194,12 +194,16 @@ export async function handle(said: string, files: File[]): Promise<Reply> {
 
   // ------------------------ actions ------------------------
   const shops = (await db.shops.toArray()).filter(s => s.active !== false);
-  const { shop, rest } = findShopInText(shops, textIn);
+  // a new owner or shop name can contain another shop's word ("Annai owner name Lakshmi"): find the shop without it
+  const shopSearch = textIn.replace(/\b(owner(?:\s*name)?|rename|name\s+(?:is|to|change|changed|should|as))\b.*$/i, ' ');
+  const shop = findShopInText(shops, shopSearch).shop;
+  const rest = shop ? findShopInText([shop], textIn).rest : textIn;
 
   // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
   const mod = await modifyIntent({ text, textIn, shop, rest, role, products: (await db.products.toArray()).filter(p => p.active), isExpense: has(text, W.expense), isDamage: has(text, W.damage), fixOf: correctionIn });
   if (mod) return mod;
 
+  if (has(text, W.scheme) && !/\d/.test(text) && /\b(any|what|which|enna|list|running|current|this month|available|show|tell|is there|are there)\b/.test(text)) return schemesTable();
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
   if (has(text, W.damage) && !has(text, W.outstanding)) { const r = need('inventory', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
@@ -216,19 +220,22 @@ export async function handle(said: string, files: File[]): Promise<Reply> {
   // money words are never products ("cash" is not "Cashew")
   const MONEY = new Set([...W.paid, 'rs', 'inr', 'rupees', 'amount', 'from', 'by', 'via', 'ref', 'no', 'number', 'bill', 'bills']);
   const hasProduct = restLines.some(l => { const q = l.productText.split(' ').filter(w => !MONEY.has(w)).join(' '); return !!q && !!bestProduct(productsActive, q).product; });
-  if (shop && has(text, W.paid) && findAmount(rest) != null && !hasProduct) {
+  const amount = payAmount(rest);
+  // "Selvam paid 450", or just "Selvam 450 rs" / "Velan 5000" (a shop and an amount, nothing else)
+  const onlyAmount = amount != null && amount >= 10 && !norm(rest).replace(/\b(\d+|rs|rupees|inr|only|please|today)\b/g, '').trim();
+  if (shop && (has(text, W.paid) || onlyAmount) && amount != null && !hasProduct) {
     const r = need('collection', mods); if (r) return r;
     if (!can(role, 'payment')) return deny();
-    return paymentProposal(shop.id, findAmount(rest)!, modeIn(text), refIn(textIn));
+    return paymentProposal(shop.id, amount, modeIn(text), refIn(textIn));
   }
-  if (has(text, W.expense) && findAmount(text) != null && !shop) return expenseFromText(textIn);
   // Payroll by chat: "leave monday", "leave 12/11 to 14/11 fever", "advance 1000", owner: "Karthik leave tomorrow", "advance 2000 to Ravi"
+  if (has(text, ['advance', 'அட்வான்ஸ்']) && findAmount(text) != null && !shop) return advanceRequest(textIn, role);
+  if (has(text, W.expense) && findAmount(text) != null && !shop) return expenseFromText(textIn);
   if (has(text, ['leave', 'லீவு', 'விடுமுறை'])) return leaveRequest(textIn, role);
-  if (has(text, ['advance', 'அட்வான்ஸ்']) && findAmount(text) != null) return advanceRequest(textIn, role);
 
   // ------------------------ questions ------------------------
   if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
-  if (has(text, W.cashHand)) return cashInHand();
+  if (has(text, W.cashHand) || (!shop && /\bcash\b/.test(text) && /\bhow much\b/.test(text))) return cashInHand();
   if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
@@ -258,24 +265,32 @@ export async function handle(said: string, files: File[]): Promise<Reply> {
   if (lines.length && !shop && lines.some(l => bestProduct(productsActive, l.productText).product)) {
     return { text: 'Which shop is this order for? Start with the shop name, e.g. "Murugan Stores 5 case Surf".', tone: 'warn' };
   }
-  const sc = screenFor(text, role); if (sc) return sc;
+  const sc = /\d/.test(text) && /\b(change|edit|update|set|make|correct|wrong)\b/.test(text) ? null : screenFor(text, role); if (sc) return sc;
   return { text: `I didn't understand that yet.\n\n${HELP_TEXT}`, tone: 'warn' };
 }
 
 // "not 500 … 300", "300 not 500", "500 to 300" (with change/adjust/correct), "wrong … it is 300"
 function correctionIn(t: string): { old?: number; next: number } | null {
-  const nums = [...t.replace(/,/g, '').matchAll(/(?:₹|rs\.?\s*)?\b(\d{1,5}(?:\.\d{1,2})?)\b/g)].map(m => Number(m[1])).filter(n => n > 0);
+  const N = '(?:₹|rs\\.?\\s*)?(\\d{1,6}(?:\\.\\d{1,2})?)';
+  const nums = [...t.replace(/,/g, '').matchAll(/(?:₹|rs\.?\s*)?\b(\d{1,6}(?:\.\d{1,2})?)\b/g)].map(m => Number(m[1])).filter(n => n > 0);
   if (!nums.length) return null;
-  const notN = t.match(/\bnot\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
+  const notN = t.match(new RegExp(`\\bnot\\s*${N}\\b`));
   if (notN) { const old = Number(notN[1]); const next = nums.find(n => n !== old); return next ? { old, next } : null; }
-  const fixWord = /\b(adjust|correct|correction|change|edit|update|wrong|mistake|actually|instead|should be)\b|தவறு|மாற்று/.test(t);
+  const big = nums.length === 2 && nums.every(n => n >= 100);
+  const fixWord = /\b(adjust|correct|correction|change|changed|edit|update|wrong|mistake|actually|actual|instead|should be|typo|it was)\b|தவறு|மாற்று/.test(t)
+    || (big && new RegExp(`${N}\\s+only\\b`).test(t)); // "8715 amount 8700 only"
   if (!fixWord) return null;
-  const to = t.match(/(\d{1,5}(?:\.\d{1,2})?)\s*(?:to|->|→|into)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)/);
+  // "1500 to 1550", "1500 correct to 1550", "752 changed to 725"
+  const to = t.match(new RegExp(`${N}\\s+(?:[a-z]+\\s+){0,2}?(?:to|into)\\s+${N}`));
   if (to) return { old: Number(to[1]), next: Number(to[2]) };
-  const isN = t.match(/\b(?:it is|it s|its|correct is|correct amount is|should be|actually|is actually)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
-  if (isN && nums.length >= 2) { const next = Number(isN[1]); const old = nums.find(n => n !== next); return { old, next }; }
-  if (/\b(wrong|mistake|actually|correct)\b|தவறு/.test(t) && nums.length === 1) return { next: nums[0] };
-  if (isN && nums.length === 1) return { next: nums[0] };
+  // "it is 300", "should be 300", "actual 1700", "correct amount 2538", "it was 5000"
+  const isN = t.match(new RegExp(`\\b(?:it is|it s|its|is|correct is|correct amount is|correct amount|correct|should be|actually|actual|actual amount|is actually|it was|was)\\s*${N}\\b`));
+  // "8175 only", "3290 correct"
+  const after = t.match(new RegExp(`${N}\\s+(?:nu\\s+)?(?:only|correct|is correct|is right|right)\\b`));
+  const next = isN && Number(isN[1]) !== nums[0] ? Number(isN[1]) : after ? Number(after[1]) : isN ? Number(isN[1]) : undefined;
+  if (next != null && nums.length >= 2) return { old: nums.find(n => n !== next), next };
+  if (nums.length === 2) return { old: nums[0], next: nums[1] }; // "1500 wrong 1700"
+  if (nums.length === 1 && (isN || /\b(wrong|mistake|actually|correct|typo)\b|தவறு/.test(t) || (/\b(payment|amount)\b/.test(t) && /\b(change|changed|correction|update)\b/.test(t)))) return { next: nums[0] };
   return null;
 }
 
@@ -317,6 +332,18 @@ async function paymentCorrection(shopId: string | undefined, old: number | undef
       rows, meta: { paymentId: p.id },
     },
   };
+}
+
+/** the amount in a payment message: "rs 7500" first; never a cheque/ref number ("cheque no 456123") */
+function payAmount(r: string): number | undefined {
+  const t = r.toLowerCase().replace(/(\d),(\d{3})\b/g, '$1$2');
+  const rs = t.match(/(?:₹|\brs\.?|\binr)\s*(\d+(?:\.\d{1,2})?)/);
+  if (rs) return Number(rs[1]);
+  for (const m of t.matchAll(/(?<![\w.])(\d+(?:\.\d{1,2})?)(?![\w])/g)) {
+    if (m[1].length >= 6 || /\b(no|ref|number|#)\s*$/.test(t.slice(0, m.index))) continue;
+    return Number(m[1]);
+  }
+  return undefined;
 }
 
 function deny(): Reply { return { text: 'Your role cannot do this. Ask the owner.', tone: 'warn' }; }
@@ -821,7 +848,8 @@ async function stockTable(q: string): Promise<Reply> {
     const qty = bs.reduce((a, b) => a + b.qty, 0);
     return [p.name, qty, `${Math.floor(qty / p.caseSize)} cs + ${qty % p.caseSize}`, bs[0]?.expiry ?? '', r2(qty * p.purchaseRate)];
   });
-  return { text: q && !rows.length ? `No product matches "${q}".` : `Stock of ${rows.length} product(s).`, table: { name: 'Stock', columns: ['Product', 'Pieces', 'Cases', 'Oldest expiry', 'Value ₹'], rows } };
+  if (q && !rows.length) return { text: `No product matches "${q}". Say the product name, e.g. "surf stock".`, tone: 'warn' };
+  return { text: `Stock of ${rows.length} product(s).`, table: { name: 'Stock', columns: ['Product', 'Pieces', 'Cases', 'Oldest expiry', 'Value ₹'], rows } };
 }
 
 export async function loadSheet(): Promise<Reply> {
@@ -859,6 +887,15 @@ export async function cashInHand(): Promise<Reply> {
   }
   const rows = [...by.entries()].map(([id, v]) => [staff.get(id) ?? id, v.amt, v.n, v.oldest]);
   return { text: rows.length ? `₹${r2(rows.reduce((a, r) => a + Number(r[1]), 0)).toLocaleString('en-IN')} cash is with staff, not yet handed to office.` : 'No cash pending with staff.', table: { name: 'Cash in hand', columns: ['Staff', 'Cash ₹', 'Payments', 'Since'], rows } };
+}
+
+async function schemesTable(): Promise<Reply> {
+  const d = today();
+  const companies = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p.name]));
+  const rows = (await db.schemes.toArray()).filter(x => x.from <= d && x.to >= d)
+    .map(x => [companies.get(x.companyId) ?? '', x.productId ? products.get(x.productId) ?? '' : 'All products', x.type === 'free' ? `Buy ${x.buyQty} get ${x.freeQty}` : `${x.value}% off`, x.to]);
+  return { text: rows.length ? `${rows.length} scheme(s) running today. They apply on every bill automatically.` : 'No scheme is running today.', table: { name: 'Schemes', columns: ['Company', 'Product', 'Offer', 'Till'], rows } };
 }
 
 async function needsOkTable(): Promise<Reply> {

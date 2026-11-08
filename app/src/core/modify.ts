@@ -25,7 +25,7 @@ const CANCEL = ['cancel', 'cancelled', 'delete', 'deleted', 'remove', 'drop', 's
 const EDIT = ['change', 'changed', 'edit', 'update', 'modify', 'correct', 'correction', 'alter', 'revise', 'set', 'make it', 'make', 'increase', 'decrease', 'reduce', 'add', 'extra', 'more', 'less', 'minus', 'instead', 'replace', 'should be', 'wrong', 'mistake', 'actually', 'fix', 'adjust', 'only'];
 const ORDER = ['order', 'ஆர்டர்'];
 const PAY = ['payment', 'collection', 'receipt', 'paid', 'received', 'cheque', 'chq', 'upi', 'gpay', 'phonepe', 'money'];
-const BOUNCE = ['bounce', 'bounced', 'dishonoured', 'dishonored', 'cheque returned', 'cheque return', 'returned cheque', 'cheque bounce', 'chq bounce', 'chq returned'];
+const BOUNCE = ['bounce', 'bounced', 'reversed', 'reversal', 'payment failed', 'upi failed', 'failed', 'fail', 'upi return', 'not credited', 'not received in bank', 'dishonoured', 'dishonored', 'cheque returned', 'cheque return', 'returned cheque', 'cheque bounce', 'chq bounce', 'chq returned'];
 const BILL = ['bill', 'invoice', 'inv'];
 const NEW_SHOP = ['new shop', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer'];
 const OPEN: Order['status'][] = ['new', 'needs_ok', 'approved'];
@@ -40,6 +40,7 @@ export function numbersIn(s: string): number[] {
 
 export function categoryOf(t: string) {
   if (/\b(diesel|petrol|fuel)\b|டீசல்|பெட்ரோல்/.test(t)) return 'Fuel';
+  if (/\b(hire|hired)\b/.test(t) || (/\b(auto|tempo|lorry|van|vehicle)\b/.test(t) && /\brent\b/.test(t))) return 'Van hire';
   if (/\btoll\b/.test(t)) return 'Toll';
   if (/\b(repair|service|tyre|tire|puncture|maintenance)s?\b/.test(t)) return 'Van repair';
   if (/\b(electricity|eb|current|power)\b/.test(t)) return 'Electricity';
@@ -49,17 +50,16 @@ export function categoryOf(t: string) {
   if (/\b(hamali|coolie|labour|labor|wages|loading|unloading)\b/.test(t)) return 'Loading & labour';
   if (/\b(tea|snacks|food|lunch|coffee)\b/.test(t)) return 'Tea & food';
   if (/\b(internet|wifi|phone|mobile|recharge)\b/.test(t)) return 'Phone & internet';
-  if (/\bhire\b/.test(t)) return 'Van hire';
   return 'Other';
 }
 
 function isUndo(t: string) {
-  if (/^(please )?(undo|revert)( (it|that|this|the|my|last|previous|latest|one|entry|action|save|change|thing|record|please|what i did|just now|now))*$/.test(t)) return true;
+  if (/^(please )?(undo|revert)( (it|that|this|the|my|last|previous|latest|one|1|entry|action|save|change|thing|record|please|what i did|just now|now))*$/.test(t)) return true;
   if (/^(please )?(cancel|delete|remove|reverse|scrap|take back)( (it|that|this|the|my))* (last|previous|latest) (entry|one|thing|action|save|change|record|saved)( please)?$/.test(t)) return true;
   if (/^(please )?(cancel|delete|reverse|take back) (that|it|this)( please| now)?$/.test(t)) return true;
   if (/^(that|it|this) (was|is) (wrong|a mistake|mistake)( please)?( (undo|cancel|remove|delete) (it|that))?$/.test(t)) return true;
   if (/^(i made a mistake|my mistake|wrong entry|mistake|entry wrong|last entry wrong|last entry is wrong)( please)?( (undo|cancel|remove|delete)( it| that)?)?$/.test(t)) return true;
-  return /\b(undo|revert)\b/.test(t) && !/\d/.test(t);
+  return /\b(undo|revert)\b/.test(t) && !/\d{2,}/.test(t);
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -75,6 +75,9 @@ export async function modifyIntent(c: ModCtx): Promise<Reply | null> {
 
   // orders: said with the word "order", or a change to the open order of a named shop
   if (orderWord && (cancel || edit || /\bnot \d/.test(t) || /\b(no|without) [a-z]/.test(t))) return orderChange(c, true);
+  if (c.shop) { const r = await shopEdit(c); if (r) return r; }
+  if (!c.shop && (cancel || edit) && /\b(credit limit|credit days|limit|phone|mobile|address|gstin|cash only)\b/.test(t))
+    return { text: 'Which shop? Say it with the shop name, e.g. "Murugan Stores credit limit 30000".', tone: 'warn' };
   if (c.shop && !c.isDamage && (cancel || edit) && !has(t, PAY) && !has(t, BILL) && !has(t, BOUNCE)) {
     const r = await orderChange(c, false); if (r) return r;
   }
@@ -94,8 +97,6 @@ export async function modifyIntent(c: ModCtx): Promise<Reply | null> {
   // a product's rate / MRP / case size / GST
   if (!c.shop) { const r = await productEdit(c); if (r) return r; }
 
-  // a shop's phone, credit limit, credit days, GSTIN, address, owner, area, beat, cash only, name
-  if (c.shop) { const r = await shopEdit(c); if (r) return r; }
   return null;
 }
 
@@ -166,7 +167,7 @@ export function orderOps(text: string, products: Product[]): Op[] {
       .replace(new RegExp(`\\bfrom \\d+(?:\\.\\d+)? ?${UNIT}? (?=to )`, 'g'), ' ')
       .replace(new RegExp(`\\bnot \\d+(?:\\.\\d+)? ?${UNIT}?\\b`, 'g'), ' ')
       .replace(/\bplus (?=\d)/g, ' ')
-      .replace(/\b(order|orders|the|in|from|of|for|his|her|their|my|last|latest|previous|today|todays|existing|current|same|that|this|booked|placed|please|it|is|its|it s|to|into|as|by|only|should be|remove|delete|drop|cancel|exclude|take out|without|scrap|no need|not needed|dont want|don t want|reduce|decrease|less|minus|cut|short|add|more|extra|additional|another|increase|change|make|set|update|edit|modify|correct|instead|actually|replace|qty|quantity|wrong|mistake)\b/g, ' ')
+      .replace(/\b(order|orders|the|in|from|of|for|his|her|their|my|last|latest|previous|today|todays|existing|current|same|that|this|booked|placed|please|it|is|its|it s|to|into|as|by|only|should be|remove|delete|drop|cancel|exclude|take out|without|scrap|no need|not needed|dont want|don t want|reduce|decrease|less|minus|cut|short|add|more|extra|additional|another|increase|change|make|set|update|edit|modify|correct|instead|actually|replace|qty|quantity|wrong|mistake|was|typo|actual|cash|upi|rs|rupees|amount|amt|payment|nu|ah|changed|pcs only)\b/g, ' ')
       .replace(/\b(no|without) (?=[a-z])/g, ' ').replace(/\s+/g, ' ').trim();
     if (!cl) continue;
     const lines = parseItemLines(cl);
@@ -196,6 +197,7 @@ async function findOrder(shopId: string | undefined, role: Role): Promise<Order 
 async function orderChange(c: ModCtx, explicit: boolean): Promise<Reply | null> {
   if (!['owner', 'office', 'salesman'].includes(c.role)) return explicit ? deny() : null;
   const me = session().userId;
+  if (!c.shop && !/\b(my|last|latest|previous|that|this|same)\b/.test(c.text)) return { text: 'Which shop\'s order? Say it with the shop name, e.g. "change Murugan Stores order surf to 3 case".', tone: 'warn' };
   const order = await findOrder(c.shop?.id, c.role);
   const ops = orderOps(c.shop ? c.rest : c.textIn, c.products);
   const addOnly = ops.length > 0 && ops.every(o => o.mode === 'add');
@@ -313,6 +315,7 @@ async function paymentCancel(c: ModCtx, bounce: boolean): Promise<Reply> {
   if (!['owner', 'office', 'salesman', 'delivery'].includes(c.role)) return deny();
   const me = session().userId;
   const amt = numbersIn(c.shop ? c.rest : c.textIn).filter(n => n > 0);
+  if (!c.shop && (bounce || (!amt.length && office(c.role)))) return { text: `Which shop's ${bounce ? 'cheque' : 'payment'}? Say it with the shop name, e.g. "cancel Murugan Stores payment 2000".`, tone: 'warn' };
   const pays = (await db.payments.toArray())
     .filter(p => p.status === 'ok' && p.date >= daysFrom(bounce ? -45 : -7) && (c.shop ? p.shopId === c.shop.id : (office(c.role) ? true : p.collectedBy === me)))
     .filter(p => !bounce || p.mode !== 'cash')
@@ -351,7 +354,7 @@ async function expenseFix(c: ModCtx, cancel: boolean): Promise<Reply> {
   const vans = await db.vans.toArray();
   const t = c.text.replace(/\b(van|auto|vehicle|lorry|tempo|bike)\s*\d+\b/g, ' ');
   const fix = c.fixOf(t);
-  const del = cancel && !fix;
+  const del = cancel && (!fix || fix.old == null);
   const cat = categoryOf(c.text);
   const amt = numbersIn(c.textIn.replace(/\b(van|auto|vehicle|lorry|tempo|bike)\s*\d+\b/gi, ' '));
   const old = fix ? fix.old : amt[0];
@@ -388,7 +391,10 @@ async function expenseFix(c: ModCtx, cancel: boolean): Promise<Reply> {
 const STOCK_WORDS = ['stock', 'count', 'counted', 'physical', 'shelf', 'godown', 'actual', 'short', 'shortage', 'excess', 'missing', 'found', 'closing stock', 'physical stock'];
 async function stockFix(c: ModCtx): Promise<Reply | null> {
   const t = maskProducts(c.text, c.products);
-  if (!has(t, STOCK_WORDS)) return null;
+  // "surf stock 80", or how it is said on the floor: "surf 80 only", "red label 4 reduce", "cake 12 extra"; the godown may just say "vim 700"
+  const floor = /\b(only|reduce|excess|extra|short|shortage|missing|less|count|counted)\b/.test(t) || /\bnot \d/.test(t);
+  if (!has(t, STOCK_WORDS) && !floor && c.role !== 'godown') return null;
+  if (/\b(rate|price|mrp|size|per case|gst|order|orders|paid|payment|bill)\b/.test(t)) return null;
   if (/\?/.test(c.textIn) || /\b(how|what|which|available|enough|do we have|is there|any|check|report|list|position|value|alert|alerts|old|near|expiry|ageing|aging)\b/.test(t)) return null;
   const nums = numbersIn(c.textIn);
   if (!nums.length) return null;
@@ -403,7 +409,9 @@ async function stockFix(c: ModCtx): Promise<Reply | null> {
   if (!product) return null;
   if (!['owner', 'office', 'godown'].includes(c.role)) return deny();
   const fixNext = c.fixOf(t)?.next;
-  const said = lines[0] ? toPieces(lines[0].qty, lines[0].unit, product) : (fixNext ?? nums[0]);
+  let said = lines[0] ? toPieces(lines[0].qty, lines[0].unit, product) : (fixNext ?? nums[0]);
+  const loose = cleaned.match(new RegExp(`\\b(\\d+) (?:case|cases|cs|box) (\\d+) ?(?:pcs|pieces|nos|loose)?\\b`));
+  if (loose && lines[0]?.unit === 'case') said = Number(loose[1]) * product.caseSize + Number(loose[2]); // "10 case + 30 pcs"
   const lots = (await db.batches.where('productId').equals(product.id).toArray()).sort((a, b) => a.expiry.localeCompare(b.expiry));
   if (!lots.length) return { text: `${product.name} has no lot in stock yet. Add it with a purchase bill first.`, tone: 'warn' };
   const system = lots.reduce((a, b) => a + b.qty, 0);
@@ -441,13 +449,15 @@ const P_FIELDS: { key: 'rate' | 'mrp' | 'purchaseRate' | 'caseSize' | 'gst'; lab
   { key: 'caseSize', label: 'Pcs per case', rx: /\b(case size|pcs per case|pieces per case|pcs in a case|pieces in a case|per case|case qty|case quantity|in one case|in a case)\b/ },
   { key: 'mrp', label: 'MRP', rx: /\bmrp\b/ },
   { key: 'gst', label: 'GST %', rx: /\b(gst rate|gst percent|gst)\b/ },
-  { key: 'rate', label: 'Selling rate', rx: /\b(selling price|selling rate|sale price|sale rate|sales rate|billing rate|billing price|dealer price|retailer price|retailer rate|dealer rate|rate|price)\b/ },
+  { key: 'rate', label: 'Selling rate', rx: /\b(selling price|selling rate|sale price|sale rate|sales rate|billing rate|billing price|dealer price|retailer price|retailer rate|dealer rate|selling|rate|price)\b/ },
 ];
 async function productEdit(c: ModCtx): Promise<Reply | null> {
   const lo = ` ${c.textIn.toLowerCase().replace(/(\d),(\d{3})\b/g, '$1$2').replace(/₹|\brs\.?\s*|\binr\b|\/-/g, ' ').replace(/[^a-z0-9.%\s]/g, ' ').replace(/\.(?!\d)/g, ' ').replace(/\s+/g, ' ')} `;
   if (/\?/.test(c.textIn) || /\b(what|how much|how many|tell me|show|list|report)\b/.test(c.text)) return null;
   // mark each field phrase, longest first, so "purchase rate" is not also "rate"
-  let marked = lo;
+  // "1 case = 120 pcs", "case 48 pcs", "1 case la 5 bag" → case size
+  let marked = lo.replace(/\b1\s*(?:case|cs|box)\s*(?:=|is|la|has|contains|of|means)?\s*(?=\d+\s*(?:pcs|pieces|nos|bags?|packets?|pkts?)\b)/g, ' case size ')
+    .replace(/(?<!\d\s)\bcase\s+(?=\d+\s*(?:pcs|pieces|nos|bags?|packets?|pkts?)\b)/g, ' case size ');
   for (const f of P_FIELDS) marked = marked.replace(new RegExp(f.rx.source, 'g'), ` §${f.key}§ `);
   if (!/§/.test(marked)) return null;
   if (/%/.test(marked) && !/§gst§/.test(marked)) return null; // "5% off" is a scheme
@@ -469,7 +479,7 @@ async function productEdit(c: ModCtx): Promise<Reply | null> {
     }
     if (/^(increase|increased|raise|up|hike)$/.test(w)) { rel = 1; continue; }
     if (/^(decrease|decreased|reduce|reduced|down|cut|drop)$/.test(w)) { rel = -1; continue; }
-    if (/^(change|changed|set|update|updated|make|new|is|to|as|now|should|be|from|by|of|the|for|per|pc|pcs|piece|pieces|it|its|rs|rupees|change|correct|wrong|please|selling|pcs|percent|from|and|also|then|only|not|kg|g)$/.test(w)) {
+    if (/^(change|changed|set|update|updated|make|new|is|to|as|now|should|be|from|by|of|the|for|per|pc|pcs|piece|pieces|it|its|rs|rupees|change|correct|wrong|please|pcs|percent|bag|bags|packets|pkts|from|and|also|then|only|not|kg|g)$/.test(w)) {
       if (w === 'kg' || w === 'g') name.push(w);
       continue;
     }
@@ -506,7 +516,7 @@ async function shopEdit(c: ModCtx): Promise<Reply | null> {
   const r = ` ${c.rest.replace(/\s+/g, ' ').trim()} `;
   const lo = r.toLowerCase().replace(/(\d),(\d{3})\b/g, '$1$2');
   const val: Record<string, string | number> = {};
-  const phoneWord = /\b(phone|mobile|mob|cell|contact|whatsapp|number|no|ph)\b/.test(t);
+  const phoneWord = /\b(phone|mobile|mob|cell|contact|whatsapp|ph)\b/.test(t) || (/\b(number|no)\b/.test(t) && !has(t, PAY));
   const phone = lo.replace(/(\d)[\s-](?=\d)/g, '$1').match(/(?:\+?91)?([6-9]\d{9})\b/);
   if (phone && (phoneWord || norm(r).replace(/\d+/g, '').trim() === '')) val.phone = phone[1];
   const gst = r.match(/\b(\d{2}[a-z]{5}\d{4}[a-z][a-z0-9]z[a-z0-9])\b/i);
@@ -515,18 +525,22 @@ async function shopEdit(c: ModCtx): Promise<Reply | null> {
   if (lim && !/\bdays?\b[^0-9]*$/.test(lo.slice(0, lo.indexOf(lim[1])))) val.creditLimit = Number(lim[1]);
   const days = lo.match(/\bcredit (?:days|period)\b[^0-9]*(\d+)/) ?? lo.match(/\b(\d+)\s*days?\s*(?:credit|period)\b/) ?? (/\bcredit\b/.test(t) && !lim ? lo.match(/\b(\d+)\s*days?\b/) : null) ?? lo.match(/\bdays\b[^0-9]*(\d+)\b(?!\s*(?:rs|limit))/);
   if (days && Number(days[1]) <= 365) val.creditDays = Number(days[1]);
-  if (/\b(cash only|only cash|no credit|stop credit|block credit|stop giving credit|cash and carry|no more credit)\b/.test(t)) val.cashOnly = 'yes';
-  else if (/\b(allow credit|give credit|credit allowed|enable credit|remove cash only|open credit|start credit|credit ok|unblock)\b/.test(t)) val.cashOnly = 'no';
+  if (/\b(remove cash only|cash only (remove|cancel|off|no|not needed|cancel)|allow credit|give credit|credit allowed|enable credit|open credit|start credit|credit ok|unblock)\b/.test(t)) val.cashOnly = 'no';
+  else if (/\b(cash only|only cash|no credit|stop credit|block credit|stop giving credit|cash and carry|no more credit)\b/.test(t)) val.cashOnly = 'yes';
+  // values are read from what was typed (the shop's own words are kept), without trailing "please" / "change" words
+  const tidy = (v: string) => v.replace(/\s+(nu|ah|aa)?\s*(change|changed|make|update|please|now)\b.*$/i, '').replace(/^[\s,:-]+|[\s,.]+$/g, '').trim();
+  const title = (v: string) => v.replace(/\b\w/g, x => x.toUpperCase());
   const addr = c.rest.match(/\baddress\b(?:\s*(?:is|to|as|:|-|change to|changed to|now|should be))*\s+(.+)$/i);
-  if (addr) val.address = addr[1].trim();
-  const own = c.rest.match(/\bowner(?:\s*name)?(?:\s*(?:is|to|as|:|-|now|change to|changed to))*\s+([a-zA-Z][a-zA-Z .]{1,40})$/i);
-  if (own) val.owner = own[1].trim().replace(/\b\w/g, x => x.toUpperCase());
-  const area = c.rest.match(/\barea(?:\s*(?:is|to|as|:|-|now|change to|changed to))*\s+([a-zA-Z][a-zA-Z ]{1,30})$/i);
-  if (area) val.area = area[1].trim().replace(/\b\w/g, x => x.toUpperCase());
+  if (addr) val.address = tidy(addr[1]);
+  // "owner name is Ravi", "owner Selvam illa, Kannan" (= not Selvam, it is Kannan)
+  const own = c.textIn.match(/\bowner(?:\s*name)?\b\s*(.+)$/i);
+  if (own) { const v = tidy(own[1].split(/\b(?:not|is|to|as|it is)\b|[,:]/i).map(x => x.trim()).filter(Boolean).pop() ?? ''); if (/^[a-zA-Z][a-zA-Z .]{1,40}$/.test(v)) val.owner = title(v); }
+  const area = c.rest.match(/\barea(?:\s*(?:is|to|as|:|-|now|change to|changed to))*\s+([a-zA-Z][a-zA-Z ]{1,40})$/i);
+  if (area && tidy(area[1])) val.area = title(tidy(area[1]));
   const beat = t.match(/\bbeat(?:\s*day)?(?:\s*(?:is|to|as|now|change to|changed to))*\s+(mon|tue|wed|thu|fri|sat|sun)[a-z]*/) ?? t.match(/\b(mon|tue|wed|thu|fri|sat|sun)[a-z]* beat\b/);
   if (beat) val.beat = DAYS.find(d => d.toLowerCase().startsWith(beat[1]))!;
-  const nm = !own ? c.rest.match(/\b(?:rename(?:\s+(?:as|to))?|name\s+(?:is|to|change to|changed to|should be|as))\s+(.+)$/i) : null;
-  if (nm) val.name = nm[1].trim();
+  const nm = !own ? c.textIn.match(/\b(?:rename(?:\s+(?:as|to))?|name\s+(?:is|to|change|changed|change to|changed to|should be|as)(?:\s+to)?)\s+(.+)$/i) : null;
+  if (nm && tidy(nm[1])) val.name = tidy(nm[1]);
   const keys = Object.keys(val);
   if (!keys.length) return null;
   if (c.role === 'godown' || c.role === 'delivery') return deny();

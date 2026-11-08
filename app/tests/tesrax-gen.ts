@@ -148,6 +148,7 @@ export function generate(facts: Facts): Case[] {
   for (let i = 0; i < 520; i++) {
     const [words, cat] = pick(EXP); const a = pick([50, 80, 120, 250, 400, 850, 1500, 2500, 3200, 12000]); const t = pick(EXP_T);
     if (cat === 'Salary' && t !== EXP_T[0] && t !== EXP_T[1]) continue;
+    if ((t === EXP_T[8] || t === EXP_T[9]) && !['Fuel', 'Toll', 'Van repair', 'Batta'].includes(cat)) continue; // "auto 2 rent" is van hire
     both('expense', t(pick(words), String(a)), `expense:${a}:${cat}`, pick(['owner', 'office', 'delivery'] as Role[]));
   }
 
