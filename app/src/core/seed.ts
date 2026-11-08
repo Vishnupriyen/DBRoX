@@ -49,21 +49,21 @@ export async function seedDemo(tenantId = 'demo') {
   const itc = co('ITC Limited', 'ITC', 'AAACI5950L');
   const brit = co('Britannia Industries', 'BRT', 'AAACB2894G');
 
-  const prod = (c: Company, name: string, nameTa: string, code: string, hsn: string, gst: number, mrp: number, rate: number, caseSize: number, aliases: string[], focus = false) =>
-    cs.put<Product>('products', { companyId: c.id, name, nameTa, code, hsn, gst, mrp, rate, purchaseRate: Math.round(rate * 0.93 * 100) / 100, caseSize, aliases, focus, active: true });
+  const prod = (c: Company, name: string, code: string, hsn: string, gst: number, mrp: number, rate: number, caseSize: number, aliases: string[], focus = false) =>
+    cs.put<Product>('products', { companyId: c.id, name, code, hsn, gst, mrp, rate, purchaseRate: Math.round(rate * 0.93 * 100) / 100, caseSize, aliases, focus, active: true });
   const P = [
-    prod(hul, 'Surf Excel Easy Wash 1kg', 'சர்ஃப் எக்செல் 1கி', '21834', '34022090', 18, 140, 112, 12, ['surf', 'surf excel', 'surf 1kg'], true),
-    prod(hul, 'Lifebuoy Soap 125g', 'லைஃப்பாய் சோப் 125கி', '21110', '34011190', 5, 38, 31, 72, ['lifebuoy', 'lifeboy']),
-    prod(hul, 'Clinic Plus Shampoo Sachet (16 pcs)', 'கிளினிக் பிளஸ் ஷாம்பு', '21455', '33051090', 5, 32, 26.5, 48, ['clinic plus', 'clinic']),
-    prod(hul, 'Red Label Tea 250g', 'ரெட் லேபிள் டீ 250கி', '21901', '09024020', 5, 145, 124, 40, ['red label', 'tea']),
-    prod(hul, 'Vim Bar 200g', 'விம் பார் 200கி', '21330', '34022090', 18, 25, 20.5, 60, ['vim']),
-    prod(itc, 'Aashirvaad Atta 5kg', 'ஆசீர்வாத் அட்டா 5கி', 'A5K', '11010000', 5, 290, 255, 4, ['aashirvaad', 'atta']),
-    prod(itc, 'Sunfeast Dark Fantasy 75g', 'சன்ஃபீஸ்ட் டார்க் ஃபேண்டஸி', 'SDF75', '19053100', 5, 40, 33, 48, ['dark fantasy', 'sunfeast']),
-    prod(itc, 'Bingo Mad Angles 66g', 'பிங்கோ மேட் ஆங்கிள்ஸ்', 'BMA66', '21069099', 5, 20, 16.2, 60, ['bingo', 'mad angles'], true),
-    prod(itc, 'Classmate Notebook 172 pages', 'கிளாஸ்மேட் நோட்டு', 'CM172', '48202000', 18, 60, 48, 24, ['classmate', 'notebook']),
-    prod(brit, 'Good Day Cashew 75g', 'குட் டே முந்திரி 75கி', 'GDC75', '19053100', 5, 20, 16.4, 96, ['good day', 'goodday']),
-    prod(brit, 'Marie Gold 250g', 'மேரி கோல்ட் 250கி', 'MG250', '19059090', 5, 40, 33, 36, ['marie', 'marie gold']),
-    prod(brit, 'Britannia Cake Fruit 60g', 'பிரிட்டானியா கேக்', 'BCF60', '19059020', 5, 15, 12.3, 72, ['cake', 'fruit cake']),
+    prod(hul, 'Surf Excel Easy Wash 1kg', '21834', '34022090', 18, 140, 112, 12, ['surf', 'surf excel', 'surf 1kg'], true),
+    prod(hul, 'Lifebuoy Soap 125g', '21110', '34011190', 5, 38, 31, 72, ['lifebuoy', 'lifeboy']),
+    prod(hul, 'Clinic Plus Shampoo Sachet (16 pcs)', '21455', '33051090', 5, 32, 26.5, 48, ['clinic plus', 'clinic']),
+    prod(hul, 'Red Label Tea 250g', '21901', '09024020', 5, 145, 124, 40, ['red label', 'tea']),
+    prod(hul, 'Vim Bar 200g', '21330', '34022090', 18, 25, 20.5, 60, ['vim']),
+    prod(itc, 'Aashirvaad Atta 5kg', 'A5K', '11010000', 5, 290, 255, 4, ['aashirvaad', 'atta']),
+    prod(itc, 'Sunfeast Dark Fantasy 75g', 'SDF75', '19053100', 5, 40, 33, 48, ['dark fantasy', 'sunfeast']),
+    prod(itc, 'Bingo Mad Angles 66g', 'BMA66', '21069099', 5, 20, 16.2, 60, ['bingo', 'mad angles'], true),
+    prod(itc, 'Classmate Notebook 172 pages', 'CM172', '48202000', 18, 60, 48, 24, ['classmate', 'notebook']),
+    prod(brit, 'Good Day Cashew 75g', 'GDC75', '19053100', 5, 20, 16.4, 96, ['good day', 'goodday']),
+    prod(brit, 'Marie Gold 250g', 'MG250', '19059090', 5, 40, 33, 36, ['marie', 'marie gold']),
+    prod(brit, 'Britannia Cake Fruit 60g', 'BCF60', '19059020', 5, 15, 12.3, 72, ['cake', 'fruit cake']),
   ];
   // stock: two batches each, older one first
   P.forEach((p, i) => {

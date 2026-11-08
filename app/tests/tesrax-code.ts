@@ -89,3 +89,17 @@ export async function converse(msgs: string[], run: (said: string, last?: Reply)
   }
   return r;
 }
+
+// Launch is English only: Tanglish and Tamil-script messages were retired from every test set (8 Nov 2026).
+const TANGLISH = new Set(('ku la le kku ukku kitta kita kitte venum vendum veenum venam venaam vendam vendaam venda naalai nalaiku innaiku inniku indru baaki baki bakki ' +
+  'evlo evvalavu ethana yevlo irukka iruka irukkaa irukku iruku irukkudhu illa illai alla ila vangitten vaangitten vangiten vaangiten vanginen vaanginen vangittom ' +
+  'anuppunga anupunga anuppu anupu kudunga kodunga podunga podu pudhu puthu kadai kada pannanum pannu pannalam pannunga pannidu panniru panni pannen panniten ' +
+  'pannitom panninanga maathu mathu maathunga mathunga maathidu maathanum aakku aakunga aakkunga akku aaku thappu thapu tappu eduthudu eduthudunga edunga eduthu ' +
+  'eduthuru kammi kammiya korai kuraichu jaasthi jasthi adhigam serthu sethu serthudu dhaan thaan dan vaadagai vadagai aaga pogudhu enna panna mudiyum enga poganum ' +
+  'panam varathu pogarathu paakanum kaatu kaattu kaatunga kaattunga katu kaminga kudu ellam ellaam thirumbi thirumba eduthen eduthom aayiduchu ayiduchu aachu achu ' +
+  'podhum pothum ippo ipo avangalukku avarukku mela vanthana vandhana vanthaanga kuduthaanga kuduthanga kuduthar kudutha koduthanga koduthar kodutha kudthanga ' +
+  'kuduthutaanga kuduthutanga vandhuchu vanthuchu vaangura vangura onnu rendu randu moonu naalu anju aaru pathu ah nu anna da ji kooli sari seri oru thookku jasti').split(' '));
+export function isTanglish(text: string) {
+  if (/[\u0B80-\u0BFF]/.test(text)) return true;
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).some(w => TANGLISH.has(w));
+}

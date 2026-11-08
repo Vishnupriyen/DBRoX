@@ -43,13 +43,13 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
         </div>
         <table>
           <thead>
-            <tr><th>#</th><th>Item / பொருள்</th><th>HSN</th><th className="r">Qty</th><th className="r">Free</th><th className="r">MRP</th><th className="r">Rate</th><th className="r">Disc</th><th className="r">Taxable</th><th className="r">GST%</th><th className="r">Amount</th></tr>
+            <tr><th>#</th><th>Item</th><th>HSN</th><th className="r">Qty</th><th className="r">Free</th><th className="r">MRP</th><th className="r">Rate</th><th className="r">Disc</th><th className="r">Taxable</th><th className="r">GST%</th><th className="r">Amount</th></tr>
           </thead>
           <tbody>
             {invoice.lines.map((l, i) => (
               <tr key={i}>
                 <td>{i + 1}</td>
-                <td>{l.name}{l.nameTa ? <div style={{ fontSize: 11 }}>{l.nameTa}</div> : null}<div style={{ fontSize: 10, color: '#555' }}>{l.batches.map(b => `${b.batch} exp ${b.expiry}`).join(', ')}</div></td>
+                <td>{l.name}<div style={{ fontSize: 10, color: '#555' }}>{l.batches.map(b => `${b.batch} exp ${b.expiry}`).join(', ')}</div></td>
                 <td>{l.hsn}</td><td className="r">{l.qty}</td><td className="r">{l.freeQty || ''}</td><td className="r">{l.mrp}</td>
                 <td className="r">{l.rate.toFixed(2)}</td><td className="r">{l.discount ? l.discount.toFixed(2) : ''}</td>
                 <td className="r">{l.taxable.toFixed(2)}</td><td className="r">{l.gst}</td><td className="r">{l.total.toFixed(2)}</td>
@@ -60,9 +60,9 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, gap: 12 }}>
           <div style={{ flex: 1 }}>
             <div>Amount in words: <b>{rupeesInWords(invoice.total)}</b></div>
-            {invoice.schemeSaving > 0 && <div>Scheme savings / சேமிப்பு: <b>₹{invoice.schemeSaving.toFixed(2)}</b></div>}
-            <div>Previous balance / முந்தைய நிலுவை: ₹{oldBal.toLocaleString('en-IN')}</div>
-            <div>Total due / மொத்த நிலுவை: <b>₹{(oldBal + invoice.total).toLocaleString('en-IN')}</b></div>
+            {invoice.schemeSaving > 0 && <div>Scheme savings: <b>₹{invoice.schemeSaving.toFixed(2)}</b></div>}
+            <div>Previous balance: ₹{oldBal.toLocaleString('en-IN')}</div>
+            <div>Total due: <b>₹{(oldBal + invoice.total).toLocaleString('en-IN')}</b></div>
           </div>
           <table style={{ width: 220 }}>
             <tbody>

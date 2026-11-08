@@ -37,6 +37,5 @@ describe('understanding', () => {
     const s = findShopInText(shops, 'selvam return 2 lifebuoy');
     expect((s.shop as { name: string }).name).toBe('Selvam Kirana');
     expect(parseItemLines(s.rest.replace(/return/i, ''))[0]).toMatchObject({ qty: 2, productText: 'lifebuoy' });
-    expect(parseItemLines('5 கேஸ் சர்ஃப், 10 லைஃப்பாய்').map(l => [l.qty, l.unit])).toEqual([[5, 'case'], [10, 'pcs']]);
   });
 });

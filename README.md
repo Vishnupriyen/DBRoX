@@ -2,7 +2,7 @@
 
 Distributor app for FMCG distributors in Tamil Nadu, powered by the **RoX Proprietary Engine**.
 
-**Send. Say. Approve.** Send a photo, PDF, Excel or bank statement, say what you want (Tamil or English),
+**Send. Say. Approve.** Send a photo, PDF, Excel or bank statement, say what you want in plain English,
 check the Excel-style table, fix any red cell, tap ✓. Nothing changes without ✓, every number is checked by
 code, and every approval can be undone.
 

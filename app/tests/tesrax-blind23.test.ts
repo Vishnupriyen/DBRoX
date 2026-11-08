@@ -1,11 +1,9 @@
 // TESRAX BLIND SETS 2 & 3 — 600 phrases written independently (from the demo world and the result codes only, never
 // seeing TESRAX's code or training set): set 2 is changes to saved things, set 3 a whole working day. Same codes as
 // tesrax-code.ts, same saves made today as in tesrax-5000 (the payments and expenses the corrections refer to).
-// First run: set 2 214/300 (71.3%), set 3 247/300 (82.3%). TESRAX learned the rest (Tanglish verbs aakku/maathu/
-// venam/kammi/dhaan/irukku, arrows, "1500 ah 1800 nu", lakh, Tamil numbers, floor stock talk, bounce/reversal words,
+// First run: set 2 214/300 (71.3%), set 3 247/300 (82.3%). TESRAX learned the rest (arrows, lakh, floor stock talk, bounce/reversal words,
 // "N only" corrections…). 24 expectations were changed after review because TESRAX was right for this world: people
-// who saved nothing today get "nothing to undo"; Ravi may cancel the Velan cash he collected; "order … pannu" books an
-// order; owner-only screens and the Outstanding/Cash/Load screens follow the earlier owner decisions; scheme questions
+// who saved nothing today get "nothing to undo"; Ravi may cancel the Velan cash he collected; owner-only screens and the Outstanding/Cash/Load screens follow the earlier owner decisions; scheme questions
 // get the running-schemes table (t:Schemes); bare "vim 700 pcs" from the owner is unclear (ask).
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll } from 'vitest';

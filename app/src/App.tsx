@@ -3,7 +3,7 @@ import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide
 import { db, setSession, today } from './core/db';
 import { seedDemo } from './core/seed';
 import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
-import { getLang, setLang, t } from './core/i18n';
+import { t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
 import { TesraxCore } from './ui/TesraxCore';
@@ -39,15 +39,15 @@ import { DialogHost, notify } from './ui/dialog';
 import type { Settings, Staff } from './core/types';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
-const TITLE: Partial<Record<Page, [string, string]>> = {
-  'orders-received': ['Orders received', 'வந்த ஆர்டர்கள்'], verify: ['Picked — to verify', 'சரிபார்க்க'], billed: ['Billed', 'பில் ஆனது'],
-  newshops: ['New shops', 'புதிய கடைகள்'], targets: ['Targets', 'இலக்கு'], beat: ["Today's beat", 'இன்றைய பீட்'], myday: ['My day', 'என் நாள்'], newshop: ['New shop', 'புதிய கடை'], 'orders-excel': ['Orders Excel', 'ஆர்டர் Excel'],
-  stockin: ['Purchases / stock in', 'கொள்முதல்'], stock: ['Stock position', 'ஸ்டாக் நிலை'], damages: ['Damages', 'சேதம்'], ageing: ['Ageing', 'பழைய ஸ்டாக்'], 'stock-reports': ['Stock reports', 'ஸ்டாக் அறிக்கை'],
-  plan: ['Delivery plan', 'டெலிவரி திட்டம்'], live: ['Live vans', 'வண்டிகள் இப்போது'], status: ['Delivery status', 'டெலிவரி நிலை'], trips: ['Trip reports', 'டிரிப் அறிக்கை'], load: ['Load vans', 'வண்டி ஏற்று'], print: ['Load sheet', 'லோடு ஷீட்'], trip: ['My trip', 'என் டிரிப்'], pick: ['Pick orders', 'ஆர்டர் எடு'],
-  collect: ['Collect', 'வசூல்'], outstanding: ['Outstanding', 'நிலுவை'], cash: ['Cash with staff', 'ஊழியர்களிடம் பணம்'], cheques: ['Cheques & UPI', 'செக் & UPI'],
-  bank: ['Bank', 'வங்கி'], expenses: ['Expenses', 'செலவு'], pnl: ['P&L', 'லாப நஷ்டம்'], cashflow: ['Cash flow', 'பண ஓட்டம்'], vans: ['Vans & drivers', 'வண்டிகள்'], export: ['Export', 'ஏற்றுமதி'], reports: ['Reports', 'அறிக்கை'],
-  gst: ['GST', 'GST'], today: ['Today', 'இன்று'], salary: ['Salary', 'சம்பளம்'], staff: ['Staff', 'ஊழியர்கள்'], claims: ['Claims', 'கிளைம்'], dayclose: ['Day close', 'நாள் முடிவு'], bills: ['Bills', 'பில்கள்'],
-  'lite-shops': ['Shop list', 'கடை பட்டியல்'], 'lite-plan': ["Today's shops", 'இன்றைய கடைகள்'], 'lite-delivery': ['Delivery', 'டெலிவரி'], 'lite-collect': ['Collection', 'வசூல்'], 'lite-export': ["Day's Excel", 'இன்றைய Excel'], more: ['More', 'மேலும்'], billing: ['Plan & billing', 'திட்டம்'],
+const TITLE: Partial<Record<Page, string>> = {
+  'orders-received': 'Orders received', verify: 'Picked — to verify', billed: 'Billed',
+  newshops: 'New shops', targets: 'Targets', beat: "Today's beat", myday: 'My day', newshop: 'New shop', 'orders-excel': 'Orders Excel',
+  stockin: 'Purchases / stock in', stock: 'Stock position', damages: 'Damages', ageing: 'Ageing', 'stock-reports': 'Stock reports',
+  plan: 'Delivery plan', live: 'Live vans', status: 'Delivery status', trips: 'Trip reports', load: 'Load vans', print: 'Load sheet', trip: 'My trip', pick: 'Pick orders',
+  collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
+  bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
+  gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
+  'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -70,8 +70,6 @@ export default function App() {
     void refreshLicence(); const id = setInterval(() => void refreshLicence(), 60000); // dates are re-checked every minute, even offline
     return () => { window.removeEventListener('hanubix:licence', on); clearInterval(id); };
   }, [me]);
-  const [langTick, setLangTick] = useState(0);
-  const lang = getLang();
 
   const loadMe = async (userId: string) => {
     const s = await db.staff.get(userId);
@@ -101,7 +99,6 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); window.removeEventListener('dbrox:logout', kicked); };
   }, []);
 
-  const toggleLang = () => { setLang(getLang() === 'en' ? 'ta' : 'en'); setLangTick(x => x + 1); };
 
   if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
@@ -111,34 +108,34 @@ export default function App() {
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
     setPage('home'); setModule(null);
-  }} lang={lang} onLang={toggleLang} /></>;
+  }} /></>;
 
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
   const home = () => { setPage('home'); };
   const go = (p: string) => { setPage((ALIAS[p] ?? p) as Page); setRox(false); };
-  const title = TITLE[page]?.[lang === 'ta' ? 1 : 0];
+  const title = TITLE[page];
   const openRox = () => { sound.wake(); setRox(true); };
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
-  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div><button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     switch (page) {
       case 'home': return <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
       case 'orders-received': return <OrdersReceived />;
       case 'verify': return <Approve go={go} />;
-      case 'billed': case 'bills': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="bills" />;
+      case 'billed': case 'bills': return <More role={me.role} onLogout={logout} initial="bills" />;
       case 'newshops': return <NewShops />;
       case 'targets': return <Targets />;
       case 'newshop': return <NewShop onDone={home} />;
-      case 'beat': return me.role === 'salesman' ? <Beat lang={lang} /> : <BeatBuilder />;
+      case 'beat': return me.role === 'salesman' ? <Beat /> : <BeatBuilder />;
       case 'myday': return <MyDay />;
       case 'stockin': return <StockIn onRox={openRox} />;
       case 'stock': return <StockPosition />;
       case 'damages': return <Damages />;
       case 'ageing': return <Ageing />;
       case 'stock-reports': return <StockReports />;
-      case 'claims': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="claims" />;
+      case 'claims': return <More role={me.role} onLogout={logout} initial="claims" />;
       case 'plan': return <Plan onDone={home} />;
       case 'live': return <Live />;
       case 'status': return <DeliveryStatus />;
@@ -161,7 +158,7 @@ export default function App() {
       case 'gst': return <Gst go={go} />;
       case 'today': return <Today />;
       case 'salary': return <Salary />;
-      case 'staff': return <More role={me.role} onLogout={logout} onLang={toggleLang} initial="staff" />;
+      case 'staff': return <More role={me.role} onLogout={logout} initial="staff" />;
       case 'dayclose': return <DayClose go={p => setPage(p)} />;
       case 'lite-shops': return <LiteShops />;
       case 'lite-plan': return <LitePlan onDone={home} />;
@@ -170,19 +167,18 @@ export default function App() {
       case 'lite-export': return <LiteExport />;
       case 'orders-excel': return <MyDay />;
       case 'billing': return <Billing role={me.role} />;
-      case 'more': return <More role={me.role} onLogout={logout} onLang={toggleLang} onPlan={() => setPage('billing')} />;
+      case 'more': return <More role={me.role} onLogout={logout} onPlan={() => setPage('billing')} />;
     }
   };
 
   return (
-    <div className="app" key={langTick}>
+    <div className="app">
       <GradDefs />
       <header className="top">
         {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
-        <button className="lang" onClick={toggleLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
@@ -205,10 +201,10 @@ export default function App() {
       )}
 
       <nav className="tabs">
-        <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{lang === 'ta' ? 'முகப்பு' : 'Home'}</button>
+        <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{'Home'}</button>
         {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
         <button className="fab" onClick={openRox} aria-label="TESRAX"><TesraxCore size={64} interactive={false} /></button>
-        <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{lang === 'ta' ? 'மேலும்' : 'More'}</button>
+        <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{'More'}</button>
       </nav>
     </div>
   );
@@ -233,7 +229,7 @@ function GradDefs() {
   return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
 }
 
-function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string) => void; lang: 'en' | 'ta'; onLang: () => void }) {
+function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
@@ -253,7 +249,7 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
 
   if (newFirm) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? '60 நாள் இலவச சோதனை' : 'Start your 60-day free trial'}</div></div>
+      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Start your 60-day free trial'}</div></div>
       <div className="stack">
         <div className="field"><label>Firm name</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
@@ -269,7 +265,7 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
 
   if (firms) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{lang === 'ta' ? 'எந்த நிறுவனம்?' : 'Which firm?'}</div></div>
+      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
       <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
@@ -279,7 +275,6 @@ function Login({ onIn, lang, onLang }: { onIn: (tenantId: string, userId: string
       <div className="login-hero">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div className="mark">Hanubix<sup>™</sup></div>
-          <button className="lang" onClick={onLang}>{lang === 'en' ? 'தமிழ்' : 'EN'}</button>
         </div>
         <div className="powered">Powered by <b>TESRAX</b></div>
         <div className="tag" style={{ margin: '10px 0 0' }}>{t('appTagline')}</div>

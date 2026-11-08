@@ -29,7 +29,7 @@ export async function handle(said: string, files: File[], ctx?: Context): Promis
 // The message is cut at "," "." "?" "/" "+" "and" "also" "then"; each piece is tried on its own (nothing saved).
 // A piece that means nothing alone ("24 good day", "it is 300", "main road") belongs to the piece before it;
 // a piece that needs the shop said before gets it ("Murugan paid 500, send 2 case surf").
-const CONT = /\b(entry|mistake|wrong entry|no|not|its|it s|it is|it was|it|is|was|for|to|the|please|sorry|make|make it|instead|amount|rs|rupees|only|actually|actual|correct|wrong|da|sir|ok|this|that|one|of|in|wait|now|should be|van|auto|right|then|so)\b/g;
+const CONT = /\b(entry|mistake|wrong entry|no|not|its|it s|it is|it was|it|is|was|for|to|the|please|sorry|make|make it|instead|amount|rs|rupees|only|actually|actual|correct|wrong|sir|ok|this|that|one|of|in|wait|now|should be|van|auto|right|then|so)\b/g;
 let ANCHORS: string[] | null = null;
 const VERB = /^(cancel|delete|remove|change|edit|update|undo)\b/;
 const CARRY = /\b(cancel|delete|remove|count|counted)\b/;
@@ -71,7 +71,7 @@ export async function splitIntents(said: string): Promise<string[]> {
   let asked = false; // a "is 96 correct?" question was folded into the next piece
   for (let seg of segs) {
     if (lend) { seg = `${lend} ${seg}`; lend = ''; }
-    const pre = norm(seg).match(/^(.+?)\s+\d+\s+(?:correct|right|sari|ok)\s+(?:ah|aa|a)$/);
+    const pre = norm(seg).match(/^(.+?)\s+\d+\s+(?:correct|right|ok)\s*\?*$/);
     if (pre && bestProduct(products, pre[1]).product) { lend = pre[1]; asked = true; continue; }
     const n = norm(seg);
     const prev = groups[groups.length - 1];
@@ -87,10 +87,10 @@ export async function splitIntents(said: string): Promise<string[]> {
       if (actionable(rr) && (!prev.sig || sig(rr) === prev.sig)) { prev.parts.push(seg); prev.sig ??= sig(rr); continue; }
     }
     let r = await probe(seg);
-    // the shop said before, when the piece alone is not a table of its own ("credit days 15", "his bal evlo", "2 case surf")
+    // the shop said before, when the piece alone is not a table of its own ("credit days 15", "his balance", "2 case surf")
     if (prev?.shop && !shop && !r.proposal) { const w = `${prev.shop.name} ${seg}`; const r2 = await probe(w); if (r2.proposal || (r2.table && !actionable(r)) || (r2.table && /Outstanding/.test(r2.table.name))) { r = r2; used = w; } }
     if (!actionable(r) && shop && /\d/.test(n) && prevText) {
-      const lent = bestProduct(products, norm(prevText).replace(/\b(stock|how much|how many|is|available|evlo|irukku)\b/g, ' ').trim()).product;
+      const lent = bestProduct(products, norm(prevText).replace(/\b(stock|how much|how many|is|available)\b/g, ' ').trim()).product;
       if (lent) { const w = `${seg} ${lent.name}`; const r4 = await probe(w); if (actionable(r4)) { r = r4; used = w; } }
     }
     if (!actionable(r) && prev?.verb && !VERB.test(n) && !CARRY.test(n)) { const w = `${prev.verb} ${seg}`; const r3 = await probe(w); if (actionable(r3)) { r = r3; used = w; } }
@@ -112,11 +112,11 @@ export async function splitIntents(said: string): Promise<string[]> {
 
 // ------------------------------------------------------------------------------------------------------------
 // FOLLOW-UPS to the table just shown
-const YES_W = new Set(['yes', 'ok', 'okay', 'save', 'confirm', 'confirmed', 'correct', 'done', 'fine', 'go', 'ahead', 'approve', 'approved', 'sari', 'seri', 'right', 'perfect', 'good', 'it', 'that', 'this', 'its', 's', 'is', 'please', 'now', 'da', 'sir', 'both', 'all', 'cancel', 'proceed', 'super', 'yeah', 'yep', 'k', 'thats', 'them']);
-const YES_STRONG = /\b(yes|ok|okay|save|confirm|confirmed|correct|done|fine|go ahead|approve|approved|sari|seri|right|perfect|proceed|yeah|yep|k)\b/;
-const NO_W = new Set(['no', 'nope', 'cancel', 'leave', 'drop', 'forget', 'wrong', 'dont', 'don', 't', 'do', 'not', 'save', 'needed', 'need', 'skip', 'discard', 'ignore', 'it', 'that', 'this', 'please', 'now', 'da', 'sir', 'all', 'both', 'never', 'mind', 'nevermind', 'scrap', 'delete']);
+const YES_W = new Set(['yes', 'ok', 'okay', 'save', 'confirm', 'confirmed', 'correct', 'done', 'fine', 'go', 'ahead', 'approve', 'approved', 'right', 'perfect', 'good', 'it', 'that', 'this', 'its', 's', 'is', 'please', 'now', 'sir', 'both', 'all', 'cancel', 'proceed', 'super', 'yeah', 'yep', 'k', 'thats', 'them']);
+const YES_STRONG = /\b(yes|ok|okay|save|confirm|confirmed|correct|done|fine|go ahead|approve|approved|right|perfect|proceed|yeah|yep|k)\b/;
+const NO_W = new Set(['no', 'nope', 'cancel', 'leave', 'drop', 'forget', 'wrong', 'dont', 'don', 't', 'do', 'not', 'save', 'needed', 'need', 'skip', 'discard', 'ignore', 'it', 'that', 'this', 'please', 'now', 'sir', 'all', 'both', 'never', 'mind', 'nevermind', 'scrap', 'delete']);
 const NO_STRONG = /\b(no|nope|cancel|leave|drop|forget|skip|discard|ignore|scrap|never mind|nevermind|dont save|don t save|do not save)\b/;
-const FILL = /\b(no|not|its|it s|it is|it was|it|is|was|yes|for|to|the|shop|please|sorry|make|make it|change|change to|change it to|changed to|instead|amount|rs|rupees|only|actually|correct|wrong|da|sir|ok|oh|this|that|one|order|payment|expense|bill|of|in|wait|now|total|plan|so|then|also|just|actual)\b/g;
+const FILL = /\b(no|not|its|it s|it is|it was|it|is|was|yes|for|to|the|shop|please|sorry|make|make it|change|change to|change it to|changed to|instead|amount|rs|rupees|only|actually|correct|wrong|sir|ok|oh|this|that|one|order|payment|expense|bill|of|in|wait|now|total|plan|so|then|also|just|actual)\b/g;
 
 const allIn = (t: string, set: Set<string>) => t.split(' ').every(w => set.has(w));
 
@@ -130,7 +130,7 @@ async function followUp(said: string, last: Reply): Promise<Reply | null> {
   const staff = (await db.staff.toArray()).map(s => norm(s.name.split(' ')[0]));
   const p = last.proposal;
   const curShopId = String(p?.fields.find(x => x.key === 'shopId')?.value ?? '');
-  // every shop named ("velan illa selvam", "not velan, kumar mart"); the one that is not the current one is meant
+  // every shop named ("not velan, selvam", "not velan, kumar mart"); the one that is not the current one is meant
   const named = shops.filter(s => findShopInText([s], textIn).shop);
   const others = named.filter(s => s.id !== curShopId);
   const shop = named.length === 1 ? named[0] : others.length === 1 ? others[0] : undefined;
@@ -181,7 +181,7 @@ async function followUp(said: string, last: Reply): Promise<Reply | null> {
     case 'expense': case 'expenseFix': {
       if (shop) return null;
       const cat = categoryOf(t);
-      const vocab = [...W.expense, ...W.expense.flatMap(w => w.split(' ')), 'gate', 'driver', 'office', 'godown', 'shop', 'van', 'auto', 'vehicle', 'bunk', 'unloading', 'kooli', 'coolie', 'plan', 'bill', 'charges', 'category', 'type', 'under', 'head'].map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const vocab = [...W.expense, ...W.expense.flatMap(w => w.split(' ')), 'gate', 'driver', 'office', 'godown', 'shop', 'van', 'auto', 'vehicle', 'bunk', 'unloading', 'coolie', 'plan', 'bill', 'charges', 'category', 'type', 'under', 'head'].map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
       const words = restBare.replace(new RegExp(`\\b(${vocab.join('|')})\\b`, 'g'), ' ').replace(/\s+/g, ' ').trim();
       if (words.replace(/\b\d+(?:\.\d+)?\b/g, '').trim()) return null;
       const newAmount = amountIn(words);
@@ -205,7 +205,7 @@ async function followUp(said: string, last: Reply): Promise<Reply | null> {
 
 /** "add 2 vim", "remove surf", "make it 3 case" (the last item), "24 good day" → the order's new rows */
 async function applyOrderFollow(p: Proposal, textIn: string, products: Product[]): Promise<Row[] | null> {
-  const t = norm(textIn).replace(/\b(please|only|now|da|sir|ok)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const t = norm(textIn).replace(/\b(please|only|now|sir|ok)\b/g, ' ').replace(/\s+/g, ' ').trim();
   const schemes = await db.schemes.toArray();
   const byId = new Map(products.map(x => [x.id, x]));
   const rows = p.rows.map(r => ({ ...r }));

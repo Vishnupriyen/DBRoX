@@ -69,7 +69,6 @@ export interface Company extends Base {
 export interface Product extends Base {
   companyId: string;
   name: string;
-  nameTa?: string;
   code?: string;
   hsn: string;
   gst: number;
@@ -155,7 +154,6 @@ export interface Order extends Base {
 export interface InvoiceLine {
   productId: string;
   name: string;
-  nameTa?: string;
   hsn: string;
   qty: number;
   freeQty: number;

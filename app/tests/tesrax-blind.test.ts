@@ -4,7 +4,7 @@
 // because TESRAX was right: 'day close' and 'salary sheet' typed by OFFICE get "that's the owner's screen" (owner-only
 // screens), and 'outstanding list' opens the Outstanding screen (the owner's choice).
 // TESRAX TRAINING SET — every way a distributor's team is likely to type a request, and what TESRAX must do.
-// Short forms, typos, any word order, rupee signs, Tanglish. Each line is a permanent test: once TESRAX learns a
+// Short forms, typos, any word order, rupee signs. Each line is a permanent test: once TESRAX learns a
 // phrase it can never forget it. Add a line whenever a real user is misunderstood.
 //
 // Expected result codes:

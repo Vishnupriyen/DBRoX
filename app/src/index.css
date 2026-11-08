@@ -1,7 +1,6 @@
 /* Hanubix design system — the Gostamo family look (locked).
    Pure black ground, #0E1016 cards with one hairline, one signature gradient (teal → pale → amber) used only
-   for the TESRAX core, the wordmark, primary actions and hero numbers. Geist for everything Latin, Noto Sans
-   Tamil / Anek Tamil for Tamil. No solid orange anywhere. Single theme by design (works in sunlight with
+   for the TESRAX core, the wordmark, primary actions and hero numbers. Geist for everything. No solid orange anywhere. Single theme by design (works in sunlight with
    high-contrast white text; easy on the eyes in the godown at night). Legacy token names are aliases. */
 
 :root {
@@ -52,8 +51,8 @@
   --chilli: var(--bad);
   --accent: url(#hg);
   /* type */
-  --display: "Geist", "Anek Tamil", "Noto Sans Tamil", system-ui, sans-serif;
-  --body: "Geist", "Noto Sans Tamil", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --display: "Geist", system-ui, sans-serif;
+  --body: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* shape */
   --r: 16px;
   --r-lg: 20px;
@@ -248,7 +247,7 @@ table.grid tr:last-child td { border-bottom: 0; }
 .sticky-foot { position: sticky; bottom: 0; background: var(--card); border-top: 1px solid var(--line); margin: 0 -16px -20px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center; }
 
 /* bill */
-.bill { background: #fff; color: #000; padding: 16px; font-size: 12px; font-family: "Noto Sans", "Noto Sans Tamil", sans-serif; }
+.bill { background: #fff; color: #000; padding: 16px; font-size: 12px; font-family: "Noto Sans", sans-serif; }
 .bill table { width: 100%; border-collapse: collapse; }
 .bill th, .bill td { border: 1px solid #888; padding: 3px 5px; }
 .bill th { background: #eee; }

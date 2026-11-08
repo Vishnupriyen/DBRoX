@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, Languages, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
+import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
 import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
-import { getLang, inr, setLang, t } from '../core/i18n';
+import { inr, t } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
 import { ENV_SERVER, syncNow } from '../core/sync';
@@ -14,7 +14,7 @@ import { errorLog } from './Safety';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
 
-export function More({ role, onLogout, onLang, initial, onPlan }: { role: Role; onLogout: () => void; onLang: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
+export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   const back = <button className="btn small" style={{ marginBottom: 10 }} onClick={() => setPage('menu')}>← {t('more')}</button>;
@@ -28,7 +28,6 @@ export function More({ role, onLogout, onLang, initial, onPlan }: { role: Role; 
   if (page === 'claims') return <>{back}<Claims /></>;
   return (
     <div className="list">
-      <button className="item" onClick={() => { setLang(getLang() === 'en' ? 'ta' : 'en'); onLang(); }}><Languages /> <span className="grow">தமிழ் / English</span><span className="badge">{getLang() === 'en' ? 'English' : 'தமிழ்'}</span></button>
       {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
       {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}

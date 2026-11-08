@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Paperclip, Mic, Send, Printer, Undo2 } from 'lucide-react';
 import { handle, type Reply } from '../core/engine';
 import { undoBatch } from '../core/db';
-import { getLang, t } from '../core/i18n';
+import { t } from '../core/i18n';
 import { ApproveTable, ReadTable } from './ApproveTable';
 import { PrintBill } from './PrintBill';
 import type { Invoice, Role } from '../core/types';
@@ -66,7 +66,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
     const Rec = W.SpeechRecognition ?? W.webkitSpeechRecognition;
     if (!Rec) { void notify('Voice typing not available here', 'Use the microphone key on your phone keyboard instead.'); return; }
     const r = new Rec();
-    r.lang = getLang() === 'ta' ? 'ta-IN' : 'en-IN';
+    r.lang = 'en-IN';
     r.interimResults = false;
     r.onresult = (e: SREvent) => setText(x => (x ? x + ' ' : '') + e.results[0][0].transcript);
     r.onend = () => setListening(false);
@@ -90,15 +90,14 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
 
   const fresh = msgs.length === 0 && !busy;
   const state: CoreState = busy ? 'thinking' : ready ? 'ready' : (listening || text.length > 0) ? 'listening' : 'idle';
-  const ta = getLang() === 'ta';
-  const status = busy ? (ta ? 'செய்கிறேன்…' : 'Working on it…') : ready ? (ta ? 'முடிந்தது' : 'Done') : listening ? (ta ? 'கேட்கிறேன்…' : 'Listening…') : '';
+  const status = busy ? ('Working on it…') : ready ? ('Done') : listening ? ('Listening…') : '';
   return (
     <div className={`chat engine-chat ${fresh ? 'fresh' : 'talking'}`}>
       <div className="stage">
         <TesraxCore state={state} size={fresh ? 176 : 56} pulse={pulse} />
         {fresh
-          ? <div className="say">{ta ? 'என்ன செய்யலாம்?' : 'What shall we do?'}<span className="ta">{ta ? 'டைப் செய்யுங்கள், பேசுங்கள் அல்லது போட்டோ அனுப்புங்கள்' : 'Type, speak or send a photo. I prepare it, you approve.'}</span></div>
-          : <div className="status">{status || (ta ? 'அடுத்து?' : 'Anything else?')}</div>}
+          ? <div className="say">{'What shall we do?'}<span className="ta">{'Type, speak or send a photo. I prepare it, you approve.'}</span></div>
+          : <div className="status">{status || ('Anything else?')}</div>}
       </div>
       {fresh
         ? <div className="hero-chips">{SUGGEST[role].filter(s => s !== 'help').map(s => <button key={s} className="chip" onClick={() => { setText(s); setPulse(p => p + 1); }}>{s}</button>)}</div>
@@ -124,7 +123,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
       <div className="composer">
         <input ref={fileRef} type="file" hidden accept="image/*,.pdf,.xlsx,.xls,.csv" onChange={e => { setFiles(Array.from(e.target.files ?? [])); e.target.value = ''; setPulse(p => p + 1); }} />
         <button className="icon-btn" onClick={() => fileRef.current?.click()} aria-label={t('attach')}><Paperclip /></button>
-        <textarea rows={1} value={text} placeholder={ta ? 'டைப் / பேசு…' : 'Type or speak…'} onChange={e => { setText(e.target.value); setPulse(p => p + 1); sound.key(); }}
+        <textarea rows={1} value={text} placeholder={'Type or speak…'} onChange={e => { setText(e.target.value); setPulse(p => p + 1); sound.key(); }}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
         {text.trim() || files.length
           ? <button className="icon-btn gold" onClick={() => send()} aria-label={t('send')}><Send /></button>

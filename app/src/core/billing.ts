@@ -140,7 +140,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
       const taxable = r2(sch.gross - sch.discount);
       const tax = r2(taxable * p.gst / 100);
       invLines.push({
-        productId: p.id, name: p.name, nameTa: p.nameTa, hsn: p.hsn, qty: l.qty, freeQty: sch.freeQty,
+        productId: p.id, name: p.name, hsn: p.hsn, qty: l.qty, freeQty: sch.freeQty,
         rate: l.rate, mrp: l.mrp ?? p.mrp, gross: sch.gross, discount: sch.discount, taxable, gst: p.gst,
         cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0,
         total: r2(taxable + tax), batches: picks, schemeNames: sch.names,

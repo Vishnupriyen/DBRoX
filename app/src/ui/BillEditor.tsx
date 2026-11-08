@@ -3,12 +3,11 @@ import { Check, X, Plus, Trash2, Printer } from 'lucide-react';
 import { ChangeSet, db, getSettings } from '../core/db';
 import { pickBatches } from '../core/billing';
 import { r2 } from '../core/ledger';
-import { getLang, inr } from '../core/i18n';
+import { inr } from '../core/i18n';
 import { norm } from '../core/match';
 import { notify } from './dialog';
 import type { Invoice, InvoiceLine, Product, Settings, Shop } from '../core/types';
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Full bill editor, laid out like the bill itself: shop, every line (qty, rate, discount, MRP), add or remove lines.
 // Allowed until the bill is printed; the number never changes; the original is kept inside the bill; stock is corrected.
@@ -35,14 +34,14 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
   }, [lines]);
   const addProduct = (p: Product) => {
     if (lines.some(l => l.productId === p.id)) return;
-    setLines(ls => [...ls, recalc({ productId: p.id, name: p.name, nameTa: p.nameTa, hsn: p.hsn, qty: p.caseSize, freeQty: 0, rate: p.rate, mrp: p.mrp, gross: 0, discount: 0, taxable: 0, gst: p.gst, cgst: 0, sgst: 0, igst: 0, total: 0, batches: [], schemeNames: [] })]);
+    setLines(ls => [...ls, recalc({ productId: p.id, name: p.name, hsn: p.hsn, qty: p.caseSize, freeQty: 0, rate: p.rate, mrp: p.mrp, gross: 0, discount: 0, taxable: 0, gst: p.gst, cgst: 0, sgst: 0, igst: 0, total: 0, batches: [], schemeNames: [] })]);
     setQ('');
   };
   const save = async () => {
     if (!shop) return;
-    if (invoice.printedAt) { void notify(L('Printed bill', 'பிரிண்ட் ஆன பில்'), L('A printed bill cannot be edited — cancel with a remark or make a credit note.', 'பிரிண்ட் ஆன பில்லை மாற்ற முடியாது.')); return; }
+    if (invoice.printedAt) { void notify('Printed bill', 'A printed bill cannot be edited — cancel with a remark or make a credit note.'); return; }
     const live = lines.filter(l => l.qty > 0);
-    if (!live.length) { void notify('', L('A bill needs at least one line.', 'ஒரு வரியாவது தேவை.')); return; }
+    if (!live.length) { void notify('', 'A bill needs at least one line.'); return; }
     const cs = new ChangeSet();
     // stock: put the old picks back, take the new quantities out (oldest expiry first; keep the old batch where it still fits)
     const batches = await db.batches.toArray();
@@ -59,23 +58,23 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
     await cs.commit('Bill edited'); onClose(true);
   };
   if (!s) return null;
-  const found = q ? products.filter(p => norm(p.name).includes(norm(q)) || (p.nameTa ?? '').includes(q)).slice(0, 6) : [];
+  const found = q ? products.filter(p => norm(p.name).includes(norm(q))).slice(0, 6) : [];
   return (
     <div className="sheet-wrap" onClick={() => onClose(false)}>
       <div className="sheet" onClick={e => e.stopPropagation()} style={{ height: 'min(92vh, 900px)' }}>
-        <div className="sheet-head"><b className="grow">{L('Edit bill', 'பில் மாற்று')} {invoice.number}</b><button className="icon-btn" onClick={() => onClose(false)} aria-label="Close"><X /></button></div>
+        <div className="sheet-head"><b className="grow">{'Edit bill'} {invoice.number}</b><button className="icon-btn" onClick={() => onClose(false)} aria-label="Close"><X /></button></div>
         <div className="stack" style={{ padding: 14, overflowY: 'auto', gap: 10 }}>
           {/* bill head, laid out as on paper */}
           <div className="bill-head">
             <div><b>{s.firmName}</b><div className="muted">{s.address}</div><div className="muted">GSTIN {s.gstin}</div></div>
-            <div style={{ textAlign: 'right' }}><b>{L('TAX INVOICE', 'வரி விலைப்பட்டியல்')}</b><div>{invoice.number}</div><div className="muted">{invoice.date.split('-').reverse().join('-')}</div></div>
+            <div style={{ textAlign: 'right' }}><b>{'TAX INVOICE'}</b><div>{invoice.number}</div><div className="muted">{invoice.date.split('-').reverse().join('-')}</div></div>
           </div>
-          <div className="field"><label>{L('Bill to', 'கடை')}</label>
+          <div className="field"><label>{'Bill to'}</label>
             <select value={shopId} onChange={e => setShopId(e.target.value)}>{shops.map(x => <option key={x.id} value={x.id}>{x.name} · {x.area}</option>)}</select>
             {shop && <div className="muted">{shop.address ?? shop.area}{shop.gstin ? ` · GSTIN ${shop.gstin}` : ` · B2C`}</div>}
           </div>
           <table className="tbl bill-tbl">
-            <thead><tr><th>{L('Item', 'பொருள்')}</th><th>{L('Qty', 'அளவு')}</th><th>{L('Rate', 'விலை')}</th><th>{L('Disc ₹', 'தள்ளுபடி')}</th><th>GST</th><th className="num">{L('Amount', 'தொகை')}</th><th></th></tr></thead>
+            <thead><tr><th>{'Item'}</th><th>{'Qty'}</th><th>{'Rate'}</th><th>{'Disc ₹'}</th><th>GST</th><th className="num">{'Amount'}</th><th></th></tr></thead>
             <tbody>
               {lines.map((l, i) => (
                 <tr key={i}>
@@ -90,18 +89,18 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
               ))}
             </tbody>
           </table>
-          <div className="field"><input placeholder={L('Add a product…', 'பொருள் சேர்…')} value={q} onChange={e => setQ(e.target.value)} aria-label="Add product" />
+          <div className="field"><input placeholder={'Add a product…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Add product" />
             {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => addProduct(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">₹{p.rate} · MRP {p.mrp}</span></button>)}</div>}
           </div>
           <div className="bill-totals">
-            <div><span>{L('Taxable', 'வரிக்குட்பட்டது')}</span><b className="num">{inr(totals.taxable)}</b></div>
+            <div><span>{'Taxable'}</span><b className="num">{inr(totals.taxable)}</b></div>
             {inter ? <div><span>IGST</span><b className="num">{inr(totals.igst)}</b></div> : <><div><span>CGST</span><b className="num">{inr(totals.cgst)}</b></div><div><span>SGST</span><b className="num">{inr(totals.sgst)}</b></div></>}
-            <div><span>{L('Round off', 'முழுமையாக்கல்')}</span><b className="num">{totals.roundOff}</b></div>
-            <div className="grand"><span>{L('Total', 'மொத்தம்')}</span><b className="num">{inr(totals.total)}</b></div>
-            {totals.saving > 0 && <div className="muted"><span>{L('You saved', 'சேமிப்பு')}</span><b className="num">{inr(totals.saving)}</b></div>}
+            <div><span>{'Round off'}</span><b className="num">{totals.roundOff}</b></div>
+            <div className="grand"><span>{'Total'}</span><b className="num">{inr(totals.total)}</b></div>
+            {totals.saving > 0 && <div className="muted"><span>{'You saved'}</span><b className="num">{inr(totals.saving)}</b></div>}
           </div>
-          {invoice.printedAt ? <div className="alert"><Printer /><div>{L('This bill is printed — editing is closed. Cancel with a remark, or make a credit note.', 'பிரிண்ட் ஆனது — மாற்ற முடியாது.')}</div></div>
-            : <button className="btn primary big block" onClick={save}><Check /> {L('Save bill (same number)', 'பில் சேமி (அதே எண்)')}</button>}
+          {invoice.printedAt ? <div className="alert"><Printer /><div>{'This bill is printed — editing is closed. Cancel with a remark, or make a credit note.'}</div></div>
+            : <button className="btn primary big block" onClick={save}><Check /> {'Save bill (same number)'}</button>}
         </div>
       </div>
     </div>

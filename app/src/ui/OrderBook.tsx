@@ -6,7 +6,7 @@ import { bookOrder, updateMyOrder } from '../core/pipeline';
 import { askText } from './dialog';
 import { r2, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
-import { getLang, inr, t } from '../core/i18n';
+import { inr, t } from '../core/i18n';
 import type { Order, Company, Product, Scheme, Shop, Visit, Invoice } from '../core/types';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
@@ -16,7 +16,6 @@ interface Line { product: Product; cases: number; pcs: number; rate?: number }
 // Salesman order booking (4.1, 5.1, Q91, Q93, Q94): pictures first, push list, live stock, dues
 // and scheme shown, case + piece steppers, repeat last order. Under a minute per shop.
 export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visit?: Visit; onClose: () => void; existing?: Order }) {
-  const lang = getLang();
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -54,7 +53,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
 
   const shown = useMemo(() => {
     let list = products;
-    if (q) list = list.filter(p => norm(p.name).includes(norm(q)) || (p.nameTa ?? '').includes(q) || p.aliases.some(a => norm(a).includes(norm(q))));
+    if (q) list = list.filter(p => norm(p.name).includes(norm(q)) || p.aliases.some(a => norm(a).includes(norm(q))));
     else if (cat === 'push') list = list.filter(p => p.focus || nearExpiry.has(p.id));
     else if (cat === 'usual') list = list.filter(p => usual.has(p.id));
     else if (cat !== 'all') list = list.filter(p => p.companyId === cat);
@@ -86,14 +85,14 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
       const cs = new ChangeSet();
       const ls = Object.values(lines).map(l => ({ productId: l.product.id, qty: pieces(l), rate: l.rate ?? l.product.rate }));
       const lowered = Object.values(lines).filter(l => l.rate != null && l.rate < l.product.rate);
-      if (lowered.length && !remark.trim()) { const r = await askText(lang === 'ta' ? 'குறைந்த விலை — காரணம் (உரிமையாளர் பார்ப்பார்)' : 'Lower rate — write the reason (the owner approves it)'); if (!r) { setBusy(false); return; } setRemark(r); }
-      if (existing) { await updateMyOrder(existing.id, ls); setResult({ text: lang === 'ta' ? 'ஆர்டர் மாற்றப்பட்டது' : 'Order updated', invoices: [], needsOk: false }); return; }
+      if (lowered.length && !remark.trim()) { const r = await askText('Lower rate — write the reason (the owner approves it)'); if (!r) { setBusy(false); return; } setRemark(r); }
+      if (existing) { await updateMyOrder(existing.id, ls); setResult({ text: 'Order updated', invoices: [], needsOk: false }); return; }
       const order = await bookOrder(cs, shop, ls, session().userId, { visitId: visit?.id, offRoute: shop.salesmanId !== session().userId, rateRemark: lowered.length ? `${lowered.map(l => `${l.product.name} @${l.rate} (std ${l.product.rate})`).join(', ')} — ${remark}` : undefined });
       if (visit) cs.put('visits', { ...visit, outcome: 'order' }, 'visit outcome');
       await cs.commit('Salesman order');
       setIssuesText(order.issues.join('; '));
       setResult({
-        text: lang === 'ta' ? 'ஆர்டர் உரிமையாளருக்கு சென்றது' : 'Order sent to the owner',
+        text: 'Order sent to the owner',
         invoices: [], needsOk: order.issues.length > 0,
       });
     } finally { setBusy(false); }
@@ -104,9 +103,9 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
       <div className={`avatar ${result.needsOk ? 'bad' : 'ok'}`} style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}>{result.needsOk ? <AlertTriangle size={48} /> : <Check size={56} />}</div>
       <h2>{result.text}</h2>
       <div className="muted">{shop.name} · {totals.items} items · {inr(totals.amount)}</div>
-      {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{lang === 'ta' ? 'உரிமையாளர் பார்ப்பார்: ' : 'The owner will see: '}{issuesText}</div></div>}
+      {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{'The owner will see: '}{issuesText}</div></div>}
       {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}>{i.number} · {inr(i.total)}</button>)}</div>}
-      <button className="btn big primary block" onClick={onClose}>{lang === 'ta' ? 'அடுத்த கடை' : 'Next shop'} →</button>
+      <button className="btn big primary block" onClick={onClose}>{'Next shop'} →</button>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
     </div>
   );
@@ -116,22 +115,22 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
       <div className="row" style={{ flexWrap: 'nowrap' }}>
         <button className="icon-btn" onClick={onClose} aria-label="Back"><ArrowLeft /></button>
         <div className="grow"><div className="h">{shop.name}</div><div className="muted">{shop.area}{shop.owner ? ` · ${shop.owner}` : ''}</div></div>
-        {lastOrder.length > 0 && <button className="btn small" onClick={repeatLast}><Repeat /> {lang === 'ta' ? 'முந்தைய' : 'Repeat last'}</button>}
+        {lastOrder.length > 0 && <button className="btn small" onClick={repeatLast}><Repeat /> {'Repeat last'}</button>}
       </div>
       {due.total > 0.5 && (
         <div className={`alert ${due.overdue > 0 ? 'bad' : ''}`} style={{ padding: '8px 12px' }}>
           <AlertTriangle />
-          <div style={{ minWidth: 0 }}><b>{inr(due.total)} {lang === 'ta' ? 'பாக்கி' : 'pending'}</b>{due.overdue > 0 && <> · <b style={{ color: 'var(--bad)' }}>{inr(due.overdue)}</b> {lang === 'ta' ? 'தாமதம்' : 'overdue'}</>}<div className="muted">{shop.creditLimit > 0 ? `${lang === 'ta' ? 'வரம்பு' : 'Credit limit'} ${inr(shop.creditLimit)} · ${shop.creditDays} ${lang === 'ta' ? 'நாள்' : 'days'}` : ''}</div></div>
+          <div style={{ minWidth: 0 }}><b>{inr(due.total)} {'pending'}</b>{due.overdue > 0 && <> · <b style={{ color: 'var(--bad)' }}>{inr(due.overdue)}</b> {'overdue'}</>}<div className="muted">{shop.creditLimit > 0 ? `${'Credit limit'} ${inr(shop.creditLimit)} · ${shop.creditDays} ${'days'}` : ''}</div></div>
         </div>
       )}
       <div className="row" style={{ flexWrap: 'nowrap' }}>
         <div className="field grow" style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: 12, top: 14, color: 'var(--ink-3)' }} />
-          <input id="order-search" value={q} onChange={e => setQ(e.target.value)} placeholder={lang === 'ta' ? 'பொருள் தேடு…' : 'Search product…'} style={{ paddingLeft: 38 }} />
+          <input id="order-search" value={q} onChange={e => setQ(e.target.value)} placeholder={'Search product…'} style={{ paddingLeft: 38 }} />
         </div>
       </div>
       <div className="cat">
-        {[['push', lang === 'ta' ? '🔥 புஷ்' : 'Push list'], ['usual', lang === 'ta' ? 'வழக்கம்' : 'Usual'], ['all', lang === 'ta' ? 'எல்லாம்' : 'All'], ...companies.map(c => [c.id, c.code])].map(([k, l]) => (
+        {[['push', 'Push list'], ['usual', 'Usual'], ['all', 'All'], ...companies.map(c => [c.id, c.code])].map(([k, l]) => (
           <button key={k} className={`chip ${cat === k ? 'on' : ''}`} style={cat === k ? { background: 'var(--navy)', color: 'var(--on-navy)', borderColor: 'var(--navy)' } : undefined} onClick={() => { setCat(k); setQ(''); }}>{l}</button>
         ))}
       </div>
@@ -146,22 +145,22 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
               <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
                 <Pack product={p} />
                 <div className="grow">
-                  <div className="t">{lang === 'ta' && p.nameTa ? p.nameTa : p.name}</div>
-                  <div className="s">{lang === 'ta' && p.nameTa ? p.name : (p.nameTa ?? '')} · MRP {p.mrp} · {inr(p.rate)}/pc · {p.caseSize}/case</div>
+                  <div className="t">{p.name}</div>
+                  <div className="s">MRP {p.mrp} · {inr(p.rate)}/pc · {p.caseSize}/case</div>
                   <div className="row" style={{ marginTop: 4 }}>
                     {p.focus && <span className="badge gold"><Flame size={12} /> focus</span>}
                     {nearExpiry.has(p.id) && <span className="badge warn">clear stock</span>}
                     {sch.map(s => <span key={s.id} className="badge ok"><Gift size={12} /> {s.type === 'pct' ? `${s.value}% off` : `${s.buyQty}+${s.freeQty} free`}</span>)}
-                    <span className={`badge ${st <= 0 ? 'bad' : st < p.caseSize ? 'warn' : ''}`}>{st <= 0 ? (lang === 'ta' ? 'ஸ்டாக் இல்லை' : 'no stock') : `${Math.floor(st / p.caseSize)} cs ${st % p.caseSize ? `+${st % p.caseSize}` : ''}`}</span>
+                    <span className={`badge ${st <= 0 ? 'bad' : st < p.caseSize ? 'warn' : ''}`}>{st <= 0 ? ('no stock') : `${Math.floor(st / p.caseSize)} cs ${st % p.caseSize ? `+${st % p.caseSize}` : ''}`}</span>
                   </div>
                 </div>
               </div>
               <div className="row" style={{ width: '100%', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div className="row" style={{ flexWrap: 'nowrap', gap: 10 }}>
-                  <div><div className="eyebrow">{lang === 'ta' ? 'கேஸ்' : 'Cases'}</div><Stepper value={l?.cases ?? 0} onChange={v => setQty(p, v, l?.pcs ?? 0)} /></div>
-                  <div><div className="eyebrow">{lang === 'ta' ? 'பீஸ்' : 'Pcs'}</div><Stepper value={l?.pcs ?? 0} onChange={v => setQty(p, l?.cases ?? 0, v)} /></div>
+                  <div><div className="eyebrow">{'Cases'}</div><Stepper value={l?.cases ?? 0} onChange={v => setQty(p, v, l?.pcs ?? 0)} /></div>
+                  <div><div className="eyebrow">{'Pcs'}</div><Stepper value={l?.pcs ?? 0} onChange={v => setQty(p, l?.cases ?? 0, v)} /></div>
                 </div>
-                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${lang === 'ta' ? 'விலை / பீஸ்' : 'rate per piece'} (std ₹${p.rate})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>₹{l.rate ?? p.rate}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
+                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${'rate per piece'} (std ₹${p.rate})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>₹{l.rate ?? p.rate}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
                 {info && <div className="row" style={{ gap: 6, marginLeft: 'auto' }}>
                   {info.free > 0 && <span className="badge ok">+{info.free} free</span>}
                   {info.short > 0 && <span className="badge bad">{info.short} short</span>}
@@ -171,10 +170,10 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
             </div>
           );
         })}
-        {!shown.length && <div className="card muted">{lang === 'ta' ? 'பொருள் இல்லை' : 'Nothing here'}</div>}
+        {!shown.length && <div className="card muted">{'Nothing here'}</div>}
       </div>
       <div className="sticky-foot">
-        <div className="grow"><div className="eyebrow">{totals.items} {lang === 'ta' ? 'பொருட்கள்' : 'items'}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: 22 }}>{inr(totals.amount)}</div></div>
+        <div className="grow"><div className="eyebrow">{totals.items} {'items'}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: 22 }}>{inr(totals.amount)}</div></div>
         <button className="btn primary big" disabled={!totals.items || busy} onClick={confirm}><Check /> {t('approve').replace(' ✓', '')}</button>
       </div>
     </div>

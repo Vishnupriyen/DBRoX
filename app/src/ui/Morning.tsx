@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Banknote, Boxes, CalendarClock, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
 import { ChangeSet, db, today, undoBatch, daysFrom } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
-import { inr, getLang } from '../core/i18n';
+import { inr } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
 import type { AuditEntry, Order } from '../core/types';
 
@@ -17,7 +17,6 @@ interface Data {
   recent: AuditEntry[];
 }
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Owner's morning view (4.13): yesterday's sales & profit → money to collect → cash with staff → stock alerts.
 export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
@@ -32,55 +31,55 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
   return (
     <div className="stack">
       {show('rest') && <div className="kpis">
-        <div className="kpi navy"><div className="v">{inr(d.y.sales)}</div><div className="l">{L("Yesterday's sales", 'நேற்றைய விற்பனை')} · {d.y.bills} {L('bills', 'பில்')}</div>{d.y.prevSales > 0 && <div className={`d ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% vs day before</div>}</div>
-        <div className="kpi navy"><div className="v">{inr(d.y.profit)}</div><div className="l">{L('Gross profit', 'லாபம்')} · {d.y.margin}%</div><div className="d" style={{ color: 'var(--on-navy-2)' }}>{L('after schemes & discounts', 'ஸ்கீம், தள்ளுபடி கழித்து')}</div></div>
-        <div className="kpi"><div className="v">{inr(d.collect.dueToday)}</div><div className="l">{L('To collect today', 'இன்று வசூல்')}</div></div>
-        <div className="kpi"><div className="v" style={{ color: d.collect.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(d.collect.overdue)}</div><div className="l">{L('Overdue in market', 'தாமத பாக்கி')}</div></div>
+        <div className="kpi navy"><div className="v">{inr(d.y.sales)}</div><div className="l">{"Yesterday's sales"} · {d.y.bills} {'bills'}</div>{d.y.prevSales > 0 && <div className={`d ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% vs day before</div>}</div>
+        <div className="kpi navy"><div className="v">{inr(d.y.profit)}</div><div className="l">{'Gross profit'} · {d.y.margin}%</div><div className="d" style={{ color: 'var(--on-navy-2)' }}>{'after schemes & discounts'}</div></div>
+        <div className="kpi"><div className="v">{inr(d.collect.dueToday)}</div><div className="l">{'To collect today'}</div></div>
+        <div className="kpi"><div className="v" style={{ color: d.collect.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(d.collect.overdue)}</div><div className="l">{'Overdue in market'}</div></div>
       </div>}
 
       {show('rest') && <section className="card">
-        <div className="sechead"><h3><CalendarClock size={18} style={{ verticalAlign: -3 }} /> {L('Money to collect', 'வசூல் செய்ய வேண்டியது')}</h3></div>
+        <div className="sechead"><h3><CalendarClock size={18} style={{ verticalAlign: -3 }} /> {'Money to collect'}</h3></div>
         {d.collect.shops.length ? (
           <div className="list">
             {d.collect.shops.map(s => (
               <div key={s.name} className="row" style={{ flexWrap: 'nowrap', minHeight: 40 }}>
                 <span className="grow">{s.name}</span>
-                {s.days > 0 && <span className="badge bad">{s.days}d {L('late', 'தாமதம்')}</span>}
+                {s.days > 0 && <span className="badge bad">{s.days}d {'late'}</span>}
                 <span className="amt num">{inr(s.amount)}</span>
               </div>
             ))}
           </div>
-        ) : <div className="muted">{L('Nothing overdue. 🎉', 'தாமதம் எதுவும் இல்லை 🎉')}</div>}
+        ) : <div className="muted">{'Nothing overdue. 🎉'}</div>}
       </section>}
 
       {show('cash') && <section className="card">
-        <div className="sechead"><h3><Banknote size={18} style={{ verticalAlign: -3 }} /> {L('Cash with staff', 'ஊழியர்களிடம் பணம்')}</h3></div>
+        <div className="sechead"><h3><Banknote size={18} style={{ verticalAlign: -3 }} /> {'Cash with staff'}</h3></div>
         {d.cash.length ? d.cash.map(c => (
           <div key={c.staffId} className="row" style={{ flexWrap: 'nowrap', padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
             <div className="avatar">{c.name[0]}</div>
-            <div className="grow"><div className="t">{c.name}</div><div className="s">{L('since', 'முதல்')} {c.since}{c.since < today() && <span className="badge bad" style={{ marginLeft: 6 }}>{L('held overnight', 'இரவு வைத்திருந்தார்')}</span>}</div></div>
+            <div className="grow"><div className="t">{c.name}</div><div className="s">{'since'} {c.since}{c.since < today() && <span className="badge bad" style={{ marginLeft: 6 }}>{'held overnight'}</span>}</div></div>
             <span className="amt num">{inr(c.amount)}</span>
             <button className="btn small primary" onClick={async () => {
               const pays = (await db.payments.toArray()).filter(p => p.collectedBy === c.staffId && p.mode === 'cash' && !p.settled && p.status === 'ok');
               const cs = new ChangeSet(); for (const p of pays) cs.put('payments', { ...p, settled: true }, 'cash received'); await cs.commit('Evening cash settlement'); refresh();
-            }}>{L('Received', 'பெற்றேன்')}</button>
+            }}>{'Received'}</button>
           </div>
-        )) : <div className="muted">{L('All cash handed over.', 'எல்லா பணமும் ஒப்படைக்கப்பட்டது.')}</div>}
+        )) : <div className="muted">{'All cash handed over.'}</div>}
       </section>}
 
       {show('stock') && <section className="card">
-        <div className="sechead"><h3><Boxes size={18} style={{ verticalAlign: -3 }} /> {L('Stock alerts', 'ஸ்டாக் எச்சரிக்கை')}</h3></div>
+        <div className="sechead"><h3><Boxes size={18} style={{ verticalAlign: -3 }} /> {'Stock alerts'}</h3></div>
         <div className="stack" style={{ gap: 8 }}>
-          {d.stock.out.length > 0 && <div className="alert bad"><AlertTriangle /><div><b>{L('Out of stock', 'ஸ்டாக் இல்லை')}:</b> {d.stock.out.join(', ')}</div></div>}
-          {d.stock.expiring.map(e => <div key={e.name} className="alert"><AlertTriangle /><div><b>{e.name}</b> · {e.qty} pcs {L('expire in', 'காலாவதி')} {e.days} {L('days', 'நாட்களில்')} — {L('push or return', 'விற்கவும் அல்லது திருப்பவும்')}</div></div>)}
-          {d.stock.over.map(e => <div key={e.name} className="alert" style={{ background: 'var(--info-soft)' }}><TrendingUp style={{ color: 'var(--navy)' }} /><div><b>{e.name}</b> · {e.days} {L('days of stock', 'நாட்கள் ஸ்டாக்')} — {L('overstock', 'அதிக ஸ்டாக்')}</div></div>)}
-          {!d.stock.out.length && !d.stock.expiring.length && !d.stock.over.length && <div className="muted">{L('Stock looks fine.', 'ஸ்டாக் சரியாக உள்ளது.')}</div>}
+          {d.stock.out.length > 0 && <div className="alert bad"><AlertTriangle /><div><b>{'Out of stock'}:</b> {d.stock.out.join(', ')}</div></div>}
+          {d.stock.expiring.map(e => <div key={e.name} className="alert"><AlertTriangle /><div><b>{e.name}</b> · {e.qty} pcs {'expire in'} {e.days} {'days'} — {'push or return'}</div></div>)}
+          {d.stock.over.map(e => <div key={e.name} className="alert" style={{ background: 'var(--info-soft)' }}><TrendingUp style={{ color: 'var(--navy)' }} /><div><b>{e.name}</b> · {e.days} {'days of stock'} — {'overstock'}</div></div>)}
+          {!d.stock.out.length && !d.stock.expiring.length && !d.stock.over.length && <div className="muted">{'Stock looks fine.'}</div>}
         </div>
       </section>}
 
       {show('rest') && d.targets.length > 0 && (
         <section className="card">
-          <div className="sechead"><h3><Target size={18} style={{ verticalAlign: -3 }} /> {L('Company targets this month', 'இந்த மாத இலக்கு')}</h3></div>
+          <div className="sechead"><h3><Target size={18} style={{ verticalAlign: -3 }} /> {'Company targets this month'}</h3></div>
           <div className="stack" style={{ gap: 10 }}>
             {d.targets.map(tg => {
               const pct = Math.min(100, Math.round(tg.done / tg.target * 100));
@@ -88,7 +87,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
                 <div key={tg.company + tg.kind}>
                   <div className="row" style={{ justifyContent: 'space-between' }}><span><b>{tg.company}</b> · {tg.kind}</span><span className="num">{inr(tg.done)} / {inr(tg.target)}</span></div>
                   <div style={{ height: 10, background: 'var(--paper-2)', borderRadius: 999, overflow: 'hidden', margin: '4px 0' }}><div style={{ width: `${pct}%`, height: '100%', background: tg.behind ? 'var(--bad)' : 'var(--ok)' }} /></div>
-                  <div className="muted">{pct}% {L('done', 'முடிந்தது')} · {L('needed per day', 'ஒரு நாளைக்கு தேவை')} {inr(tg.perDay)}{tg.behind && <span className="badge bad" style={{ marginLeft: 6 }}>{L('falling behind', 'பின்தங்கி')}</span>}</div>
+                  <div className="muted">{pct}% {'done'} · {'needed per day'} {inr(tg.perDay)}{tg.behind && <span className="badge bad" style={{ marginLeft: 6 }}>{'falling behind'}</span>}</div>
                 </div>
               );
             })}
@@ -98,18 +97,18 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
 
       {show('rest') && d.vans.length > 0 && (
         <section className="card">
-          <div className="sechead"><h3><Truck size={18} style={{ verticalAlign: -3 }} /> {L('Vans today', 'இன்றைய வண்டிகள்')}</h3></div>
-          {d.vans.map(v => <div key={v.name} className="row" style={{ justifyContent: 'space-between', minHeight: 36 }}><b>{v.name}</b><span><span className="badge ok">{v.delivered} {L('delivered', 'டெலிவரி')}</span> <span className="badge">{v.pending} {L('pending', 'நிலுவை')}</span></span></div>)}
+          <div className="sechead"><h3><Truck size={18} style={{ verticalAlign: -3 }} /> {'Vans today'}</h3></div>
+          {d.vans.map(v => <div key={v.name} className="row" style={{ justifyContent: 'space-between', minHeight: 36 }}><b>{v.name}</b><span><span className="badge ok">{v.delivered} {'delivered'}</span> <span className="badge">{v.pending} {'pending'}</span></span></div>)}
         </section>
       )}
 
       {show('rest') && <section className="card">
-        <div className="sechead"><h3>{L('Recent changes', 'சமீபத்திய மாற்றங்கள்')}</h3></div>
+        <div className="sechead"><h3>{'Recent changes'}</h3></div>
         <div className="list">
           {d.recent.map(a => (
             <div key={a.id} className="row" style={{ flexWrap: 'nowrap', minHeight: 40 }}>
               <span className="grow"><b>{a.action.split(':')[0]}</b> <span className="muted">· {new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })} · {a.by === 'owner' ? 'owner' : ''}</span></span>
-              <button className="btn small" onClick={async () => { if (await confirmBox(L('Undo this whole action?', 'இதை திரும்பப் பெறவா?'), L('Everything this approval changed goes back.', 'மாற்றங்கள் அனைத்தும் பழைய நிலைக்கு.'), L('Undo', 'திரும்பப் பெறு'))) { const n = await undoBatch(a.batchId); if (n < 0) await notify("Can't undo", "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead."); refresh(); } }}><Undo2 /> {L('Undo', 'திரும்ப')}</button>
+              <button className="btn small" onClick={async () => { if (await confirmBox('Undo this whole action?', 'Everything this approval changed goes back.', 'Undo')) { const n = await undoBatch(a.batchId); if (n < 0) await notify("Can't undo", "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead."); refresh(); } }}><Undo2 /> {'Undo'}</button>
             </div>
           ))}
         </div>

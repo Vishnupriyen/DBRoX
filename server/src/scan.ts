@@ -15,7 +15,7 @@ amount = the line's taxable value if printed, else the line total. Use "" or 0 f
 Return ONLY JSON: {"supplier":string,"date":"YYYY-MM-DD","amount":number,"category":string}
 amount = the final amount paid. Use "" or 0 for anything not printed.`,
   order: `This is a handwritten or printed order (diary page / note) from a shop to an FMCG distributor in Tamil Nadu.
-It may be in Tamil or English. Return ONLY JSON: {"shop":string,"lines":[{"item":string,"qty":number}]}
+Return ONLY JSON: {"shop":string,"lines":[{"item":string,"qty":number}]}
 qty is the number written; keep the unit word inside item if written (e.g. "Surf 1kg case"). Do not invent items.`,
 };
 

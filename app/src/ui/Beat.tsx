@@ -9,10 +9,9 @@ import { CollectShop } from './Collect';
 
 interface Stop { shop: Shop; due: number; overdue: number; lastOrder?: string; visit?: Visit; billedToday: boolean }
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const DAYS_TA = ['ஞாயிறு', 'திங்கள்', 'செவ்வாய்', 'புதன்', 'வியாழன்', 'வெள்ளி', 'சனி'];
 
 // Salesman: today's beat. Overdue shops first (Q101); check-in by location (4.11); order or collect.
-export function Beat({ lang }: { lang: 'en' | 'ta' }) {
+export function Beat() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [open, setOpen] = useState<{ stop: Stop; mode: 'order' | 'collect' } | null>(null);
   const [tick, setTick] = useState(0);
@@ -54,15 +53,15 @@ export function Beat({ lang }: { lang: 'en' | 'ta' }) {
   return (
     <div className="stack">
       <div className="kpi navy">
-        <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{lang === 'ta' ? DAYS_TA[dayIdx] : DAYS[dayIdx]} · {lang === 'ta' ? 'இன்றைய பீட்' : "Today's beat"}</div>
+        <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{DAYS[dayIdx]} · {"Today's beat"}</div>
         <div className="row" style={{ marginTop: 6, gap: 18 }}>
-          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{lang === 'ta' ? 'கடைகள் முடிந்தது' : 'shops done'}</div></div>
-          <div><div className="v">{inr(totalDue)}</div><div className="l">{lang === 'ta' ? 'வசூல் செய்ய' : 'to collect on this beat'}</div></div>
+          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done'}</div></div>
+          <div><div className="v">{inr(totalDue)}</div><div className="l">{'to collect on this beat'}</div></div>
         </div>
       </div>
       <div className="sechead">
-        <h3>{lang === 'ta' ? 'கடைகள் — பாக்கி உள்ளவை முதலில்' : 'Shops · late payers first'}</h3>
-        <button className="link" onClick={() => setShowAll(x => !x)}>{showAll ? (lang === 'ta' ? 'இன்று மட்டும்' : 'Today only') : (lang === 'ta' ? 'எல்லா கடைகளும்' : 'All shops')}</button>
+        <h3>{'Shops · late payers first'}</h3>
+        <button className="link" onClick={() => setShowAll(x => !x)}>{showAll ? ('Today only') : ('All shops')}</button>
       </div>
       <div className="route">
         {stops.map(s => (
@@ -83,15 +82,15 @@ export function Beat({ lang }: { lang: 'en' | 'ta' }) {
             </div>
             <div className="row" style={{ marginTop: 10, flexWrap: 'nowrap' }}>
               {!s.visit
-                ? <button className="btn block" onClick={() => checkIn(s)}><MapPin /> {lang === 'ta' ? 'கடையில் இருக்கிறேன்' : 'I\'m at the shop'}</button>
+                ? <button className="btn block" onClick={() => checkIn(s)}><MapPin /> {'I\'m at the shop'}</button>
                 : <>
-                  <button className="btn primary grow" onClick={() => setOpen({ stop: s, mode: 'order' })}><ChevronRight /> {lang === 'ta' ? 'ஆர்டர்' : 'Order'}</button>
+                  <button className="btn primary grow" onClick={() => setOpen({ stop: s, mode: 'order' })}><ChevronRight /> {'Order'}</button>
                   <button className="btn grow" onClick={() => setOpen({ stop: s, mode: 'collect' })}><IndianRupee /> {t('collect')}</button>
                 </>}
             </div>
           </div>
         ))}
-        {!stops.length && <div className="card muted">{lang === 'ta' ? 'இன்று இந்த பீட்டில் கடைகள் இல்லை.' : 'No shops on today\'s beat. Tap "All shops".'}</div>}
+        {!stops.length && <div className="card muted">{'No shops on today\'s beat. Tap "All shops".'}</div>}
       </div>
     </div>
   );

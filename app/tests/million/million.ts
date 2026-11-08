@@ -1,6 +1,6 @@
 // TESRAX MILLION — 1,000,000+ different everyday messages (every request, every role, two-in-one messages and
 // follow-up conversations) with real typing noise: slips in shop and product names, numbers in words, "k" and
-// "rs" amounts, Tanglish particles, unit spellings, filler words, capitals and punctuation.
+// "rs" amounts, unit spellings, filler words, capitals and punctuation.
 // Built from the same deterministic generator as tesrax-5000 run with many seeds in "wild" mode.
 //   npm run train:million                 all of them, in 4 shards (about an hour on 2 cores)
 //   MILLION_SAMPLE=40000 npm run train:million   an even sample, for quick teaching rounds

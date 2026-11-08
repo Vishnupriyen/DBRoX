@@ -3,12 +3,11 @@ import { PhotoButton } from './PhotoButton';
 import { Upload, Check, Store, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
 import { ChangeSet, db, session, today, activeShops } from '../core/db';
 import { orderStops } from '../core/pipeline';
-import { getLang, inr, speak, t } from '../core/i18n';
+import { inr, speak, t } from '../core/i18n';
 import { downloadWorkbook, isSheet, readSheet, readShopRows } from '../core/readers';
 import { norm } from '../core/match';
 import type { DayPlan, LiteEntry, Shop } from '../core/types';
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Standalone Delivery + Collection (no orders/billing bought): a shop list, today's picks,
 // auto route, delivered/closed with photo, and plain payment entry. No balances, no memory.
@@ -19,20 +18,20 @@ export function LiteShops() {
   const load = () => db.shops.toArray().then(x => setShops(x.sort((a, b) => a.area.localeCompare(b.area) || a.name.localeCompare(b.name))));
   useEffect(() => { load(); }, []);
   const upload = async (f: File) => {
-    if (!isSheet(f)) { setMsg(L('Send an Excel or CSV file.', 'Excel அல்லது CSV அனுப்பவும்.')); return; }
+    if (!isSheet(f)) { setMsg('Send an Excel or CSV file.'); return; }
     const rows = readShopRows(await readSheet(f));
-    if (!rows) { setMsg(L('Could not find a shop name column.', 'கடை பெயர் நெடுவரிசை இல்லை.')); return; }
+    if (!rows) { setMsg('Could not find a shop name column.'); return; }
     const existing = new Set(shops.map(s => norm(s.name)));
     const cs = new ChangeSet(); let n = 0;
     for (const r of rows) { if (existing.has(norm(r.name))) continue; cs.put<Shop>('shops', { name: r.name, owner: r.owner, phone: r.phone, gstin: r.gstin || undefined, area: r.area, beat: r.beat, creditLimit: 0, creditDays: 0, cashOnly: false, type: 'retail', approved: true, aliases: [], address: r.address }, 'shop from list'); n++; }
     if (n) await cs.commit('Shop list uploaded');
-    setMsg(`${n} ${L('shops added', 'கடைகள் சேர்க்கப்பட்டன')}`); load();
+    setMsg(`${n} ${'shops added'}`); load();
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3>{L('Shop list', 'கடை பட்டியல்')} · {shops.length}</h3></div>
-      <label className="btn primary big block"><Upload /> {L('Upload shop list (Excel)', 'கடை பட்டியல் பதிவேற்று (Excel)')}<input type="file" hidden accept=".xlsx,.xls,.csv" onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} /></label>
-      <div className="muted">{L('Columns we look for: shop name, owner, mobile, area, address. Any order, any extra columns are fine.', 'நெடுவரிசைகள்: கடை பெயர், உரிமையாளர், மொபைல், பகுதி, முகவரி.')}</div>
+      <div className="sechead"><h3>{'Shop list'} · {shops.length}</h3></div>
+      <label className="btn primary big block"><Upload /> {'Upload shop list (Excel)'}<input type="file" hidden accept=".xlsx,.xls,.csv" onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} /></label>
+      <div className="muted">{'Columns we look for: shop name, owner, mobile, area, address. Any order, any extra columns are fine.'}</div>
       {msg && <div className="alert ok"><Check /><div>{msg}</div></div>}
       <div className="list">{shops.map(s => <div key={s.id} className="item"><div className="avatar"><Store size={20} /></div><div className="grow"><div className="t">{s.name}</div><div className="s">{s.area}{s.phone ? ` · ${s.phone}` : ''}</div></div></div>)}</div>
     </div>
@@ -56,8 +55,8 @@ export function LitePlan({ onDone }: { onDone: () => void }) {
   const areas = [...new Set(shown.map(s => s.area))];
   return (
     <div className="stack">
-      <div className="sechead"><h3>{L("Today's shops", 'இன்றைய கடைகள்')} · {sel.size}</h3><button className="link" onClick={() => setSel(new Set(shown.map(s => s.id)))}>{L('Select all shown', 'எல்லாம்')}</button></div>
-      <div className="field"><input placeholder={L('Search shop or area…', 'கடை / பகுதி தேடு…')} value={q} onChange={e => setQ(e.target.value)} aria-label="Search" /></div>
+      <div className="sechead"><h3>{"Today's shops"} · {sel.size}</h3><button className="link" onClick={() => setSel(new Set(shown.map(s => s.id)))}>{'Select all shown'}</button></div>
+      <div className="field"><input placeholder={'Search shop or area…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Search" /></div>
       {areas.map(a => (
         <div key={a}>
           <div className="eyebrow" style={{ margin: '6px 0' }}>{a}</div>
@@ -71,7 +70,7 @@ export function LitePlan({ onDone }: { onDone: () => void }) {
           </div>
         </div>
       ))}
-      <div className="sticky-foot"><div className="grow muted"><Route size={16} style={{ verticalAlign: -3 }} /> {L('Route order is set automatically by area/location', 'வழி தானாக வரிசைப்படுத்தப்படும்')}</div><button className="btn primary big" disabled={!sel.size} onClick={save}><Check /> {L('Set route', 'வழி அமை')}</button></div>
+      <div className="sticky-foot"><div className="grow muted"><Route size={16} style={{ verticalAlign: -3 }} /> {'Route order is set automatically by area/location'}</div><button className="btn primary big" disabled={!sel.size} onClick={save}><Check /> {'Set route'}</button></div>
     </div>
   );
 }
@@ -85,7 +84,7 @@ export function LiteDelivery() {
   const done = stops.filter(s => s.entry).length;
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{L('shops done today', 'இன்று முடிந்த கடைகள்')}</div></div>
+      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done today'}</div></div>
       <div className="route">
         {stops.map((s, k) => (
           <button key={s.id} className={`stop item tap ${s.entry ? 'done' : k === done ? 'now' : ''}`} style={{ opacity: s.entry ? .6 : 1 }} onClick={() => setOpen(s)}>
@@ -93,7 +92,7 @@ export function LiteDelivery() {
             <div className="grow"><div className="t">{s.name}</div><div className="s">{s.area}{s.phone ? ` · ${s.phone}` : ''}{s.entry ? ` · ${s.entry.kind}` : ''}</div></div>
           </button>
         ))}
-        {!stops.length && <div className="card muted">{L('No shops chosen for today. The owner picks them in "Today\'s shops".', 'இன்று கடைகள் தேர்வு செய்யப்படவில்லை.')}</div>}
+        {!stops.length && <div className="card muted">{'No shops chosen for today. The owner picks them in "Today\'s shops".'}</div>}
       </div>
     </div>
   );
@@ -113,8 +112,8 @@ function LiteStop({ shop, onClose }: { shop: Shop; onClose: () => void }) {
         <PhotoButton facing="environment" onPhoto={setPhoto} />
         <button className="btn ok-huge" onClick={() => save('delivered')} aria-label="Delivered"><Check size={84} /></button>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
-          <button className="btn grow" onClick={() => save('closed')}><DoorClosed /> {L('Shop closed', 'கடை மூடி')}</button>
-          <button className="btn grow danger" onClick={() => save('refused')}><X /> {L('Refused', 'மறுத்தது')}</button>
+          <button className="btn grow" onClick={() => save('closed')}><DoorClosed /> {'Shop closed'}</button>
+          <button className="btn grow danger" onClick={() => save('refused')}><X /> {'Refused'}</button>
         </div>
       </div>
     </div>
@@ -134,16 +133,16 @@ export function LiteCollect() {
     if (!shopId || amount <= 0) return;
     const cs = new ChangeSet();
     cs.put<LiteEntry>('liteEntries', { date: today(), shopId, kind: 'payment', amount, mode, ref, by: session().userId, shopConfirmed: true }, 'payment');
-    await cs.commit('Collection'); speak(`${amount} ரூபாய் பெறப்பட்டது. நன்றி.`);
+    await cs.commit('Collection'); speak(`${amount} rupees received. Thank you.`);
     setAmount(0); setRef(''); setTick(x => x + 1);
   };
   const names = new Map(shops.map(s => [s.id, s.name]));
   const total = entries.reduce((a, e) => a + (e.amount ?? 0), 0);
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{inr(total)}</div><div className="l">{L('collected today', 'இன்றைய வசூல்')} · {entries.length}</div></div>
+      <div className="kpi navy"><div className="v">{inr(total)}</div><div className="l">{'collected today'} · {entries.length}</div></div>
       <div className="card stack">
-        <div className="field"><label>{t('shop')}</label><select value={shopId} onChange={e => setShopId(e.target.value)}><option value="">— {L('pick shop', 'கடை தேர்வு')} —</option>{shops.map(s => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}</select></div>
+        <div className="field"><label>{t('shop')}</label><select value={shopId} onChange={e => setShopId(e.target.value)}><option value="">— {'pick shop'} —</option>{shops.map(s => <option key={s.id} value={s.id}>{s.name} · {s.area}</option>)}</select></div>
         <div className="field"><label>{t('amount')}</label><input className="bigamount" type="number" inputMode="decimal" value={amount || ''} onChange={e => setAmount(Number(e.target.value))} aria-label={t('amount')} /></div>
         <div className="segmented">{(['cash', 'upi', 'cheque'] as const).map(m => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{t(m)}</button>)}</div>
         {mode !== 'cash' && <div className="field"><label>UPI / cheque no</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>}
@@ -169,9 +168,9 @@ export function LiteExport() {
   };
   return (
     <div className="stack">
-      <div className="kpis"><div className="kpi"><div className="v">{n.d}</div><div className="l">{L('deliveries today', 'இன்றைய டெலிவரி')}</div></div><div className="kpi"><div className="v">{n.p}</div><div className="l">{L('collections today', 'இன்றைய வசூல்')}</div></div></div>
-      <button className="btn primary big block" onClick={go}><Download /> {L("Download today's Excel", 'இன்றைய Excel பதிவிறக்கு')}</button>
-      <div className="muted">{L('Two sheets: Deliveries and Collections. Load it into Tally or your billing software.', 'இரண்டு தாள்கள்: டெலிவரி, வசூல்.')}</div>
+      <div className="kpis"><div className="kpi"><div className="v">{n.d}</div><div className="l">{'deliveries today'}</div></div><div className="kpi"><div className="v">{n.p}</div><div className="l">{'collections today'}</div></div></div>
+      <button className="btn primary big block" onClick={go}><Download /> {"Download today's Excel"}</button>
+      <div className="muted">{'Two sheets: Deliveries and Collections. Load it into Tally or your billing software.'}</div>
     </div>
   );
 }

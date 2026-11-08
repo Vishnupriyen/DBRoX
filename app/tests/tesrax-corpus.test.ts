@@ -1,5 +1,5 @@
 // TESRAX TRAINING SET — every way a distributor's team is likely to type a request, and what TESRAX must do.
-// Short forms, typos, any word order, rupee signs, Tanglish. Each line is a permanent test: once TESRAX learns a
+// Short forms, typos, any word order, rupee signs (English only for launch). Each line is a permanent test: once TESRAX learns a
 // phrase it can never forget it. Add a line whenever a real user is misunderstood.
 //
 // Expected result codes:
@@ -63,8 +63,6 @@ const CORPUS: Case[] = [
   ['cash 600 from lakshmi traders', 'payment:Sri Lakshmi Traders:600:cash'],
   ['got 450 from ganapathi', 'payment:Ganapathi Stores:450'],
   ['ganapathi stores amount 450 received', 'payment:Ganapathi Stores:450'],
-  ['murugan 500 kuduthaanga', 'payment:Murugan Stores:500'],
-  ['selvam 300 kuduthar', 'payment:Selvam Kirana:300'],
   ['selvam kirana paid 500 cash', 'payment:Selvam Kirana:500:cash', 'salesman'],
   ['kumar mart paid 1000', 'payment:Kumar Mart:1000', 'delivery'],
   ['murugan collected 2000 upi', 'payment:Murugan Stores:2000:upi', 'delivery'],
@@ -235,21 +233,18 @@ const CORPUS: Case[] = [
   ['selvam settled 1755', 'payment:Selvam Kirana:1755'],
   ['kumar mart neft 2507', 'payment:Kumar Mart:2507'],
   ['annai paid 1000 gpay ref 123456789012', 'payment:Annai Super Market:1000:upi'],
-  ['murugan 500 cash kuduthanga', 'payment:Murugan Stores:500:cash'],
   // corrections said differently
   ['murugan 500 is wrong it is 400', 'fix:'],
   ['selvam payment wrong, correct is 250', 'fix:'],
   // dues
   ['murugan pending', 't:Outstanding'],
   ['how much is pending from selvam', 't:Outstanding'],
-  ['selvam kitta evlo baaki', 't:Outstanding'],
   ['what is murugan due', 't:Outstanding'],
   ['who is overdue', 't:Outstanding'],
   ['overdue shops', 't:Outstanding'],
   // sales & stock
   ['what did we sell today', 't:Sales'],
   ['today total sales', 't:Sales'],
-  ['surf irukka', 't:Stock'],
   ['check stock surf', 't:Stock'],
   ['stock check good day', 't:Stock'],
   ['vim bar stock?', 't:Stock'],

@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { Check, X, Printer, Lock, Minus, Plus } from 'lucide-react';
 import { db } from '../core/db';
 import { approvePicked, billingLockedBy, rejectOrder } from '../core/pipeline';
-import { getLang, inr } from '../core/i18n';
+import { inr } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
 import type { Invoice, Order, Product, Shop } from '../core/types';
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Bill → Picked, to verify. Owner checks the physical pack against the screen, may edit, taps Done → bill. No send-back.
 export function Approve({ go }: { go?: (p: string) => void }) {
@@ -37,7 +36,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   const [saving, setSaving] = useState<string | null>(null);
   const done = async (o: Order) => {
     if (saving) return; setSaving(o.id);
-    try { await doneOnce(o); } catch (e) { const { notify } = await import('./dialog'); await notify(L('Could not bill', 'பில் ஆகவில்லை'), (e as Error).message); } finally { setSaving(null); }
+    try { await doneOnce(o); } catch (e) { const { notify } = await import('./dialog'); await notify('Could not bill', (e as Error).message); } finally { setSaving(null); }
   };
   const doneOnce = async (o: Order) => {
     const picked = pickedOf(o).map((p, i) => ({ ...p, qty: qtyAt(o, i) }));
@@ -49,9 +48,9 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   return (
     <div className="stack">
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
-      <div className="sechead"><h3>{L('Picked — to verify', 'எடுத்தது — சரிபார்க்க')} · {orders.length}</h3></div>
-      {locked && <div className="alert bad"><Lock /><div><b>{L('Billing is locked', 'பில்லிங் பூட்டப்பட்டுள்ளது')}</b> — {L(`close ${locked} first.`, `${locked} நாளை முதலில் முடிக்கவும்.`)} {go && <button className="link" onClick={() => go('dayclose')}>{L('Day close →', 'நாள் முடிவு →')}</button>}</div></div>}
-      {made.length > 0 && <div className="alert ok"><Check /><div><b>{made.length} {L('bill(s) made', 'பில் தயார்')}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div></div></div>}
+      <div className="sechead"><h3>{'Picked — to verify'} · {orders.length}</h3></div>
+      {locked && <div className="alert bad"><Lock /><div><b>{'Billing is locked'}</b> — {`close ${locked} first.`} {go && <button className="link" onClick={() => go('dayclose')}>{'Day close →'}</button>}</div></div>}
+      {made.length > 0 && <div className="alert ok"><Check /><div><b>{made.length} {'bill(s) made'}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div></div></div>}
       {orders.map(o => {
         const pk = pickedOf(o);
         const orderedQty = (pid: string) => o.lines.find(l => l.productId === pid)?.qty ?? 0;
@@ -59,10 +58,10 @@ export function Approve({ go }: { go?: (p: string) => void }) {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {L('packed by', 'கட்டியவர்')} {staff.get(o.pickedBy ?? '') ?? ''} {o.pickedAt?.slice(11, 16)}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? ''} {o.pickedAt?.slice(11, 16)}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
-            {diffs ? <div className="muted">{diffs} {L('line(s) changed by the picker — shown in red', 'வரிகள் மாற்றப்பட்டன — சிவப்பில்')}</div> : <div className="muted">{L('Packed exactly as ordered', 'ஆர்டர் படியே கட்டப்பட்டது')}</div>}
+            {diffs ? <div className="muted">{diffs} {'line(s) changed by the picker — shown in red'}</div> : <div className="muted">{'Packed exactly as ordered'}</div>}
             <div className="list">
               {pk.map((x, i) => {
                 const p = products.get(x.productId); const q = qtyAt(o, i); const ord = orderedQty(x.productId);
@@ -71,21 +70,21 @@ export function Approve({ go }: { go?: (p: string) => void }) {
                 return (
                   <div key={i} className="row" style={{ flexWrap: 'nowrap', color: changed ? 'var(--bad)' : undefined }}>
                     {p && <Pack product={p} />}
-                    <span className="grow">{p?.name}{x.mrp && x.mrp !== p?.mrp ? <span className="badge bad" style={{ marginLeft: 6 }}>MRP {x.mrp}</span> : null}{twin ? <span className="badge warn" style={{ marginLeft: 6 }}>{L('2 MRPs', '2 MRP')}</span> : null}</span>
+                    <span className="grow">{p?.name}{x.mrp && x.mrp !== p?.mrp ? <span className="badge bad" style={{ marginLeft: 6 }}>MRP {x.mrp}</span> : null}{twin ? <span className="badge warn" style={{ marginLeft: 6 }}>{'2 MRPs'}</span> : null}</span>
                     <div className="stepper small"><button aria-label="less" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: Math.max(0, q - 1) } }))}><Minus /></button><input type="number" value={q} onChange={ev => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: Math.max(0, Number(ev.target.value)) } }))} aria-label="Quantity" /><button aria-label="more" onClick={() => setEdit(e => ({ ...e, [o.id]: { ...e[o.id], [i]: q + 1 } }))}><Plus /></button></div>
-                    {!twin && q !== ord && <span className="badge bad">{L('of', '/')} {ord}</span>}
+                    {!twin && q !== ord && <span className="badge bad">{'of'} {ord}</span>}
                   </div>
                 );
               })}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              <button className="btn primary big grow" disabled={!!locked || saving === o.id} onClick={() => done(o)}><Check /> {L('Done → bill', 'முடிந்தது → பில்')}</button>
-              <button className="btn" onClick={async () => { const r = await askText(L('Why cancel?', 'ஏன் ரத்து?')); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
+              <button className="btn primary big grow" disabled={!!locked || saving === o.id} onClick={() => done(o)}><Check /> {'Done → bill'}</button>
+              <button className="btn" onClick={async () => { const r = await askText('Why cancel?'); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
             </div>
           </div>
         );
       })}
-      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{L('Nothing to verify.', 'சரிபார்க்க எதுவும் இல்லை.')}</div>}
+      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'Nothing to verify.'}</div>}
     </div>
   );
 }

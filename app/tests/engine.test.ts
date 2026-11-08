@@ -69,11 +69,6 @@ describe('RoX Engine', () => {
     expect(v.warnings.join(' ')).toMatch(/Credit limit/);
   });
 
-  it('understands Tamil quantities', async () => {
-    const r = await handle('Murugan Stores 2 கேஸ் surf', []);
-    expect(r.proposal!.rows[0].qty).toBe(24);
-  });
-
   it('validates GSTIN checksum', () => {
     expect(validGstin('27AAPFU0939F1ZV')).toBe(true);
     expect(validGstin('27AAPFU0939F1ZX')).toBe(false);

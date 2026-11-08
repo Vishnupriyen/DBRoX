@@ -520,7 +520,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'products': {
       for (const r of p.rows) {
         cs.put<Product>('products', {
-          id: s(r.id) || undefined, companyId: s(r.companyId), name: s(r.name), nameTa: s(r.nameTa), code: s(r.code), hsn: s(r.hsn), gst: n(r.gst),
+          id: s(r.id) || undefined, companyId: s(r.companyId), name: s(r.name), code: s(r.code), hsn: s(r.hsn), gst: n(r.gst),
           mrp: n(r.mrp), rate: n(r.rate), purchaseRate: n(r.purchaseRate), caseSize: n(r.caseSize) || 1,
           aliases: [s(r.code)].filter(Boolean), active: true,
         }, 'product');

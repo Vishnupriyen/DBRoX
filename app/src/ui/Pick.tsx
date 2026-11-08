@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Truck, PackageOpen, AlertTriangle } from 'lucide-react';
 import { db, today } from '../core/db';
 import { tripLoaded } from '../core/pipeline';
-import { getLang, inr } from '../core/i18n';
+import { inr } from '../core/i18n';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 import { Pack } from './Pack';
 
 interface Line { product: Product; qty: number; batches: { batch: string; expiry: string; qty: number }[]; shops: { name: string; qty: number }[] }
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
-// Godown: one load sheet per van (4.6). Picture first, Tamil name, exact batch (oldest first),
+// Godown: one load sheet per van (4.6). Picture first, product name, exact batch (oldest first),
 // cases + pieces, tick every line before the van leaves.
 export function Pick() {
   const [vans, setVans] = useState<Van[]>([]);
@@ -62,13 +61,13 @@ export function Pick() {
       </div>
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{mine.length} <span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>{L('bills', 'பில்')}</span></div><div className="l">{[...new Set(mine.map(i => i.shopId))].length} {L('shops', 'கடைகள்')} · {inr(total)}</div></div>
-          <div style={{ textAlign: 'right' }}><div className="v">{ticked.size}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{lines.length}</span></div><div className="l">{L('lines picked', 'எடுத்தது')}</div></div>
+          <div><div className="v">{mine.length} <span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>{'bills'}</span></div><div className="l">{[...new Set(mine.map(i => i.shopId))].length} {'shops'} · {inr(total)}</div></div>
+          <div style={{ textAlign: 'right' }}><div className="v">{ticked.size}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{lines.length}</span></div><div className="l">{'lines picked'}</div></div>
         </div>
       </div>
       <div className="segmented" style={{ maxWidth: 320 }}>
-        <button className={!bySh ? 'on' : ''} onClick={() => setBySh(false)}>{L('Pick (by product)', 'எடு (பொருள் வாரியாக)')}</button>
-        <button className={bySh ? 'on' : ''} onClick={() => setBySh(true)}>{L('Pack (by shop)', 'கட்டு (கடை வாரியாக)')}</button>
+        <button className={!bySh ? 'on' : ''} onClick={() => setBySh(false)}>{'Pick (by product)'}</button>
+        <button className={bySh ? 'on' : ''} onClick={() => setBySh(true)}>{'Pack (by shop)'}</button>
       </div>
 
       {!bySh ? (
@@ -80,18 +79,18 @@ export function Pick() {
               <button key={p.id} className={`item tap ${done ? '' : ''}`} style={{ opacity: done ? .55 : 1, alignItems: 'flex-start' }} onClick={() => toggle(p.id)}>
                 <Pack product={p} size="lg" />
                 <div className="grow">
-                  <div className="t" style={{ fontSize: 18 }}>{p.nameTa ?? p.name}</div>
+                  <div className="t" style={{ fontSize: 18 }}>{p.name}</div>
                   <div className="s">{p.name} · MRP {p.mrp}</div>
                   <div className="row" style={{ marginTop: 6 }}>
-                    <span className="badge navy" style={{ fontSize: 15, padding: '5px 12px' }}>{cs ? `${cs} ${L('cs', 'கேஸ்')}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${L('pcs', 'பீஸ்')}` : ''}</span>
-                    {l.batches.sort((a, b) => a.expiry.localeCompare(b.expiry)).map(b => <span key={b.batch} className="badge">{L('batch', 'பேட்ச்')} <b>{b.batch}</b> · {b.qty}</span>)}
+                    <span className="badge navy" style={{ fontSize: 15, padding: '5px 12px' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}</span>
+                    {l.batches.sort((a, b) => a.expiry.localeCompare(b.expiry)).map(b => <span key={b.batch} className="badge">{'batch'} <b>{b.batch}</b> · {b.qty}</span>)}
                   </div>
                 </div>
                 <div className={`avatar ${done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16 }}>{done ? <Check size={30} /> : <PackageOpen size={24} />}</div>
               </button>
             );
           })}
-          {!lines.length && <div className="card muted">{L('No trip planned for this van yet. The owner confirms the delivery plan first.', 'இந்த வண்டிக்கு டிரிப் இன்னும் இல்லை.')}</div>}
+          {!lines.length && <div className="card muted">{'No trip planned for this van yet. The owner confirms the delivery plan first.'}</div>}
         </div>
       ) : (
         <div className="stack">
@@ -101,7 +100,7 @@ export function Pick() {
               <div key={sid} className="card">
                 <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 17 }}><span className="badge navy">{k + 1}</span> {shops.get(sid)}</b><span className="muted">{sInv.map(i => i.number).join(', ')}</span></div>
                 <div className="stack" style={{ gap: 6, marginTop: 8 }}>
-                  {sInv.flatMap(i => i.lines).map((l, k) => { const p = products.get(l.productId)!; return <div key={k} className="row" style={{ flexWrap: 'nowrap' }}><Pack product={p} /><span className="grow">{p.nameTa ?? p.name}</span><b className="num">{l.qty + l.freeQty} pcs</b></div>; })}
+                  {sInv.flatMap(i => i.lines).map((l, k) => { const p = products.get(l.productId)!; return <div key={k} className="row" style={{ flexWrap: 'nowrap' }}><Pack product={p} /><span className="grow">{p.name}</span><b className="num">{l.qty + l.freeQty} pcs</b></div>; })}
                 </div>
               </div>
             );
@@ -111,10 +110,10 @@ export function Pick() {
 
       {lines.length > 0 && (
         <div className="sticky-foot">
-          {!allDone && <div className="muted grow"><AlertTriangle size={16} style={{ verticalAlign: -3 }} /> {L('Tick every line before the van leaves', 'வண்டி கிளம்பும் முன் எல்லா வரிகளையும் டிக் செய்யவும்')}</div>}
+          {!allDone && <div className="muted grow"><AlertTriangle size={16} style={{ verticalAlign: -3 }} /> {'Tick every line before the van leaves'}</div>}
           {trip?.status === 'loaded'
-            ? <span className="badge ok" style={{ fontSize: 15, padding: '8px 14px' }}><Check size={16} /> {L('Loaded — waiting for driver', 'ஏற்றப்பட்டது')}</span>
-            : <button className="btn primary big grow" disabled={!allDone} onClick={async () => { if (trip) { await tripLoaded(trip.id); setTick(x => x + 1); } }}><Truck /> {L('Van loaded', 'வண்டி ஏற்றப்பட்டது')}</button>}
+            ? <span className="badge ok" style={{ fontSize: 15, padding: '8px 14px' }}><Check size={16} /> {'Loaded — waiting for driver'}</span>
+            : <button className="btn primary big grow" disabled={!allDone} onClick={async () => { if (trip) { await tripLoaded(trip.id); setTick(x => x + 1); } }}><Truck /> {'Van loaded'}</button>}
         </div>
       )}
     </div>

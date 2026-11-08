@@ -1,6 +1,6 @@
 // TESRAX 5000: 5,000+ everyday messages — orders, payments, expenses, questions, screens, files, and changes to what
 // is already saved (orders, bills, payments, expenses, stock counts, shops, products, undo) — typed by every role with
-// short forms, Tanglish, capitals and noise. Generated deterministically (tesrax-gen.ts), so the set never changes
+// short forms, capitals and noise. Generated deterministically (tesrax-gen.ts), so the set never changes
 // between runs. Every phrase must be understood; the report shows accuracy per intent.
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll } from 'vitest';

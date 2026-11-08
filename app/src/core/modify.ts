@@ -23,7 +23,7 @@ export interface ModCtx {
 
 const CANCEL = ['cancel', 'cancelled', 'delete', 'deleted', 'remove', 'drop', 'scrap', 'void', 'discard', 'no need', 'not needed', 'dont want', 'don t want', 'do not want', 'call off', 'take out', 'erase', 'strike off', 'undo', 'revert', 'withdraw'];
 const EDIT = ['change', 'changed', 'edit', 'update', 'modify', 'correct', 'correction', 'alter', 'revise', 'set', 'make it', 'make', 'increase', 'decrease', 'reduce', 'add', 'extra', 'more', 'less', 'minus', 'instead', 'replace', 'should be', 'wrong', 'mistake', 'actually', 'fix', 'adjust', 'only'];
-const ORDER = ['order', 'ஆர்டர்'];
+const ORDER = ['order'];
 const PAY = ['payment', 'collection', 'receipt', 'paid', 'received', 'cheque', 'chq', 'upi', 'gpay', 'phonepe', 'money'];
 const BOUNCE = ['bounce', 'bounced', 'reversed', 'reversal', 'payment failed', 'upi failed', 'failed', 'fail', 'upi return', 'not credited', 'not received in bank', 'dishonoured', 'dishonored', 'cheque returned', 'cheque return', 'returned cheque', 'cheque bounce', 'chq bounce', 'chq returned'];
 const BILL = ['bill', 'invoice', 'inv'];
@@ -39,13 +39,13 @@ export function numbersIn(s: string): number[] {
 }
 
 export function categoryOf(t: string) {
-  if (/\b(diesel|petrol|fuel)\b|டீசல்|பெட்ரோல்/.test(t)) return 'Fuel';
+  if (/\b(diesel|petrol|fuel)\b/.test(t)) return 'Fuel';
   if (/\b(hire|hired)\b/.test(t) || (/\b(auto|tempo|lorry|van|vehicle)\b/.test(t) && /\brent\b/.test(t))) return 'Van hire';
   if (/\btoll\b/.test(t)) return 'Toll';
   if (/\b(repair|service|tyre|tire|puncture|maintenance)s?\b/.test(t)) return 'Van repair';
   if (/\b(electricity|eb|current|power)\b/.test(t)) return 'Electricity';
-  if (/\brent\b|வாடகை/.test(t)) return 'Rent';
-  if (/\bsalary\b|சம்பளம்/.test(t)) return 'Salary';
+  if (/\brent\b/.test(t)) return 'Rent';
+  if (/\bsalary\b/.test(t)) return 'Salary';
   if (/\bbatta\b/.test(t)) return 'Batta';
   if (/\b(hamali|coolie|labour|labor|wages|loading|unloading)\b/.test(t)) return 'Loading & labour';
   if (/\b(tea|snacks|food|lunch|coffee)\b/.test(t)) return 'Tea & food';
@@ -210,7 +210,7 @@ async function orderChange(c: ModCtx, explicit: boolean): Promise<Reply | null> 
   const ops = orderOps(c.shop ? c.rest : c.textIn, c.products);
   const addOnly = ops.length > 0 && ops.every(o => o.mode === 'add');
   // the whole order is cancelled only when nothing else was said ("cancel X order"), never when an item was named but not recognised
-  const leftover = norm(c.shop ? c.rest : c.textIn).replace(/\b(order|orders|the|for|of|in|from|my|last|that|this|please|now|today|whole|full|fully|all|entire|complete|completely|approved|new|pending|open|it|cancel|cancelled|delete|deleted|remove|drop|scrap|void|discard|no need|not needed|dont want|don t want|do not want|call off|undo|revert|withdraw|need|want|wants|doesn t|doesnt|did|shop|sir|da|pannunga|pannu)\b/g, ' ').trim();
+  const leftover = norm(c.shop ? c.rest : c.textIn).replace(/\b(order|orders|the|for|of|in|from|my|last|that|this|please|now|today|whole|full|fully|all|entire|complete|completely|approved|new|pending|open|it|cancel|cancelled|delete|deleted|remove|drop|scrap|void|discard|no need|not needed|dont want|don t want|do not want|call off|undo|revert|withdraw|need|want|wants|doesn t|doesnt|did|shop|sir)\b/g, ' ').trim();
   const cancelAll = !ops.length && has(c.text, CANCEL) && !leftover;
   if (!explicit && !ops.length) return null;
   const shopName = c.shop?.name ?? (order ? (await db.shops.get(order.shopId))?.name : '') ?? '';
@@ -545,7 +545,7 @@ async function shopEdit(c: ModCtx): Promise<Reply | null> {
   const title = (v: string) => v.replace(/\b\w/g, x => x.toUpperCase());
   const addr = c.rest.match(/\baddress\b(?:\s*(?:is|to|as|:|-|change to|changed to|now|should be))*\s+(.+)$/i);
   if (addr) val.address = tidy(addr[1]);
-  // "owner name is Ravi", "owner Selvam illa, Kannan" (= not Selvam, it is Kannan)
+  // "owner name is Ravi", "owner not Selvam, Kannan"
   const own = c.textIn.match(/\bowner(?:\s*name)?\b\s*(.+)$/i);
   if (own) { const v = tidy(own[1].split(/\b(?:not|is|to|as|it is)\b|[,:]/i).map(x => x.trim()).filter(Boolean).pop() ?? ''); if (/^[a-zA-Z][a-zA-Z .]{1,40}$/.test(v)) val.owner = title(v); }
   const area = c.textIn.match(/\barea\b\s*(.+)$/i);

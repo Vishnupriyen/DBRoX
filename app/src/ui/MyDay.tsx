@@ -5,9 +5,8 @@ import { confirmBox, notify } from './dialog';
 import { OrderBook } from './OrderBook';
 import type { Order, Shop } from '../core/types';
 import { Check, Clock, X, Pencil } from 'lucide-react';
-import { getLang, inr } from '../core/i18n';
+import { inr } from '../core/i18n';
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 
 // Salesman's own day: shops visited, orders booked and their value, money collected. Read-only.
 export function MyDay() {
@@ -37,40 +36,40 @@ export function MyDay() {
   const steps = (o: Order, delivered?: string) => {
     const at = (iso?: string) => iso ? iso.slice(11, 16) : '';
     const list: [string, string, string | undefined, boolean][] = [
-      [L('Sent', 'அனுப்பியது'), '', o.createdAt, true],
-      [L('Approved', 'ஒப்புதல்'), '', o.approvedAt, ['approved', 'picked', 'billed'].includes(o.status)],
-      [L('Picked', 'எடுத்தது'), '', o.pickedAt, ['picked', 'billed'].includes(o.status)],
-      [L('Billed', 'பில்'), '', undefined, o.status === 'billed'],
-      [L('Delivered', 'டெலிவரி'), '', delivered, !!delivered],
+      ['Sent', '', o.createdAt, true],
+      ['Approved', '', o.approvedAt, ['approved', 'picked', 'billed'].includes(o.status)],
+      ['Picked', '', o.pickedAt, ['picked', 'billed'].includes(o.status)],
+      ['Billed', '', undefined, o.status === 'billed'],
+      ['Delivered', '', delivered, !!delivered],
     ];
     return list.map(([l, , iso, done]) => ({ l, time: done ? at(iso) : '', done }));
   };
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{L('shops visited', 'கடைகள் சென்றது')}</div></div>
-        <div className="kpi navy"><div className="v">{d.orders}</div><div className="l">{L('orders', 'ஆர்டர்')} · {inr(d.value)}</div></div>
-        <div className="kpi"><div className="v">{inr(d.collected)}</div><div className="l">{L('collected', 'வசூல்')}</div></div>
-        <div className="kpi"><div className="v">{d.byStatus.billed ?? 0}</div><div className="l">{L('orders billed', 'பில் ஆனது')}</div></div>
+        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops visited'}</div></div>
+        <div className="kpi navy"><div className="v">{d.orders}</div><div className="l">{'orders'} · {inr(d.value)}</div></div>
+        <div className="kpi"><div className="v">{inr(d.collected)}</div><div className="l">{'collected'}</div></div>
+        <div className="kpi"><div className="v">{d.byStatus.billed ?? 0}</div><div className="l">{'orders billed'}</div></div>
       </div>
       <div className="stack">
         {d.lines.map(l => (
           <div key={l.id} className="card stack" style={{ gap: 6 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}><b>{l.shop}</b><span className="amt num">{inr(l.value)}</span></div>
-            {l.status === 'cancelled' ? <span className="badge bad">{L('cancelled', 'ரத்து')}</span> : (
+            {l.status === 'cancelled' ? <span className="badge bad">{'cancelled'}</span> : (
               <div className="row" style={{ gap: 4 }}>
                 {steps(l.o, l.delivered).map((st, k) => <span key={k} className={`badge ${st.done ? 'ok' : ''}`} style={{ whiteSpace: 'nowrap' }}>{st.done ? <Check size={11} /> : <Clock size={11} />} {st.l}{st.time ? ` ${st.time}` : ''}</span>)}
               </div>
             )}
             {l.status === 'new' && (
               <div className="row" style={{ gap: 6 }}>
-                <button className="btn small" onClick={async () => { const shop = await db.shops.get(l.o.shopId); if (shop) setEditing({ shop, o: l.o }); }}><Pencil size={14} /> {L('Edit', 'மாற்று')}</button>
-                <button className="btn small" onClick={async () => { if (!await confirmBox(L('Cancel this order?', 'இந்த ஆர்டரை ரத்து செய்யவா?'), L('Allowed until the owner approves it.', 'ஒப்புதலுக்கு முன் மட்டும்.'), L('Cancel order', 'ரத்து'))) return; try { await cancelMyOrder(l.id); } catch (e) { void notify('', (e as Error).message); } setTick(x => x + 1); }}><X size={14} /> {L('Cancel', 'ரத்து')}</button>
+                <button className="btn small" onClick={async () => { const shop = await db.shops.get(l.o.shopId); if (shop) setEditing({ shop, o: l.o }); }}><Pencil size={14} /> {'Edit'}</button>
+                <button className="btn small" onClick={async () => { if (!await confirmBox('Cancel this order?', 'Allowed until the owner approves it.', 'Cancel order')) return; try { await cancelMyOrder(l.id); } catch (e) { void notify('', (e as Error).message); } setTick(x => x + 1); }}><X size={14} /> {'Cancel'}</button>
               </div>
             )}
           </div>
         ))}
-        {!d.lines.length && <div className="card muted">{L('No orders yet today.', 'இன்று ஆர்டர் இல்லை.')}</div>}
+        {!d.lines.length && <div className="card muted">{'No orders yet today.'}</div>}
       </div>
     </div>
   );

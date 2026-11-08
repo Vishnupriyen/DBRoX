@@ -1,6 +1,7 @@
 // TESRAX 5000 — everyday messages built from real templates × shops × products × amounts × roles × typing noise.
 // Deterministic (seeded), so the same 5,000+ phrases are tested on every run. Expected codes: see tesrax-code.ts.
 import type { Role } from '../src/core/types';
+import { isTanglish } from './tesrax-code';
 
 export type Case = { said: string; want: string; role: Role; intent: string; dialogue?: string[] };
 export interface Facts { stock: Record<string, number> }
@@ -65,6 +66,7 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
   const seen = new Set<string>();
   const add = (intent: string, said: string, want: string, role: Role = 'owner') => {
     said = said.replace(/\s+/g, ' ').trim();
+    if (isTanglish(said)) return; // English-only launch: Tanglish templates are retired
     const k = `${role}|${said.toLowerCase()}`;
     if (seen.has(k)) return;
     seen.add(k); out.push({ said, want, role, intent });
@@ -77,7 +79,6 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
   const sv = (shop: string) => {
     let v = pick(SHOPS[shop]);
     if (wild && TYPO_SHOP[shop] && R() < 0.15) { const w = TYPO_SHOP[shop]; v = v.replace(new RegExp(w, 'i'), m => slip(m.toLowerCase())); }
-    if (wild && R() < 0.1) v = `${v} ${pick(['ku', 'la', 'kitta'])}`;
     return v;
   };
   const pv = (i: number) => {
@@ -98,8 +99,8 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
   const noisy = (s: string) => {
     if (wild) {
       const r0 = R();
-      if (r0 < 0.12) s = `${pick(['pls', 'please', 'sir', 'anna', 'bro'])} ${s}`;
-      else if (r0 < 0.3) s = `${s} ${pick(['da', 'anna', 'bro', 'please', 'pls', 'sir', 'boss', 'ji'])}`;
+      if (r0 < 0.12) s = `${pick(['pls', 'please', 'sir', 'bro'])} ${s}`;
+      else if (r0 < 0.3) s = `${s} ${pick(['bro', 'please', 'pls', 'sir', 'boss'])}`;
       const r1 = R();
       if (r1 < 0.08) s = `${s} 🙏`; else if (r1 < 0.16) s = `${s}!!`; else if (r1 < 0.22) s = `${s}...`;
     }
@@ -421,6 +422,7 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
 
   // ================================================================================== FOLLOW-UP REPLIES
   const dlg = (intent: string, msgs: string[], want: string, role: Role = 'owner') => {
+    if (msgs.some(isTanglish)) return;
     const k = `${role}|${msgs.join(' » ').toLowerCase()}`;
     if (seen.has(k)) return; seen.add(k);
     out.push({ said: msgs.join(' » '), want, role, intent, dialogue: msgs });

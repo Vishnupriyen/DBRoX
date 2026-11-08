@@ -27,7 +27,7 @@ export function similarity(query: string, target: string): number {
 export function bestProduct(products: Product[], q: string): { product?: Product; score: number } {
   let best: Product | undefined; let score = 0;
   for (const p of products) {
-    const names = [p.name, p.nameTa ?? '', p.code ?? '', ...p.aliases];
+    const names = [p.name, p.code ?? '', ...p.aliases];
     for (const n of names) {
       if (!n) continue;
       const s = n && norm(n) === norm(q) ? 1.2 : similarity(q, n);
@@ -80,9 +80,9 @@ export function findShopInText(shops: Shop[], text: string): { shop?: Shop; rest
   return { shop: best, rest: rest.replace(/^[\s,;:-]+/, '').replace(/\s+/g, ' ') };
 }
 
-const CASE_WORDS = ['case', 'cases', 'cs', 'c', 'cse', 'box', 'boxes', 'ctn', 'carton', 'cartons', 'கேஸ்', 'பெட்டி'];
-const PCS_WORDS = ['pc', 'pcs', 'piece', 'pieces', 'nos', 'no', 'units', 'unit', 'pkt', 'pkts', 'packet', 'packets', 'bag', 'bags', 'bottle', 'bottles', 'tin', 'tins', 'bar', 'bars', 'பீஸ்', 'எண்ணம்'];
-const DOZEN_WORDS = ['dozen', 'dozens', 'dz', 'dzn', 'doz', 'டஜன்'];
+const CASE_WORDS = ['case', 'cases', 'cs', 'c', 'cse', 'box', 'boxes', 'ctn', 'carton', 'cartons'];
+const PCS_WORDS = ['pc', 'pcs', 'piece', 'pieces', 'nos', 'no', 'units', 'unit', 'pkt', 'pkts', 'packet', 'packets', 'bag', 'bags', 'bottle', 'bottles', 'tin', 'tins', 'bar', 'bars'];
+const DOZEN_WORDS = ['dozen', 'dozens', 'dz', 'dzn', 'doz'];
 // pack sizes are part of the product name, never a quantity: "5kg", "250 g", "172 pages"
 const MEASURE = new Set(['kg', 'kgs', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'l', 'ltr', 'litre', 'liter', 'pages', 'page', 'mm', 'cm']);
 const FILLER = new Set(['order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
@@ -93,7 +93,7 @@ const unitOf = (w: string): ParsedLine['unit'] | null => CASE_WORDS.includes(w) 
 // "5 case surf, 10 lifebuoy and 2 dozen good day", "surf 2 case lifebuoy 48", "2cs surf 1 dz vim" → lines.
 export function parseItemLines(text: string): ParsedLine[] {
   // "2,450" is one number, not two items
-  const parts = text.replace(/(\d),(\d{3})\b/g, '$1$2').split(/,|\n|;|\+| and | also | மற்றும் | & /i).map(x => x.trim()).filter(Boolean);
+  const parts = text.replace(/(\d),(\d{3})\b/g, '$1$2').split(/,|\n|;|\+| and | also | & /i).map(x => x.trim()).filter(Boolean);
   const out: ParsedLine[] = [];
   for (const part of parts) {
     // split glued quantity+unit ("2cs", "1c", "12pcs"), keep pack sizes glued ("5kg", "250g")
@@ -187,42 +187,18 @@ export function wordsToNumbers(t: string): string {
   return out.join('');
 }
 
-// shorthand and Tanglish → plain words TESRAX knows (whole words only)
+// shorthand → plain words TESRAX knows (whole words only). English only for launch.
 const SAY: [RegExp, string][] = [
   [/\b(rs|inr)\.\s*/gi, 'rs '], [/\b(\d+(?:\.\d+)?)\s?k\b/gi, '__K$1'],
-  [/\s*(→|->|=>|-->)\s*/g, ' changed to '], [/(\d+(?:\.\d+)?)\s+(?:ah|aa|a)\s+(\d+(?:\.\d+)?)\s*(?:nu|nnu|ndru)?\b/gi, '$1 changed to $2'],
+  [/\s*(→|->|=>|-->)\s*/g, ' changed to '],
   [/\b(\d+(?:\.\d+)?)\s*(lakh|lakhs|lac|lacs)\b/gi, '__L$1'],
-  [/\b(onnu|onu|oru)\b/gi, '1'], [/\b(rendu|randu|rendu)\b/gi, '2'], [/\b(moonu|munu|moonu)\b/gi, '3'], [/\b(naalu|nalu)\b/gi, '4'], [/\b(anju|anchu)\b/gi, '5'], [/\b(aaru)\b/gi, '6'], [/\b(pathu|paththu)\b/gi, '10'],
-  [/\b(ordr|odr|ordar|oder)\b/gi, 'order'], [/\bphone\s*pe\b/gi, 'phonepe'], [/\b(vaangura|vangura|vaangum|vangum|vaangiya|vangiya)\b/gi, 'buying'],
-  [/\b(kuduth|koduth|kudth)\w*/gi, 'paid'], [/\b(vandhuchu|vanthuchu|vandhudhu|vanthathu|vandhadhu)\b/gi, 'received'],
-  [/\b(dhaan|thaan|dhan|dan)\b/gi, 'only'], [/\b(vaadagai|vadagai|vaadakai)\b/gi, 'rent'], [/\bexpiry\s+aaga\w*\s+pog\w*/gi, 'expiring soon'],
-  [/\b(enna panna mudiyum|enna seiya mudiyum|enna pannalam)\b/gi, 'what can you do'], [/\b(ila)\b(?=\s+\d)/gi, 'illa'],
-  [/\benga\s+(irukku|iruku|irukkaanga|irukan|irukaan|irukkudhu)\b/gi, 'where is'], [/\benga\s+pog\w*\b/gi, 'my beat'],
-  [/\bpanam\s+var\w*\s+pog\w*/gi, 'cash flow'], [/\b(kaatu|kaattu|kaatunga|kaattunga|katu|kaminga|kudu|kudunga)\b/gi, 'show'], [/\b(ellam|ellaam|elaam)\b/gi, 'all'],
-  [/\b(thirumbi|thirupi|thiruppi|thirumba)\b/gi, 'returned'], [/\b(eduthen|eduthom|eduthutten|eduthuttom)\b/gi, 'took back'],
-  [/\b(aayiduchu|ayiduchu|aachu|achu|aagiduchu|aaiduchu)\b/gi, 'now'], [/\b(podhum|pothum|podum)\b/gi, 'only'], [/\b(ippo|ipo|ini)\b/gi, 'now'],
+  [/\b(ordr|odr|ordar|oder)\b/gi, 'order'], [/\bphone\s*pe\b/gi, 'phonepe'], [/\b(trdrs|tradrs|trdr|tradr)\b/gi, 'traders'], [/\bcooly\b/gi, 'coolie'],
   [/\bpd\b/gi, 'paid'], [/\b(rcvd|recd|recvd|recieved|receieved|recived|revd)\b/gi, 'received'], [/\bfrm\b/gi, 'from'],
-  [/\b(avangalukku|avangaluku|avarukku|avaruku|avanukku|avanuku|for him|for her|for them|to him|to her|to them)\b/gi, ' '],
-  [/\b(trdrs|tradrs|trdr|tradr)\b/gi, 'traders'], [/\b(kooli|cooly|kuli)\b/gi, 'coolie'], [/\bmela\b/gi, 'above'],
-  [/\b(vanthana|vandhana|vanthaana|vandhaana|vanthaanga|vandhaanga|vantharaa|vandharaa|vanthaan|vandhaan)\b/gi, 'came'],
- [/\b(rcvd|recd|recvd|recieved|receieved|recived|revd)\b/gi, 'received'], [/\bfrm\b/gi, 'from'],
+  [/\b(for him|for her|for them|to him|to her|to them)\b/gi, ' '],
   [/\bu\b/gi, 'you'], [/\bamt\b/gi, 'amount'], [/\b(pls|plz|plss)\b/gi, 'please'], [/\b(tmrw|tmr|tmrrw|tomo|tommorow|tomorow)\b/gi, 'tomorrow'],
   [/\bbal\b/gi, 'balance'], [/\bo\/s\b/gi, 'outstanding'], [/\b(qty)\b/gi, 'quantity'],
-  [/\b(baaki|baki|bakki|baakki)\b/gi, 'balance'], [/\b(evlo|evvalavu|ethana|evalavu|yevlo)\b/gi, 'how much'], [/\b(irukka|iruka|irukkaa)\b/gi, 'available'], [/\b(irukku|iruku|irukkudhu|irukkuthu)\b/gi, 'stock is'],
-  [/\b(kitta|kita|kitte|ta)\b/gi, ' '], [/\b(venum|vendum|veenum)\b/gi, 'need'], [/\b(venam|venaam|venaa|veenam)\b/gi, 'cancel'], [/\b(naalai|nalaiku|naalaiku)\b/gi, 'tomorrow'], [/\b(innaiku|inniku|indru)\b/gi, 'today'],
   [/\b(settled|settle|cleared)\b/gi, 'paid'],
-  // "2000 illa 1200" = "not 2000, it is 1200"
-  [/(\d+(?:\.\d+)?)\s+(illa|illai|alla|illey)\s+(\d+(?:\.\d+)?)/gi, 'not $1 it is $3'], [/(\d+(?:\.\d+)?)\s+(illa|illai|alla|illey)\b/gi, 'not $1'],
-  [/\b(vangitten|vaangitten|vangiten|vaanginen|vanginen|vaangunen|vangunen|vangittom|vaangittom|vangikitten|vaangiten|vaangitom|vangitom|vaangikitten)\b/gi, 'received'],
-  [/\b(anuppunga|anupunga|anuppu|anupu|anuppidunga|kudunga|kodunga|podunga|podu)\b/gi, 'send'],
-  [/\b(pudhu|puthu|pudu)\s+(kadai|kada)\b/gi, 'new shop'], [/\b(kadai|kada)\b/gi, 'shop'],
-  [/\b(maathu|mathu|maathunga|mathunga|maathidu|mathidu|maathi|mathi|maattru|maatru|maathanum|mathanum|maathunom)\b/gi, 'change'], [/\b(aakku|aakunga|aakkunga|aakkidu|aakidu|akku|aaku)\b/gi, 'make'], [/\b(thappu|thapu|tappu|thappa|thapa)\b/gi, 'wrong'],
-  [/\b(vendam|vendaam|venda|vendaa|veandam|vaendam)\b/gi, 'cancel'], [/\b(eduthudu|eduthudunga|edunga|eduthuru|eduthu|thookku|thooku)\b/gi, 'remove'],
-  [/\b(kammi|kammiya|korai|koraichu|kuraichu|kurai|kuraiu)\b/gi, 'reduce'], [/\b(jaasthi|jasthi|jasti|adhigam|athigam|extra va)\b/gi, 'more'],
-  [/\b(serthu|serthudu|sethudu|serunga|serthuko|sethu)\b/gi, 'add'],
-  [/\b(pannanum|pannu|pannalam|pannunga|pannidu|panniru|pannu da|pannuga|panni|pannen|panniten|pannitom|pannittom)\b/gi, ' '],
-  [/\b(ku|la|le|kku|ukku)\b/gi, ' '], [/\b(illa|illai)\b/gi, 'not'],
-  [/\b(sir|anna|bro|boss|madam|mam|ji|da)\b/gi, ' '],
+  [/\b(sir|bro|boss|madam|mam)\b/gi, ' '],
 ];
 /** one clean-up pass before TESRAX reads a message */
 export function cleanSaid(t: string): string {
@@ -233,7 +209,7 @@ export function cleanSaid(t: string): string {
 }
 
 const wordRx = new Map<string, RegExp>();
-/** whole words only ("rent" is not in "current", "tea" is not in "team"); a plural s/es is allowed; Tamil matches inside */
+/** whole words only ("rent" is not in "current", "tea" is not in "team"); a plural s/es is allowed */
 export const hasWord = (t: string, words: string[]) => words.some(w => {
   if (/[^\x00-\x7f]/.test(w)) return t.includes(w);
   let r = wordRx.get(w);

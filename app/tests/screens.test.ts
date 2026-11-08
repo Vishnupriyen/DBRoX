@@ -15,7 +15,6 @@ describe('RoX opens screens by name', () => {
     expect((await handle('approve', [])).go).toBe('orders-received');
     expect((await handle('live vans', [])).go).toBe('live');
     expect((await handle('close day', [])).go).toBe('dayclose');
-    expect((await handle('டெலிவரி திட்டம்', [])).go).toBe('plan');
   });
   it('driver asking for the owner screen is told so; own screens open', async () => {
     await as('delivery');

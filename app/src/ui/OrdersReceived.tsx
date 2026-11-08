@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-react';
 import { ChangeSet, db } from '../core/db';
 import { approveOrder, rejectOrder, shopHistory } from '../core/pipeline';
-import { getLang, inr } from '../core/i18n';
+import { inr } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
 import type { Order, Product, Shop } from '../core/types';
 
-const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
 type Hist = Awaited<ReturnType<typeof shopHistory>>;
 
 // Bill → Orders received. The owner sees the shop's history before saying yes; clean orders approve in one tap.
@@ -32,8 +31,8 @@ export function OrdersReceived() {
 
   return (
     <div className="stack">
-      <div className="sechead"><h3>{L('Orders received', 'வந்த ஆர்டர்கள்')} · {orders.length}</h3>
-        {clean.length > 1 && <button className="link" onClick={async () => { for (const o of clean) await approveOrder(o.id); setTick(x => x + 1); }}>{L(`Approve all ${clean.length} clean`, `${clean.length} சரியானவை எல்லாம்`)}</button>}</div>
+      <div className="sechead"><h3>{'Orders received'} · {orders.length}</h3>
+        {clean.length > 1 && <button className="link" onClick={async () => { for (const o of clean) await approveOrder(o.id); setTick(x => x + 1); }}>{`Approve all ${clean.length} clean`}</button>}</div>
       {orders.map(o => {
         const warn = bad(o);
         return (
@@ -44,24 +43,24 @@ export function OrdersReceived() {
             </div>
             {/* shop history strip — the one line that decides credit */}
             <div className={`hist ${warn ? 'bad' : ''}`}>
-              <Store size={14} /> <b>{o.hist.bills}</b> {L('bills pending', 'பில் நிலுவை')} · <b>{inr(o.hist.amount)}</b> · {L('oldest', 'பழைய')} <b>{o.hist.oldestDays}d</b>
-              {o.hist.limit > 0 && <> · {L('limit', 'வரம்பு')} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> / {o.hist.days}d</>}
+              <Store size={14} /> <b>{o.hist.bills}</b> {'bills pending'} · <b>{inr(o.hist.amount)}</b> · {'oldest'} <b>{o.hist.oldestDays}d</b>
+              {o.hist.limit > 0 && <> · {'limit'} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> / {o.hist.days}d</>}
             </div>
-            {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{L('Rate request', 'விலை கோரிக்கை')}:</b> {o.rateRemark}</div></div>}
-            {o.source !== 'salesman' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{L('How did this order come?', 'இந்த ஆர்டர் எப்படி வந்தது?')}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{L('pick', 'தேர்வு')}</option><option value="phone">{L('Phone', 'போன்')}</option><option value="in_person">{L('In person', 'நேரில்')}</option><option value="whatsapp">WhatsApp</option><option value="other">{L('Other', 'வேறு')}</option></select></div>}
+            {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{'Rate request'}:</b> {o.rateRemark}</div></div>}
+            {o.source !== 'salesman' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{'How did this order come?'}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{'pick'}</option><option value="phone">{'Phone'}</option><option value="in_person">{'In person'}</option><option value="whatsapp">WhatsApp</option><option value="other">{'Other'}</option></select></div>}
             {o.issues.length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.map((x, i) => <div key={i}>{x}</div>)}</div></div>}
             <div className="list">
               {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">@{l.rate}</span></div>; })}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              <button className="btn primary grow" disabled={o.source === 'office'} onClick={() => ok(o.id)}><Check /> {L('Approve → godown', 'ஒப்புதல் → கிடங்கு')}</button>
+              <button className="btn primary grow" disabled={o.source === 'office'} onClick={() => ok(o.id)}><Check /> {'Approve → godown'}</button>
               <a className="btn" href={`tel:${o.shop.phone ?? ''}`} aria-label="Call shop"><Phone /></a>
-              <button className="btn" onClick={async () => { const r = await askText(L('Why cancel?', 'ஏன் ரத்து?')); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
+              <button className="btn" onClick={async () => { const r = await askText('Why cancel?'); if (!r) return; await rejectOrder(o.id, r); setTick(x => x + 1); }} aria-label="Cancel"><X /></button>
             </div>
           </div>
         );
       })}
-      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{L('No orders waiting.', 'ஆர்டர் எதுவும் காத்திருக்கவில்லை.')}</div>}
+      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'No orders waiting.'}</div>}
     </div>
   );
 }

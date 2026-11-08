@@ -38,7 +38,7 @@ export function Pack({ product, size = 'md', photo }: { product: Pick<Product, '
         {kind === 'chips' && <><path d="M18 8 h28 l-3 48 h-22 z" fill={hue} /><path d="M18 8 q14 6 28 0" fill="#fff" opacity=".5" /><circle cx="32" cy="34" r="9" fill="#f7c948" /></>}
         {kind === 'bottle' && <><rect x="26" y="6" width="12" height="8" rx="2" fill={hue} /><path d="M22 14 h20 v40 a4 4 0 0 1 -4 4 h-12 a4 4 0 0 1 -4 -4 z" fill={hue} /><rect x="26" y="26" width="12" height="14" rx="2" fill="#fff" opacity=".8" /></>}
         {kind === 'box' && <><rect x="10" y="18" width="44" height="30" rx="3" fill={hue} /><path d="M10 26 h44" stroke="#fff" strokeWidth="2" opacity=".6" /></>}
-        <text x="32" y="60" textAnchor="middle" fontSize="9" fontWeight="700" fill={hue} fontFamily="Anek Tamil, sans-serif">{initials}</text>
+        <text x="32" y="60" textAnchor="middle" fontSize="9" fontWeight="700" fill={hue} fontFamily="Geist, sans-serif">{initials}</text>
       </svg>
     </div>
   );

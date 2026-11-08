@@ -183,14 +183,13 @@ export function readProductRows(rows: string[][]) {
     code: ['code', 'sku', 'item code'],
     hsn: ['hsn'], gst: ['gst', 'tax'], mrp: ['mrp'], rate: ['rate', 'selling', 'price', 'ptr'],
     purchase: ['purchase', 'cost', 'landing'], caseSize: ['case', 'pack', 'upc', 'case size', 'units per case'],
-    nameTa: ['tamil'],
   }, ['name']);
   if (!m) return null;
   const g = (r: string[], f: string) => (m.map[f] != null ? r[m.map[f]] ?? '' : '');
   return rows.slice(m.headerRow + 1).filter(r => g(r, 'name')).map(r => ({
     name: g(r, 'name'), company: g(r, 'company'), code: g(r, 'code'), hsn: g(r, 'hsn'), gst: num(g(r, 'gst')),
     mrp: num(g(r, 'mrp')), rate: num(g(r, 'rate')), purchase: num(g(r, 'purchase')),
-    caseSize: num(g(r, 'caseSize')) || 1, nameTa: g(r, 'nameTa'),
+    caseSize: num(g(r, 'caseSize')) || 1,
   }));
 }
 
