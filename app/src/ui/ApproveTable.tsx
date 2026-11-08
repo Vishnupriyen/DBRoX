@@ -25,7 +25,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     const col = p.columns.find(c => c.key === key)!;
     const val = col.type === 'number' ? (value === '' ? '' : Number(value)) : value;
     let row: Row = { ...p.rows[ri], [key]: val as never };
-    if (p.kind === 'order' && (key === 'productId' || key === 'qty' || key === 'rate')) {
+    if ((p.kind === 'order' || p.kind === 'orderEdit') && (key === 'productId' || key === 'qty' || key === 'rate')) {
       if (key === 'productId') row.rate = 0;
       row = await refreshOrderRow(row);
     }
@@ -59,7 +59,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
   if (closed) return <div className="muted">✓ {closed}</div>;
 
   const bad = v ? hasErrors(v) : true;
-  const fixedRows = ['bank', 'payment', 'paymentFix'].includes(p.kind);
+  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo'].includes(p.kind);
   return (
     <div className="prop">
       <h4>{p.title}</h4>

@@ -50,6 +50,14 @@ export async function stockOf(productId: string) {
   return bs.filter(b => b.expiry >= today()).reduce((s, b) => s + b.qty, 0);
 }
 
+/** a physical count: the lot is set to what was counted, with the reason kept in the audit. Never below zero. */
+export function countLot(cs: ChangeSet, b: Batch, counted: number, why: string) {
+  if (!Number.isInteger(counted) || counted < 0) throw new Error('A count must be a whole number, 0 or more.');
+  if (!why.trim()) throw new Error('Give a reason for the difference.');
+  if (counted === b.qty) return null;
+  return cs.put<Batch>('batches', { ...b, qty: counted }, `count adjust ${b.qty} → ${counted}: ${why.trim()}`);
+}
+
 // ---------- checks before billing ----------
 export interface OrderCheck { issues: string[]; total: number }
 

@@ -84,7 +84,7 @@ const PCS_WORDS = ['pc', 'pcs', 'piece', 'pieces', 'nos', 'no', 'units', 'unit',
 const DOZEN_WORDS = ['dozen', 'dozens', 'dz', 'dzn', 'doz', 'டஜன்'];
 // pack sizes are part of the product name, never a quantity: "5kg", "250 g", "172 pages"
 const MEASURE = new Set(['kg', 'kgs', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'l', 'ltr', 'litre', 'liter', 'pages', 'page', 'mm', 'cm']);
-const FILLER = new Set(['order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'from', 'book', 'booking']);
+const FILLER = new Set(['order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
 
 export interface ParsedLine { text: string; qty: number; unit: 'case' | 'pcs' | 'dozen'; productText: string }
 const unitOf = (w: string): ParsedLine['unit'] | null => CASE_WORDS.includes(w) ? 'case' : DOZEN_WORDS.includes(w) ? 'dozen' : PCS_WORDS.includes(w) ? 'pcs' : null;
@@ -197,6 +197,10 @@ const SAY: [RegExp, string][] = [
   [/\b(vangitten|vaangitten|vangiten|vaanginen|vanginen|vaangunen|vangunen|vangittom|vaangittom|vangikitten)\b/gi, 'received'],
   [/\b(anuppunga|anupunga|anuppu|anupu|anuppidunga|kudunga|kodunga|podunga|podu)\b/gi, 'send'],
   [/\b(pudhu|puthu|pudu)\s+(kadai|kada)\b/gi, 'new shop'], [/\b(kadai|kada)\b/gi, 'shop'],
+  [/\b(maathu|mathu|maathunga|mathunga|maathidu|mathidu|maathi|mathi|maattru|maatru)\b/gi, 'change'], [/\b(thappu|thapu|tappu|thappa|thapa)\b/gi, 'wrong'],
+  [/\b(vendam|vendaam|venda|vendaa|veandam|vaendam)\b/gi, 'cancel'], [/\b(eduthudu|eduthudunga|edunga|eduthuru|eduthu|thookku|thooku)\b/gi, 'remove'],
+  [/\b(kammi|kammiya|korai|koraichu|kuraichu|kurai|kuraiu)\b/gi, 'reduce'], [/\b(jaasthi|jasthi|jasti|adhigam|athigam|extra va)\b/gi, 'more'],
+  [/\b(serthu|serthudu|sethudu|serunga|serthuko|sethu)\b/gi, 'add'],
   [/\b(pannanum|pannu|pannalam|pannunga|pannidu|panniru|pannu da|pannuga|panni)\b/gi, ' '],
   [/\b(ku|la|le|kku|ukku)\b/gi, ' '], [/\b(illa|illai)\b/gi, 'not'],
   [/\b(sir|anna|bro|boss|madam|mam)\b/gi, ' '],
@@ -208,3 +212,12 @@ export function cleanSaid(t: string): string {
   s = s.replace(/__K(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 1000)));
   return s.replace(/\/-/g, ' ').replace(/\s+/g, ' ').trim();
 }
+
+const wordRx = new Map<string, RegExp>();
+/** whole words only ("rent" is not in "current", "tea" is not in "team"); a plural s/es is allowed; Tamil matches inside */
+export const hasWord = (t: string, words: string[]) => words.some(w => {
+  if (/[^\x00-\x7f]/.test(w)) return t.includes(w);
+  let r = wordRx.get(w);
+  if (!r) { r = new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|es)?(?=[^a-z0-9]|$)`); wordRx.set(w, r); }
+  return r.test(t);
+});

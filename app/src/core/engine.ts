@@ -3,16 +3,17 @@
 // read photos, never to decide money.
 import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
-import { applySchemes, activeSchemes, stockOf } from './billing';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
-import { bestProduct, cleanSaid, findAmount, findShopInText, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, norm, parseItemLines, toPieces } from './match';
 import {
-  companyOptions, productOptions, shopOptions, type Col, type Proposal, type Row,
+  companyOptions, orderRow, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
+export { orderRow, refreshOrderRow } from './proposals';
 import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
-import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Scheme, type Staff } from './types';
+import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
+import { categoryOf, modifyIntent } from './modify';
 const ENV_SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '';
 
 export interface Reply {
@@ -68,7 +69,7 @@ const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] 
 function screenFor(text: string, role: Role, exact = false): Reply | null {
   if (exact) {
     // only a screen's full name: a phrase of 2+ words found whole, or the whole message being that one word
-    const bare = text.replace(/^(open|show|show me|go to|goto|see|view)\s+/, '').replace(/\s+(screen|page|please|now|this month|today|for this month|for today)$/, '').trim();
+    const bare = text.replace(/^(show me|go to|open|show|goto|see|view)\s+/, '').replace(/\s+(screen|page|please|now|this month|today|for this month|for today)$/, '').trim();
     const hit = SCREENS.filter(s => s.words.some(w => !/[^\x00-\x7f]/.test(w) && (w.includes(' ') ? ` ${bare} `.includes(` ${w} `) : bare === w)))
       .sort((a, b) => Math.max(...b.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)) - Math.max(...a.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)));
     const mine = hit.find(h => h.roles.includes(role)) ?? hit[0];
@@ -83,14 +84,7 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
   return { text: `Opening ${hit.name}.`, go: hit.page };
 }
 
-const wordRx = new Map<string, RegExp>();
-// whole words only ("rent" is not in "current", "tea" is not in "team"); a plural s/es is allowed; Tamil matches inside
-const has = (t: string, words: string[]) => words.some(w => {
-  if (/[^\x00-\x7f]/.test(w)) return t.includes(w);
-  let r = wordRx.get(w);
-  if (!r) { r = new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|es)?(?=[^a-z0-9]|$)`); wordRx.set(w, r); }
-  return r.test(t);
-});
+const has = hasWord;
 const W = {
   help: ['help', 'what can you do', 'what can i ask', 'what can i say', 'options', 'menu', 'commands', 'how to use', 'உதவி', 'எப்படி'],
   stockIn: ['inventory', 'stock in', 'add to stock', 'purchase', 'add this', 'goods received', 'ஸ்டாக்', 'சரக்கு', 'கொள்முதல்', 'சேர்'],
@@ -145,7 +139,8 @@ Examples:
 • "Murugan Stores paid 2450 cash"
 • "van 1 diesel 1500"
 • "5 Good Day damaged" · "Selvam return 2 Surf"
-• "Selvam it is not 500, it is 300" (correct a payment)
+• Change what is saved: "Selvam it is not 500, it is 300" · "change Ganapathi order surf to 3 case" · "cancel Murugan payment"
+  "cancel Kumar Mart bill" · "diesel was 1400 not 1500" · "physical count surf 90" · "surf rate 115" · "Selvam phone 98…" · "undo"
 • "who owes more than 10000" · "today sales" · "how much surf" · "is good day available"
 • "load sheet" · "near expiry" · "cash in hand"
 • say a screen name to open it: "delivery plan", "approve", "live vans", "day close"
@@ -200,6 +195,10 @@ export async function handle(said: string, files: File[]): Promise<Reply> {
   // ------------------------ actions ------------------------
   const shops = (await db.shops.toArray()).filter(s => s.active !== false);
   const { shop, rest } = findShopInText(shops, textIn);
+
+  // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
+  const mod = await modifyIntent({ text, textIn, shop, rest, role, products: (await db.products.toArray()).filter(p => p.active), isExpense: has(text, W.expense), isDamage: has(text, W.damage), fixOf: correctionIn });
+  if (mod) return mod;
 
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
@@ -269,13 +268,14 @@ function correctionIn(t: string): { old?: number; next: number } | null {
   if (!nums.length) return null;
   const notN = t.match(/\bnot\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
   if (notN) { const old = Number(notN[1]); const next = nums.find(n => n !== old); return next ? { old, next } : null; }
-  const fixWord = /\b(adjust|correct|correction|change|edit|update|wrong|mistake|actually|instead)\b|தவறு|மாற்று/.test(t);
+  const fixWord = /\b(adjust|correct|correction|change|edit|update|wrong|mistake|actually|instead|should be)\b|தவறு|மாற்று/.test(t);
   if (!fixWord) return null;
   const to = t.match(/(\d{1,5}(?:\.\d{1,2})?)\s*(?:to|->|→|into)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)/);
   if (to) return { old: Number(to[1]), next: Number(to[2]) };
   const isN = t.match(/\b(?:it is|it s|its|correct is|correct amount is|should be|actually|is actually)\s*(?:₹|rs\.?\s*)?(\d{1,5}(?:\.\d{1,2})?)\b/);
   if (isN && nums.length >= 2) { const next = Number(isN[1]); const old = nums.find(n => n !== next); return { old, next }; }
   if (/\b(wrong|mistake|actually|correct)\b|தவறு/.test(t) && nums.length === 1) return { next: nums[0] };
+  if (isN && nums.length === 1) return { next: nums[0] };
   return null;
 }
 
@@ -503,21 +503,6 @@ async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
   };
 }
 
-export async function orderRow(product: Product, qty: number, said: string, schemes?: Scheme[]): Promise<Row> {
-  const sc = schemes ?? await db.schemes.toArray();
-  const sch = applySchemes(product, qty, product.rate, activeSchemes(sc, product, today()));
-  const amount = r2((sch.gross - sch.discount) * (1 + product.gst / 100));
-  return { said, productId: product.id, qty, rate: product.rate, free: sch.freeQty, amount, stock: await stockOf(product.id) };
-}
-
-// Re-compute dependent cells when a person edits an order row.
-export async function refreshOrderRow(r: Row): Promise<Row> {
-  const p = await db.products.get(String(r.productId));
-  if (!p) return r;
-  const sch = applySchemes(p, Number(r.qty) || 0, Number(r.rate) || p.rate, activeSchemes(await db.schemes.toArray(), p, today()));
-  return { ...r, free: sch.freeQty, amount: r2((sch.gross - sch.discount) * (1 + p.gst / 100)), stock: await stockOf(p.id), rate: Number(r.rate) || p.rate };
-}
-
 async function orderFromPhoto(file: File, _text: string): Promise<Reply> {
   try {
     const res = await scanFile(file, 'order');
@@ -591,21 +576,6 @@ async function expenseFromFile(file: File, textIn: string): Promise<Reply> {
   const r = await expenseProposal([{ date, category: categoryOf(t), amount, vanId: van?.id ?? '', note }], photo);
   if (warn) r.text = warn;
   return r;
-}
-
-function categoryOf(t: string) {
-  if (/\b(diesel|petrol|fuel)\b|டீசல்|பெட்ரோல்/.test(t)) return 'Fuel';
-  if (/\btoll\b/.test(t)) return 'Toll';
-  if (/\b(repair|service|tyre|tire|puncture|maintenance)s?\b/.test(t)) return 'Van repair';
-  if (/\b(electricity|eb|current|power)\b/.test(t)) return 'Electricity';
-  if (/\brent\b|வாடகை/.test(t)) return 'Rent';
-  if (/\bsalary\b|சம்பளம்/.test(t)) return 'Salary';
-  if (/\bbatta\b/.test(t)) return 'Batta';
-  if (/\b(hamali|coolie|labour|labor|wages|loading|unloading)\b/.test(t)) return 'Loading & labour';
-  if (/\b(tea|snacks|food|lunch|coffee)\b/.test(t)) return 'Tea & food';
-  if (/\b(internet|wifi|phone|mobile|recharge)\b/.test(t)) return 'Phone & internet';
-  if (/\bhire\b/.test(t)) return 'Van hire';
-  return 'Other';
 }
 
 async function expenseProposal(rows: Row[], photo?: string): Promise<Reply> {

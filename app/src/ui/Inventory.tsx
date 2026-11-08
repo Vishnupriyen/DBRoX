@@ -5,7 +5,8 @@ import { getLang, inr } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
 import { Pack } from './Pack';
-import { askText, confirmBox } from './dialog';
+import { askText, confirmBox, notify } from './dialog';
+import { countLot } from '../core/billing';
 import type { Batch, Company, Product } from '../core/types';
 
 const L = (en: string, ta: string) => (getLang() === 'ta' ? ta : en);
@@ -112,7 +113,7 @@ export function StockPosition() {
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small" onClick={async () => { const n = await askText(L('How many pieces in the second lot?', 'இரண்டாம் லாட்டில் எத்தனை?')); const q = Number(n); if (!q || q >= b.qty) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - q }, 'split'); cs.put<Batch>('batches', { productId: b.productId, batch: b.batch + 'B', expiry: b.expiry, mrp: b.mrp, qty: q, godown: b.godown }, 'split lot'); await cs.commit('Lot split'); setTick(x => x + 1); }}><Split size={14} /> {L('Split', 'பிரி')}</button>
                   <button className="btn small" onClick={async () => { const m = await askText(L('New expiry month (MM/YY)', 'புதிய காலாவதி (MM/YY)')); if (!m || !/^\d{2}\/\d{2}$/.test(m)) return; const exp = monthEnd(`20${m.slice(3)}-${m.slice(0, 2)}`); const cs = new ChangeSet(); cs.put('batches', { ...b, expiry: exp }, `expiry changed ${b.expiry} → ${exp}`); await cs.commit('Expiry changed'); setTick(x => x + 1); }}><Tag size={14} /> {L('Change expiry', 'காலாவதி மாற்று')}</button>
-                  <button className="btn small" onClick={async () => { const n = await askText(L('Counted pieces on the shelf?', 'எண்ணிய பீஸ்?')); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText(L('Remark for the difference', 'வித்தியாசத்திற்கு குறிப்பு')); if (!why) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: q }, `count adjust ${b.qty} → ${q}: ${why}`); await cs.commit('Stock count'); setTick(x => x + 1); }}><Boxes size={14} /> {L('Count', 'எண்ணு')}</button>
+                  <button className="btn small" onClick={async () => { const n = await askText(L('Counted pieces on the shelf?', 'எண்ணிய பீஸ்?')); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText(L('Remark for the difference', 'வித்தியாசத்திற்கு குறிப்பு')); if (!why) return; const cs = new ChangeSet(); try { countLot(cs, b, q, why); } catch (e) { void notify('Count not saved', (e as Error).message); return; } await cs.commit('Stock count'); setTick(x => x + 1); }}><Boxes size={14} /> {L('Count', 'எண்ணு')}</button>
                   <button className="btn small" onClick={async () => { const m = await askText(L('New MRP for this lot', 'இந்த லாட்டின் புதிய MRP'), String(b.mrp)); const v = Number(m); if (!m || !v) return; const cs = new ChangeSet(); cs.put('batches', { ...b, mrp: v }, `mrp ${b.mrp} → ${v}`); await cs.commit('MRP changed'); setTick(x => x + 1); }}><Tag size={14} /> MRP</button>
                   <button className="btn small" onClick={async () => { const m = await askText(L('Batch number', 'பேட்ச் எண்'), b.batch); if (m === null) return; const cs = new ChangeSet(); cs.put('batches', { ...b, batch: m }, `batch ${b.batch} → ${m}`); await cs.commit('Batch changed'); setTick(x => x + 1); }}><Tag size={14} /> {L('Batch', 'பேட்ச்')}</button>
                 </div>

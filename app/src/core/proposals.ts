@@ -1,11 +1,11 @@
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
-import { ChangeSet, db, getSettings, session, today } from './db';
-import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches } from './billing';
-import { bookOrder } from './pipeline';
+import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
+import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, makeInvoices, pickBatches, stockOf } from './billing';
+import { bookOrder, cancelInvoice, changeOrder } from './pipeline';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Shop } from './types';
+import type { Batch, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Scheme, Shop } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -20,7 +20,8 @@ export interface Col {
 
 export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
-  | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix';
+  | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix'
+  | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo';
 
 export interface Proposal {
   id: string;
@@ -58,6 +59,21 @@ export async function shopOptions() {
 }
 export async function companyOptions() {
   return [{ value: '', label: '— pick —' }, ...(await db.companies.toArray()).map(c => ({ value: c.id, label: c.name }))];
+}
+
+export async function orderRow(product: Product, qty: number, said: string, schemes?: Scheme[], rate = product.rate): Promise<Row> {
+  const sc = schemes ?? await db.schemes.toArray();
+  const sch = applySchemes(product, qty, rate, activeSchemes(sc, product, today()));
+  const amount = r2((sch.gross - sch.discount) * (1 + product.gst / 100));
+  return { said, productId: product.id, qty, rate, free: sch.freeQty, amount, stock: await stockOf(product.id) };
+}
+
+// Re-compute dependent cells when a person edits an order row.
+export async function refreshOrderRow(r: Row): Promise<Row> {
+  const p = await db.products.get(String(r.productId));
+  if (!p) return r;
+  const sch = applySchemes(p, Number(r.qty) || 0, Number(r.rate) || p.rate, activeSchemes(await db.schemes.toArray(), p, today()));
+  return { ...r, free: sch.freeQty, amount: r2((sch.gross - sch.discount) * (1 + p.gst / 100)), stock: await stockOf(p.id), rate: Number(r.rate) || p.rate };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -214,6 +230,110 @@ export async function validate(p: Proposal): Promise<Validation> {
       v.summary = `${p.rows.length} shop(s)`;
       break;
     }
+    case 'orderEdit': {
+      const seen = new Set<string>();
+      p.rows.forEach((r, i) => {
+        if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
+        else if (seen.has(s(r.productId))) err(v, i, 'productId', 'This product is already in the order');
+        seen.add(s(r.productId));
+        if (n(r.qty) < 0 || !Number.isInteger(n(r.qty))) err(v, i, 'qty', 'Whole pieces, 0 or more (0 removes it)');
+        if (n(r.qty) > 0 && n(r.rate) <= 0) err(v, i, 'rate', 'Rate missing');
+      });
+      const keep = p.rows.filter(r => n(r.qty) > 0);
+      if (!keep.length && !Object.keys(v.errors).length) v.fieldErrors.shopId = 'Every item is 0 — say "cancel the order" instead';
+      const order = await db.orders.get(String(p.meta.orderId ?? ''));
+      if (order && keep.length) {
+        const shop = await db.shops.get(order.shopId);
+        if (shop) v.warnings.push(...(await checkOrder(shop, keep.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) })))).issues);
+      }
+      const changed = p.rows.filter(r => n(r.qty) !== n(r.was)).length;
+      v.summary = `${keep.length} item(s) · ${changed} changed · about ₹${r2(keep.reduce((a, r) => a + n(r.amount), 0))} with GST`;
+      break;
+    }
+    case 'orderCancel': {
+      if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'Say why';
+      v.summary = `The whole order (${p.rows.length} item${p.rows.length > 1 ? 's' : ''}) will be cancelled`;
+      break;
+    }
+    case 'billCancel': {
+      if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'A reason is needed to cancel a bill';
+      const inv = await db.invoices.get(String(p.meta.invoiceId ?? ''));
+      if (!inv || inv.cancelled) v.fieldErrors.number = 'This bill is already cancelled';
+      else {
+        const paid = (await db.payments.where('shopId').equals(inv.shopId).toArray()).filter(x => x.status === 'ok').reduce((a, x) => a + x.allocations.filter(al => al.invoiceId === inv.id).reduce((b, al) => b + al.amount, 0), 0);
+        if (paid > 0.5) v.warnings.push(`₹${r2(paid)} already paid against this bill will stay with the shop as advance`);
+        if (inv.deliveryStatus === 'delivered') v.warnings.push('This bill was delivered: make sure the goods came back, the stock is added back to the godown');
+      }
+      v.summary = `Bill ${s(fieldValue(p, 'number'))} · ₹${n(fieldValue(p, 'total'))} cancelled, stock back`;
+      break;
+    }
+    case 'paymentCancel': {
+      if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'Say why';
+      v.summary = `₹${n(fieldValue(p, 'amount'))} payment cancelled · bills open again`;
+      break;
+    }
+    case 'expenseFix': {
+      const del = s(fieldValue(p, 'action')) === 'delete';
+      p.rows.forEach((r, i) => {
+        if (del) return;
+        if (n(r.amount) <= 0) err(v, i, 'amount', 'Amount missing (or pick "Delete it")');
+        if (!s(r.category)) err(v, i, 'category', 'Pick a category');
+        if (!toIsoDate(s(r.date))) err(v, i, 'date', 'Date missing');
+      });
+      v.summary = del ? `₹${n(fieldValue(p, 'was'))} expense deleted` : `₹${n(fieldValue(p, 'was'))} → ₹${n(p.rows[0]?.amount)}`;
+      break;
+    }
+    case 'stockFix': {
+      if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'Give a reason for the difference';
+      let sys = 0, cnt = 0;
+      p.rows.forEach((r, i) => {
+        if (!Number.isInteger(n(r.counted)) || n(r.counted) < 0 || s(r.counted) === '') err(v, i, 'counted', 'Whole pieces, 0 or more');
+        sys += n(r.system); cnt += n(r.counted);
+      });
+      const prod = products.get(s(fieldValue(p, 'productId')));
+      const d = cnt - sys;
+      if (prod && Math.abs(d) > prod.caseSize * 5) v.warnings.push(`Big difference: ${d > 0 ? '+' : ''}${d} pcs (${r2(Math.abs(d) / prod.caseSize)} cases). Count again before saving.`);
+      v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod ? ` · ₹${r2(Math.abs(d) * prod.purchaseRate)}` : ''})`;
+      break;
+    }
+    case 'productEdit': {
+      const prod = products.get(s(fieldValue(p, 'productId')));
+      if (!prod) v.fieldErrors.productId = 'Pick the product';
+      const get = (k: string, d: number) => { const r = p.rows.find(x => s(x.key) === k); return r ? n(r.value) : d; };
+      p.rows.forEach((r, i) => {
+        const k = s(r.key), val = n(r.value);
+        if (k === 'gst') { if (![0, 5, 12, 18, 28, 40].includes(val)) err(v, i, 'value', 'GST % should be 0/5/12/18/28/40'); return; }
+        if (val <= 0) err(v, i, 'value', 'Must be more than 0');
+        if (k === 'caseSize' && !Number.isInteger(val)) err(v, i, 'value', 'Whole pieces');
+      });
+      if (prod) {
+        const rate = get('rate', prod.rate), mrp = get('mrp', prod.mrp), buy = get('purchaseRate', prod.purchaseRate);
+        const ri = p.rows.findIndex(x => s(x.key) === 'rate' || s(x.key) === 'mrp');
+        if (mrp > 0 && rate * (1 + prod.gst / 100) > mrp + 0.01 && ri >= 0) err(v, ri, 'value', `Selling rate with GST (₹${r2(rate * (1 + prod.gst / 100))}) is above MRP ₹${mrp}`);
+        if (buy > rate) v.warnings.push(`Buying rate ₹${buy} is above selling rate ₹${rate}: every sale loses money`);
+        if (p.rows.some(x => s(x.key) === 'mrp')) v.warnings.push('Lots already in stock keep the MRP printed on them');
+      }
+      v.summary = p.rows.map(r => `${r.field} ${r.was} → ${r.value}`).join(' · ');
+      break;
+    }
+    case 'shopEdit': {
+      p.rows.forEach((r, i) => {
+        const k = s(r.key), val = s(r.value);
+        if (k === 'phone' && !/^[6-9]\d{9}$/.test(val.replace(/\D/g, '').slice(-10))) err(v, i, 'value', '10-digit mobile number');
+        if (k === 'gstin' && val && !validGstin(val.toUpperCase())) err(v, i, 'value', 'GSTIN looks wrong');
+        if (k === 'creditLimit' && (!(Number(val) >= 0) || val === '')) err(v, i, 'value', 'Amount, 0 or more');
+        if (k === 'creditDays' && !(Number.isInteger(Number(val)) && Number(val) >= 0 && Number(val) <= 365)) err(v, i, 'value', 'Days between 0 and 365');
+        if (k === 'cashOnly' && !['yes', 'no'].includes(val)) err(v, i, 'value', 'yes or no');
+        if (k === 'beat' && !['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].includes(val)) err(v, i, 'value', 'A day of the week');
+        if ((k === 'name' || k === 'address' || k === 'owner' || k === 'area') && !val) err(v, i, 'value', 'Empty');
+      });
+      v.summary = p.rows.map(r => `${r.field}: ${r.was || '—'} → ${r.value}`).join(' · ');
+      break;
+    }
+    case 'undo': {
+      v.summary = `${p.rows.length} change(s) will be put back`;
+      break;
+    }
     default:
       break;
   }
@@ -226,6 +346,16 @@ export const hasErrors = (v: Validation) => Object.keys(v.errors).length > 0 || 
 // COMMIT — the only place data is written. One ChangeSet = one undo.
 // ---------------------------------------------------------------------------------------------
 export async function commit(p: Proposal): Promise<{ message: string; batchId: string; invoices?: Invoice[]; orderId?: string }> {
+  if (p.kind === 'undo') {
+    const k = await undoBatch(String(p.meta.batchId ?? ''));
+    if (k < 0) throw new Error("Can't undo this: something changed after it (for example a later bill used the same stock). Change or cancel it instead.");
+    if (k === 0) throw new Error('This was already undone.');
+    return { message: `Undone: ${s(fieldValue(p, 'label'))} (${k} change${k > 1 ? 's' : ''} put back).`, batchId: '' };
+  }
+  if (p.kind === 'billCancel') {
+    const batchId = await cancelInvoice(String(p.meta.invoiceId ?? ''), s(fieldValue(p, 'reason')));
+    return { message: `Bill ${s(fieldValue(p, 'number'))} cancelled. Stock is back in the godown.`, batchId };
+  }
   const cs = new ChangeSet();
   const products = new Map((await db.products.toArray()).map(x => [x.id, x]));
   let message = '';
@@ -270,7 +400,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     }
     case 'expense': {
       for (const r of p.rows) {
-        cs.put<Expense>('expenses', { date: toIsoDate(s(r.date)) || today(), category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note), photo: p.meta.photo as string | undefined }, 'expense');
+        cs.put<Expense>('expenses', { by: session().userId, date: toIsoDate(s(r.date)) || today(), category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note), photo: p.meta.photo as string | undefined }, 'expense');
       }
       message = `Expense recorded: ₹${r2(p.rows.reduce((a, r) => a + n(r.amount), 0))}.`;
       break;
@@ -424,6 +554,80 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       message = p.kind === 'newshop' && me?.role !== 'owner'
         ? 'New shop saved. Owner must approve it before the first bill.'
         : `${p.rows.length} shop(s) saved.`;
+      break;
+    }
+    case 'orderEdit': case 'orderCancel': {
+      const orderIdIn = String(p.meta.orderId ?? '');
+      const shopName = (await db.shops.get(s(fieldValue(p, 'shopId'))))?.name ?? '';
+      if (p.kind === 'orderCancel') { await changeOrder(cs, orderIdIn, null, s(fieldValue(p, 'reason'))); message = `${shopName}'s order cancelled.`; break; }
+      const o = await db.orders.get(orderIdIn);
+      const lines = p.rows.map(r => {
+        const old = o?.lines.find(l => l.productId === s(r.productId));
+        return { ...(old ?? {}), productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) };
+      });
+      await changeOrder(cs, orderIdIn, lines);
+      orderId = orderIdIn;
+      message = `${shopName}'s order changed.`;
+      break;
+    }
+    case 'paymentCancel': {
+      const old = await db.payments.get(String(p.meta.paymentId ?? ''));
+      if (!old || old.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
+      if (old.bankLineId) throw new Error('This payment is matched to the bank statement. Unmatch it in Accounts → Bank first.');
+      cs.put<Payment>('payments', { ...old, status: 'cancelled', note: s(fieldValue(p, 'reason')) }, 'payment cancelled');
+      message = `Payment ₹${old.amount} cancelled. The bills are open again.`;
+      break;
+    }
+    case 'expenseFix': {
+      const old = await db.expenses.get(String(p.meta.expenseId ?? ''));
+      if (!old) throw new Error('That expense is not there any more.');
+      const r = p.rows[0];
+      if (s(fieldValue(p, 'action')) === 'delete') {
+        cs.put<Expense>('expenses', { ...old, amount: 0, note: `Deleted (was ₹${old.amount})${old.note ? ` · ${old.note}` : ''}` }, 'expense deleted');
+        message = `Expense ₹${old.amount} deleted.`;
+      } else {
+        cs.put<Expense>('expenses', { ...old, date: toIsoDate(s(r.date)) || old.date, category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note) }, 'expense corrected');
+        message = `Expense corrected: ₹${old.amount} → ₹${n(r.amount)}.`;
+      }
+      break;
+    }
+    case 'stockFix': {
+      const why = s(fieldValue(p, 'reason'));
+      let sys = 0, cnt = 0;
+      for (const r of p.rows) {
+        const b = await db.batches.get(s(r.batchId));
+        if (!b) continue;
+        if (b.qty !== n(r.system)) throw new Error('The stock moved while you were counting (a bill or delivery). Ask again for a fresh count table.');
+        countLot(cs, b, n(r.counted), why);
+        sys += b.qty; cnt += n(r.counted);
+      }
+      if (!cs.size) throw new Error('Nothing changed: the count is the same as the system.');
+      message = `Stock count saved: ${sys} → ${cnt} pcs.`;
+      break;
+    }
+    case 'productEdit': {
+      const prod = products.get(s(fieldValue(p, 'productId')));
+      if (!prod) throw new Error('Product not found.');
+      const upd: Product = { ...prod };
+      for (const r of p.rows) (upd as unknown as Record<string, number>)[s(r.key)] = n(r.value);
+      cs.put<Product>('products', upd, 'product changed');
+      message = `${prod.name} updated.`;
+      break;
+    }
+    case 'shopEdit': {
+      const shop = await db.shops.get(s(fieldValue(p, 'shopId')));
+      if (!shop) throw new Error('Shop not found.');
+      const upd: Shop = { ...shop };
+      for (const r of p.rows) {
+        const k = s(r.key), val = s(r.value);
+        if (k === 'cashOnly') upd.cashOnly = val === 'yes';
+        else if (k === 'creditLimit' || k === 'creditDays') (upd as unknown as Record<string, number>)[k] = Number(val);
+        else if (k === 'phone') upd.phone = val.replace(/\D/g, '').slice(-10);
+        else if (k === 'gstin') upd.gstin = val.toUpperCase() || undefined;
+        else (upd as unknown as Record<string, string>)[k] = val;
+      }
+      cs.put<Shop>('shops', upd, 'shop details changed');
+      message = `${upd.name} updated.`;
       break;
     }
     default:

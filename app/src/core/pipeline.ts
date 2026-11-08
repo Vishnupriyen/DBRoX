@@ -5,7 +5,7 @@ import { ChangeSet, db, nowIso, session, today, daysFrom } from './db';
 import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches } from './billing';
 import { r2 } from './ledger';
 import { nextNumbers } from './sync';
-import type { Invoice, Order, OrderLine, Shop, Trip, Van } from './types';
+import type { Invoice, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
 export async function bookOrder(cs: ChangeSet, shop: Shop, lines: OrderLine[], by: string, extra: Partial<Order> = {}) {
@@ -17,6 +17,31 @@ export async function cancelMyOrder(orderId: string) {
   const o = (await db.orders.get(orderId))!;
   if (o.status !== 'new') throw new Error('Already approved — ask the owner');
   const cs = new ChangeSet(); cs.put('orders', { ...o, status: 'cancelled', issues: [...o.issues, 'Cancelled by salesman'] }, 'salesman cancelled'); await cs.commit('Order cancelled');
+}
+/** why this person can't change this order now, or null if they can. Packed, billed and cancelled orders are never changed here. */
+export function orderBlock(o: Order, role: Role, me: string): string | null {
+  if (o.status === 'cancelled') return 'it is already cancelled.';
+  if (o.status === 'billed') return 'it is already billed. Cancel the bill (Bill → Billed) or make a return instead.';
+  if (o.status === 'picked') return 'the godown has already packed it. Change the quantities while verifying it (Bill → Picked).';
+  if (role === 'owner' || role === 'office') return null;
+  if (o.salesmanId !== me) return 'only the person who booked it or the owner can change it.';
+  if (o.status !== 'new') return 'the owner has already approved it. Ask the owner to change it.';
+  return null;
+}
+/** change the lines of an order, or cancel it (lines = null). Checked again at save time: the order may have moved on. */
+export async function changeOrder(cs: ChangeSet, orderId: string, lines: OrderLine[] | null, reason = '') {
+  const o = await db.orders.get(orderId);
+  if (!o) throw new Error('Order not found.');
+  const me = session().userId;
+  const role = (await db.staff.get(me))?.role ?? 'owner';
+  const block = orderBlock(o, role, me);
+  if (block) throw new Error(`Can't change this order: ${block}`);
+  if (!lines) return cs.put<Order>('orders', { ...o, status: 'cancelled', issues: [...o.issues, `Cancelled${reason ? `: ${reason}` : ''}`] }, 'order cancelled');
+  const keep = lines.filter(l => l.qty > 0);
+  if (!keep.length) throw new Error('Every line is 0. Cancel the order instead.');
+  const shop = (await db.shops.get(o.shopId))!;
+  const check = await checkOrder(shop, keep);
+  return cs.put<Order>('orders', { ...o, lines: keep, issues: check.issues }, 'order changed');
 }
 export async function updateMyOrder(orderId: string, lines: OrderLine[]) {
   const o = (await db.orders.get(orderId))!;

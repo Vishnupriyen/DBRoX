@@ -13,7 +13,8 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { db, setSession } from '../src/core/db';
 import { seedDemo } from '../src/core/seed';
-import { handle, HELP_TEXT, type Reply } from '../src/core/engine';
+import { handle } from '../src/core/engine';
+import { code, loadNames } from './tesrax-code';
 import type { Role } from '../src/core/types';
 
 type Case = [said: string, expect: string, role?: Role];
@@ -288,48 +289,10 @@ const CORPUS: Case[] = [
   ['Selvam Kirana hello 12 something 40', 'ask'],
 ];
 
-// ---------------------------------------------------------------- what TESRAX did, as a code
-let shopName = new Map<string, string>();
-function code(r: Reply): string {
-  const p = r.proposal;
-  if (p) {
-    const f = (k: string) => p.fields.find(x => x.key === k)?.value;
-    const shop = shopName.get(String(f('shopId') ?? '')) ?? '?';
-    switch (p.kind) {
-      case 'order': return `order:${shop}`;
-      case 'payment': return `payment:${shop}:${f('amount')}:${f('mode')}`;
-      case 'paymentFix': return `fix:${f('was')}->${f('amount')}`;
-      case 'return': return `return:${shop}`;
-      case 'expense': return `expense:${p.rows[0]?.amount}:${p.rows[0]?.category}`;
-      default: return p.kind;
-    }
-  }
-  if (r.go) return `go:${r.go}`;
-  if (r.table) {
-    const n = r.table.name.toLowerCase();
-    if (/^tally/.test(n)) return 'export:tally';
-    if (/^gstr/.test(n)) return 'export:gstr1';
-    if (/^e-?invoice/.test(n)) return 'export:einvoice';
-    if (/^claim/.test(n)) return 'export:claims';
-    return `t:${r.table.name.split(' ')[0]}`;
-  }
-  if (/couldn.t find a payment/i.test(r.text)) return 'fix:none'; // understood as a correction; no such payment in this data
-  const act = r.actions?.map(a => a.label.toLowerCase()).join(' ') ?? '';
-  if (/tally/.test(act)) return 'export:tally';
-  if (/gstr/.test(act)) return 'export:gstr1';
-  if (/e-invoice|einvoice/.test(act)) return 'export:einvoice';
-  if (/claim/.test(act)) return 'export:claims';
-  if (r.text === HELP_TEXT || r.text.endsWith(HELP_TEXT) && !/didn.t understand/i.test(r.text)) return 'help';
-  if (r.tone === 'ok' && /leave/i.test(r.text)) return 'leave';
-  if (r.tone === 'ok' && /advance/i.test(r.text)) return `advance:${(r.text.match(/₹(\d+)/) ?? [])[1]}`;
-  if (r.tone === 'warn') return 'ask';
-  return `other:${r.text.slice(0, 50)}`;
-}
-
 let ids: Record<Role, string>;
 beforeAll(async () => {
   await seedDemo();
-  shopName = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
+  await loadNames();
   const staff = await db.staff.toArray();
   ids = Object.fromEntries(staff.map(s => [s.role, s.id])) as Record<Role, string>;
 });
