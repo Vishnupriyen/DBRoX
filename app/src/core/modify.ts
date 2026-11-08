@@ -57,7 +57,7 @@ function isUndo(t: string) {
   if (/^(please )?(undo|revert)( (it|that|this|the|my|last|previous|latest|one|1|entry|action|save|change|thing|record|please|what i did|just now|now))*$/.test(t)) return true;
   if (/^(please )?(cancel|delete|remove|reverse|scrap|take back)( (it|that|this|the|my))* (last|previous|latest) (entry|one|thing|action|save|change|record|saved)( please)*$/.test(t)) return true;
   if (/^(please )?(cancel|delete|reverse|take back) (that|it|this)( please| now)*$/.test(t)) return true;
-  if (/^(please )?(that|it|this) (was|is) (wrong|a mistake|mistake)( please)?( (undo|cancel|remove|delete) (it|that))?$/.test(t)) return true;
+  if (/^(please )?(that|it|this) (was|is) (wrong|a mistake|mistake)( please)*( (undo|cancel|remove|delete) (it|that))?( please)*$/.test(t)) return true;
   if (/^(please )?(i made a mistake|my mistake|wrong entry|mistake|entry wrong|last entry wrong|last entry is wrong)( please)*( (undo|cancel|remove|delete)( it| that)?)?( please)*$/.test(t)) return true;
   return /\b(undo|revert)\b/.test(t) && !/\d{2,}/.test(t);
 }
