@@ -179,4 +179,7 @@ describe('undo', () => {
     await approve(r);
     expect((await db.shops.get(shopId.velan))!.creditLimit).toBe(15000);
   });
+  it.each(['i made a mistake please 🙏 pls', 'i made a mistake please pls'])('the million run: "%s" is undo', async said => {
+    expect((await ask(said)).proposal?.kind).toBe('undo');
+  });
 });
