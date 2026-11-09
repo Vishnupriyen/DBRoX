@@ -119,13 +119,16 @@ export async function buildApp(pool: pg.Pool) {
     const canWrite = new Set(WRITE[c.r] ?? []);
     const accepted: string[] = [];
     const rejected: string[] = [];
+    // read before taking the lock: a lock holder that waits for a second pooled connection can freeze the server
+    const st = changes.length ? await stateFor(c.t) : null;
+    // nothing to save ("anything new?"): no transaction and no lock, straight to the pull
+    if (changes.length) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       // one writer per distributor at a time → versions commit in order, so no phone ever skips a change
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [c.t]);
       const tbls: string[] = [], ids: string[] = [], datas: string[] = [], ups: string[] = [];
-      const st = await stateFor(c.t);
       const blockNew = st?.status === 'locked' ? new Set(['orders', 'invoices']) : new Set<string>();
       const existing = new Set<string>();
       if (blockNew.size) {
@@ -155,6 +158,7 @@ export async function buildApp(pool: pg.Pool) {
       }
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    }
 
     const cursor = Number(b.cursor ?? 0);
     const rows = (await pool.query(

@@ -109,6 +109,20 @@ describe('DBRoX server', () => {
     expect(dp2.body.changes.find((c: { id: string }) => c.id === 'l1')?.data.status).toBe('approved');
   });
 
+  it('many phones of one distributor syncing at the same moment never freeze the server (capacity test, 9 Nov 2026)', async () => {
+    // the sync held its distributor lock while asking the pool for a second connection: with every pooled connection
+    // waiting on that same lock, nothing could ever finish
+    const s = await post('/v1/signup', { firmName: 'Busy Agencies', ownerName: 'Owner', phone: '9877700001', pin: '1111' });
+    expect(s.status, JSON.stringify(s.body)).toBe(200);
+    const now = new Date().toISOString();
+    const res = await Promise.race([
+      Promise.all(Array.from({ length: 40 }, (_, k) => post('/v1/sync', { cursor: 0, changes: [{ table: 'orders', id: `busy-${k}`, updatedAt: now, data: { n: k } }] }, s.body.token))),
+      new Promise<'frozen'>(r => setTimeout(() => r('frozen'), 20000)),
+    ]);
+    expect(res).not.toBe('frozen');
+    expect((res as { status: number; body: unknown }[]).filter(r => r.status !== 200).map(r => `${r.status} ${JSON.stringify(r.body)}`)).toEqual([]);
+  }, 30000);
+
   it('issues bill numbers on the server, never twice', async () => {
     const a = await post('/v1/number', { kind: 'bill', count: 2 }, owner.token);
     const b = await post('/v1/number', { kind: 'bill' }, owner.token);

@@ -12,17 +12,18 @@ const SECONDS = Number(process.env.SECONDS ?? 60);
 const DAY = { invoices: 200, orders: 200, payments: 150 }; // one distributor's day
 const port = 54400 + Math.floor(Math.random() * 500);
 
-const pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'cap-pg-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
+const pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'cap-pg-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false, onLog: () => {} });
+console.log('pg up');
 await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
 process.env.DATABASE_URL = `postgres://postgres:pw@localhost:${port}/dbrox`;
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 20 });
 const { migrate } = await import('../src/db.js');
-await migrate(pool);
+await migrate(pool); console.log('migrated');
 const { buildApp } = await import('../src/app.js');
 const app = await buildApp(pool);
 await app.listen({ host: '127.0.0.1', port: 0 });
 const addr = app.server.address() as { port: number };
-const SERVER = `http://127.0.0.1:${addr.port}`;
+const SERVER = `http://127.0.0.1:${addr.port}`; console.log('server', SERVER);
 
 const post = async (path: string, body: unknown, token?: string) => {
   const r = await fetch(SERVER + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
