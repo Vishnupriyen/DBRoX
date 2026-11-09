@@ -4,7 +4,7 @@
 import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { invoiceBalances, r2, shopOutstanding } from './ledger';
-import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
 import {
   companyOptions, orderRow, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
@@ -103,7 +103,7 @@ export const W = {
   expense: ['expense', 'eb', 'hire', 'hired', 'loading', 'coolie', 'spent', 'spend', 'diesel', 'petrol', 'fuel', 'toll', 'repair', 'service', 'tyre', 'puncture', 'rent', 'batta', 'salary', 'tea', 'snacks', 'food', 'lunch', 'electricity', 'eb bill', 'current bill', 'power bill', 'internet', 'wifi', 'phone bill', 'mobile recharge', 'recharge', 'wages', 'hamali', 'coolie', 'labour', 'loading charges', 'unloading', 'charges', 'parking', 'courier', 'transport', 'freight', 'lorry', 'stationery', 'printing', 'maintenance', 'water', 'cleaning', 'insurance'],
   bank: ['bank', 'statement', 'match payment'],
   products: ['product list', 'products', 'item master'],
-  shops: ['shop list', 'shops list', 'retailer list', 'customer list'],
+  shops: ['shop list', 'shops list', 'shops', 'retailer list', 'retailers', 'customer list', 'outlets', 'shop master'],
   newShop: ['new shop', 'new outlet', 'add outlet', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer'],
   paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer'],
   ret: ['return', 'returned', 'took back', 'sent back', 'send back', 'gave back', 'give back', 'taken back'],
@@ -166,6 +166,7 @@ Short forms, typos and numbers in words work too: "murugan 5k pd", "selvam bal",
 export async function handleOne(said: string, files: File[]): Promise<Reply> {
   const textIn = cleanSaid(said); // numbers in words, "5k" and shorthand → plain words
   const text = norm(textIn);
+  learnNames(await db.products.toArray()); // "5 Star", "Total 10": numbers that are part of names in this catalogue
   const settings = await getSettings();
   const mods = (await licenceState(!!ENV_SERVER_URL, settings)).mods; // what the distributor has paid for, never a phone setting
   const role = await myRole();
@@ -173,9 +174,9 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
 
   if (!text && !file) return { text: HELP_TEXT };
   if (has(text, W.help)) return { text: HELP_TEXT };
-  if (!file && /^(hi+|hello|hey|hai|vanakkam|good (morning|afternoon|evening|night)|how are you|thanks|thank you|ok|okay)( (tesrax|there|ji|da|you))*$/.test(text)) {
+  if (!file && /^(hi+|hello|hey|good (morning|afternoon|evening|night)|how are you|thanks|thank you|ok|okay)( (tesrax|there|you))*$/.test(text)) {
     const me = await db.staff.get(session().userId);
-    return { text: `Vanakkam${me ? `, ${me.name.split(' ')[0]}` : ''}! Here's what I can do:\n\n${HELP_TEXT}` };
+    return { text: `Hello${me ? `, ${me.name.split(' ')[0]}` : ''}! Here's what I can do:\n\n${HELP_TEXT}` };
   }
 
   // ------------------------ with a file ------------------------
@@ -210,19 +211,31 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   const shops = (await db.shops.toArray()).filter(s => s.active !== false);
   // a new owner or shop name can contain another shop's word ("Annai owner name Lakshmi"): find the shop without it
   const shopSearch = textIn.replace(/\b(owner(?:\s*name)?|rename|name\s+(?:is|to|change|changed|should|as))\b.*$/i, ' ');
-  const shop = findShopInText(shops, shopSearch).shop;
+  // a salesman means his own shop on today's beat when a name repeats in other towns
+  const today = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+  const found = findShopInText(shops, shopSearch, role === 'salesman' ? { salesmanId: session().userId, day: today } : undefined);
+  const shop = found.shop;
   const rest = shop ? findShopInText([shop], textIn).rest : textIn;
+  // product names hold everyday words ("Tata Tea", "Intense Repair", "Set Wet"): a clear item line is an order, not an expense or a claim
+  const productsAll = (await db.products.toArray()).filter(p => p.active);
+  const itemText = shop ? rest : found.ties ? findShopInText([found.ties[0]], textIn).rest : textIn;
+  const orderish = parseItemLines(itemText).some(l => l.productText.split(' ').length >= 2 && bestProduct(productsAll, l.productText).score >= 0.9);
+  if (!shop && found.ties && (orderish || has(text, W.paid) || has(text, W.outstanding))) {
+    const towns = [...new Set(found.ties.map(t => t.area).filter(Boolean))];
+    const list = towns.length > 1 ? `${towns.slice(0, -1).join(', ')} or ${towns[towns.length - 1]}` : towns[0] ?? '';
+    return { text: `Which ${found.ties[0].name}${list ? ` — ${list}` : ''}? Say the town too, e.g. "${found.ties[0].name} ${towns[0] ?? ''}".`, tone: 'warn', pending: { said: textIn, need: 'shop' } };
+  }
 
   // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
-  const mod = await modifyIntent({ text, textIn, shop, rest, role, products: (await db.products.toArray()).filter(p => p.active), isExpense: has(text, W.expense), isDamage: has(text, W.damage), fixOf: correctionIn });
+  const mod = await modifyIntent({ text, textIn, shop, rest, role, products: productsAll, isExpense: has(text, W.expense) && !orderish, isDamage: has(text, W.damage) && !orderish, isOrder: orderish, fixOf: correctionIn });
   if (mod) return mod;
 
-  if (has(text, W.scheme) && !/\d/.test(text) && /\b(any|what|which|enna|list|running|current|this month|available|show|tell|is there|are there)\b/.test(text)) return schemesTable();
+  if (has(text, W.scheme) && !/\d/.test(text) && /\b(any|what|which|list|running|current|this month|available|show|tell|is there|are there)\b/.test(text)) return schemesTable();
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
   if (has(text, W.newShop)) { if (!can(role, 'newshop')) return deny(); return newShopProposal(textIn); }
   if (shop && has(text, W.ret) && !has(text, ['cheque', 'chq', 'upi'])) { if (!can(role, 'return')) return deny(); return returnProposal(shop.id, rest); }
   const expiryOut = /\bexpiry\b/.test(text) && /\d/.test(text) && !/\b(near|soon|list|items|report|going)\b/.test(text); // "6 cake expiry"
-  if ((has(text, W.damage) || expiryOut) && !has(text, W.outstanding)) { const r = need('inventory', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
+  if ((has(text, W.damage) || expiryOut) && !has(text, W.outstanding) && !orderish) { const r = need('inventory', mods); if (r) return r; if (!can(role, 'claim')) return deny(); return damageProposal(textIn); }
   if (!shop && has(text, W.ret) && parseItemLines(textIn).length) return { text: 'Which shop is the return from? Say the shop name.', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   // Corrections in plain words: "it is not 500, it is 300", "300 not 500", "change payment 500 to 300", "wrong, it is 300"
   const fix = correctionIn(text.replace(/\b(van|auto|vehicle|lorry|tempo|bike)\s*\d+\b/g, ' '));
@@ -248,10 +261,10 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     return { text: 'Which shop paid? Say the shop name.', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   // Payroll by chat: "leave monday", "leave 12/11 to 14/11 fever", "advance 1000", owner: "Karthik leave tomorrow", "advance 2000 to Ravi"
   if (has(text, ['advance']) && findAmount(text) != null && !shop) return advanceRequest(textIn, role);
-  if (has(text, W.expense) && findAmount(text) != null && !shop) return expenseFromText(textIn);
+  if (has(text, W.expense) && findAmount(text) != null && !shop && !orderish) return expenseFromText(textIn);
   if (has(text, ['leave'])) return leaveRequest(textIn, role);
 
-  if (!shop && /\b(van|vans|vandi|auto)\b/.test(text) && /\bwhere\b/.test(text)) { const sc = screenFor('live vans', role, true); if (sc) return sc; }
+  if (!shop && /\b(van|vans|auto)\b/.test(text) && /\bwhere\b/.test(text)) { const sc = screenFor('live vans', role, true); if (sc) return sc; }
   if (/\b(came|come|present|absent)\b/.test(text) && (await db.staff.toArray()).some(st => has(text, [norm(st.name.split(' ')[0])]))) { const sc = screenFor('attendance', role, true); if (sc) return sc; }
   if (/\b(van|auto)\s*\d+\s*(details|info|detail)\b/.test(text)) { const sc = screenFor('vans and drivers', role, true); return sc ?? { text: 'Vans & drivers is the owner\'s screen. Ask them to open it.', tone: 'warn', refused: true }; }
   if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text)) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
@@ -286,7 +299,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (!can(role, 'order')) return deny();
     return orderProposal(shop.id, shop ? rest : textIn);
   }
-  if (has(text, W.stock)) return stockTable(text.replace(/stock of|how much stock|stock/g, '').replace(/\b(current|please|all|full|today|show|list|items|item|now|details|position|evlo|how much|what|is|the)\b/g, ' ').replace(/\s+/g, ' ').trim());
+  if (has(text, W.stock)) return stockTable(text.replace(/stock of|how much stock|stock/g, '').replace(/\b(current|please|all|full|today|show|list|items|item|now|details|position|how much|what|is|the)\b/g, ' ').replace(/\s+/g, ' ').trim());
   if (lines.length && !shop && lines.some(l => bestProduct(productsActive, l.productText).product)) {
     return { text: 'Which shop is this order for? Say the shop name, e.g. "Murugan Stores".', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   }
@@ -534,14 +547,22 @@ async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
   const schemes = await db.schemes.toArray();
   const rows: Row[] = [];
   const unknown: string[] = [];
+  const unsure: string[] = [];
   for (const l of parsed) {
-    const { product } = bestProduct(products, l.productText);
+    const { product, ambiguous } = bestProduct(products, l.productText);
+    if (ambiguous) {
+      // "surf excel 1kg" fits Easy Wash and Quick Wash: never guess, the person picks (red cell until then)
+      const names = ambiguous.slice(0, 4).map(p => p.name);
+      unsure.push(l.productText);
+      rows.push({ said: `${l.text} — ${names.join(' or ')}${ambiguous.length > 4 ? ` or ${ambiguous.length - 4} more` : ''}`, productId: '', qty: toPieces(l.qty, l.unit, ambiguous[0]), rate: 0, free: 0, amount: 0, stock: '' });
+      continue;
+    }
     if (!product) { unknown.push(l.productText); rows.push({ said: l.text, productId: '', qty: l.qty, rate: 0, free: 0, amount: 0, stock: '' }); continue; }
     const qty = toPieces(l.qty, l.unit, product);
     rows.push(await orderRow(product, qty, l.text, schemes));
   }
   return {
-    text: unknown.length ? `I couldn't find: ${unknown.join(', ')}. Pick them in the table.` : 'Order ready. Check and tap ✓.',
+    text: [unsure.length ? `Which one did you mean for: ${unsure.join(', ')}? Pick it in the table.` : '', unknown.length ? `I couldn't find: ${unknown.join(', ')}. Pick them in the table.` : ''].filter(Boolean).join(' ') || 'Order ready. Check and tap ✓.',
     proposal: {
       id: newId(), kind: 'order', title: 'New order',
       fields: [{ key: 'shopId', label: 'Shop', type: 'select', options: await shopOptions(), value: shopId }],
@@ -797,6 +818,7 @@ async function importProducts(file: File): Promise<Reply> {
       columns: [
         { key: 'name', label: 'Name', width: 170 },
         { key: 'companyId', label: 'Company', type: 'select', options: await companyOptions(), width: 110 },
+        { key: 'companyName', label: 'New company', width: 120 },
         { key: 'code', label: 'Code', width: 80 },
         { key: 'hsn', label: 'HSN', width: 70 },
         { key: 'gst', label: 'GST %', type: 'number', width: 60 },
@@ -808,7 +830,8 @@ async function importProducts(file: File): Promise<Reply> {
       rows: rows.map(r => {
         const c = companies.find(x => r.company && (norm(x.name).includes(norm(r.company)) || norm(r.company).includes(norm(x.code))));
         const ex = existing.find(p => norm(p.name) === norm(r.name));
-        return { id: ex?.id ?? '', name: r.name, companyId: c?.id ?? '', code: r.code, hsn: r.hsn, gst: r.gst, mrp: r.mrp, rate: r.rate, purchaseRate: r.purchase, caseSize: r.caseSize };
+        // a company not on this phone yet (new distributor) is created when the table is approved
+        return { id: ex?.id ?? '', name: r.name, companyId: c?.id ?? '', companyName: c ? '' : r.company.trim(), code: r.code, hsn: r.hsn, gst: r.gst, mrp: r.mrp, rate: r.rate, purchaseRate: r.purchase, caseSize: r.caseSize };
       }),
       meta: {},
     },

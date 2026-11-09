@@ -2,7 +2,7 @@
 // next message can refer to the table just shown ("make it 600", "for Selvam", "add 2 vim", "yes", "no").
 // Every part still goes through handleOne(), and nothing is saved before ✓.
 import { db, newId } from './db';
-import { bestProduct, cleanSaid, findShopInText, hasWord as has, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, findShopInText, hasWord as has, learnNames, norm, parseItemLines, protectNames, toPieces } from './match';
 import { handleOne, SCREENS, setDry, W, type Reply } from './engine';
 import { categoryOf, orderOps } from './modify';
 import { orderRow, type Proposal, type Row } from './proposals';
@@ -51,10 +51,11 @@ function sig(r: Reply): string {
 }
 
 export async function splitIntents(said: string): Promise<string[]> {
+  learnNames(await db.products.toArray());
   const t = cleanSaid(said).replace(/(\d),(\d{3})\b/g, '$1$2')
     // "2000 cash 1000 gpay" = two payments
     .replace(/(\d+(?:\.\d+)?\s*(?:cash|upi|gpay|google pay|phonepe|paytm|cheque|chq|neft))\s+(?=\d+(?:\.\d+)?\s*(?:cash|upi|gpay|google pay|phonepe|paytm|cheque|chq|neft)\b)/gi, '$1, ');
-  const segs = t.split(/\s*(?:;|\n|,|\?|\.(?=\s|$)|\s\/\s|\s\+\s|\band also\b|\band then\b|\balso\b|\bthen\b|\bapram\b|\bnext\b|\band\b|\s&\s)\s*/i).map(x => x.trim()).filter(Boolean);
+  const segs = protectNames(t).split(/\s*(?:;|\n|,|\?|\.(?=\s|$)|\s\/\s|\s\+\s|\band also\b|\band then\b|\balso\b|\bthen\b|\bnext\b|\band\b|\s&\s)\s*/i).map(x => x.replace(/ ＋ /g, ' & ').trim()).filter(Boolean);
   if (segs.length < 2) return [said];
   const shops = (await db.shops.toArray()).filter(s => s.active !== false);
   // quick look first: when no later piece could be a request of its own, it is one request (most orders with commas)

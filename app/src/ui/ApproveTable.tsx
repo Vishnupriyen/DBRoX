@@ -102,9 +102,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
                   return (
                     <td key={c.key} className={`${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>
                       {c.type === 'select'
-                        ? <select value={String(r[c.key] ?? '')} onChange={ev => setCell(ri, c.key, ev.target.value)} aria-label={c.label}>
-                            {c.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
+                        ? <SelectCell value={String(r[c.key] ?? '')} options={c.options ?? []} label={c.label} onChange={val => setCell(ri, c.key, val)} />
                         : <input value={String(r[c.key] ?? '')} aria-label={c.label}
                             type={c.type === 'date' ? 'date' : 'text'} inputMode={c.type === 'number' ? 'decimal' : undefined}
                             style={c.type === 'number' ? { textAlign: 'right' } : undefined}
@@ -154,5 +152,19 @@ export function ReadTable({ table }: { table: { columns: string[]; rows: (string
       </div>
       {table.rows.length > 0 && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> {t('download')}</button>}
     </div>
+  );
+}
+
+// A long list (2,000 products) is built only when this cell is opened: one full list per row made a 500-line bill
+// about a million screen elements and crashed the phone. Until then the cell holds just its chosen option.
+function SelectCell({ value, options, label, onChange }: { value: string; options: { value: string; label: string }[]; label: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const long = options.length > 50;
+  const shown = !long || open ? options : [{ value: '', label: '' }, ...options.filter(o => o.value === value && o.value !== '')];
+  return (
+    <select value={value} onChange={ev => onChange(ev.target.value)} aria-label={label}
+      onPointerDown={() => setOpen(true)} onFocus={() => setOpen(true)} onKeyDown={() => setOpen(true)}>
+      {shown.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
   );
 }

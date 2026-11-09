@@ -18,6 +18,7 @@ export interface ModCtx {
   products: Product[];
   isExpense: boolean;
   isDamage: boolean;
+  isOrder?: boolean;  // a clear item line ("Sunfeast Bounce Cream 75g"): product words never mean a bounced cheque
   fixOf: (t: string) => { old?: number; next?: number } | null;
 }
 
@@ -86,7 +87,8 @@ export async function modifyIntent(c: ModCtx): Promise<Reply | null> {
   if (cancel && has(t, BILL) && !c.isExpense && !has(t, ['payment']) && (c.shop || /\d{2,}/.test(t))) return billCancel(c);
 
   // payments
-  if (has(t, BOUNCE) || (cancel && (has(t, PAY) || (c.shop && numbersIn(c.rest).length)))) return paymentCancel(c, has(t, BOUNCE));
+  const bounce = has(t, BOUNCE) && !c.isOrder;
+  if (bounce || (cancel && (has(t, PAY) || (c.shop && numbersIn(c.rest).length)))) return paymentCancel(c, bounce);
 
   // expenses: "diesel was 1400 not 1500", "delete the tea expense 120"
   if (c.isExpense && !c.shop && (cancel || c.fixOf(t) || (edit && numbersIn(c.textIn).length))) return expenseFix(c, cancel);

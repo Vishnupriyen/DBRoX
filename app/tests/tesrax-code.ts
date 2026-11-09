@@ -98,7 +98,7 @@ const TANGLISH = new Set(('ku la le kku ukku kitta kita kitte venum vendum veenu
   'eduthuru kammi kammiya korai kuraichu jaasthi jasthi adhigam serthu sethu serthudu dhaan thaan dan vaadagai vadagai aaga pogudhu enna panna mudiyum enga poganum ' +
   'panam varathu pogarathu paakanum kaatu kaattu kaatunga kaattunga katu kaminga kudu ellam ellaam thirumbi thirumba eduthen eduthom aayiduchu ayiduchu aachu achu ' +
   'podhum pothum ippo ipo avangalukku avarukku mela vanthana vandhana vanthaanga kuduthaanga kuduthanga kuduthar kudutha koduthanga koduthar kodutha kudthanga ' +
-  'kuduthutaanga kuduthutanga vandhuchu vanthuchu vaangura vangura onnu rendu randu moonu naalu anju aaru pathu ah nu anna da ji kooli sari seri oru thookku jasti').split(' '));
+  'vanakkam kuduthutaanga kuduthutanga vandhuchu vanthuchu vaangura vangura onnu rendu randu moonu naalu anju aaru pathu ah nu anna da ji kooli sari seri oru thookku jasti').split(' '));
 export function isTanglish(text: string) {
   if (/[\u0B80-\u0BFF]/.test(text)) return true;
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).some(w => TANGLISH.has(w));

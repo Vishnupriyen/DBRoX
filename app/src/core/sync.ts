@@ -63,7 +63,7 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
 let running = false;
 export async function syncNow(): Promise<string> {
   let msg = '';
-  for (let i = 0; i < 25; i++) { // keep pulling while the server says there is more
+  for (let i = 0; i < 25; i++) { // keep going while there is more to send or to pull
     const r = await syncOnce();
     msg = r.msg;
     if (!r.more) break;
@@ -104,7 +104,9 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
       }
     });
     await db.meta.put({ key: 'cursor', value: res.cursor });
-    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.`, !!res.more);
+    // keep going while the server has more for us, or a table had more waiting than one batch carries
+    const morePush = accepted.size > 0 && SYNC_TABLES.some(t => changes.filter(c => c.table === t).length >= 500);
+    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.`, !!res.more || morePush);
   } catch (e) {
     return done(`Sync paused: ${(e as Error).message}. Data is safe on this phone.`);
   } finally { running = false; }

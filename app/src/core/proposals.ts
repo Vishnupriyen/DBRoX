@@ -5,7 +5,7 @@ import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, m
 import { bookOrder, cancelInvoice, changeOrder } from './pipeline';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Scheme, Shop } from './types';
+import type { Batch, Company, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Scheme, Shop } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -200,7 +200,7 @@ export async function validate(p: Proposal): Promise<Validation> {
     case 'products': {
       p.rows.forEach((r, i) => {
         if (!s(r.name)) err(v, i, 'name', 'Name missing');
-        if (!s(r.companyId)) err(v, i, 'companyId', 'Pick company');
+        if (!s(r.companyId) && !s(r.companyName)) err(v, i, 'companyId', 'Pick company');
         if (n(r.rate) <= 0) err(v, i, 'rate', 'Selling rate missing');
         if (![0, 5, 12, 18, 28, 40].includes(n(r.gst))) err(v, i, 'gst', 'GST % should be 0/5/12/18/28/40');
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
@@ -211,7 +211,7 @@ export async function validate(p: Proposal): Promise<Validation> {
     }
     case 'schemes': {
       p.rows.forEach((r, i) => {
-        if (!s(r.companyId)) err(v, i, 'companyId', 'Pick company');
+        if (!s(r.companyId) && !s(r.companyName)) err(v, i, 'companyId', 'Pick company');
         if (!s(r.name)) err(v, i, 'name', 'Give the scheme a name');
         if (s(r.type) === 'pct' && (n(r.value) <= 0 || n(r.value) > 50)) err(v, i, 'value', '% between 0 and 50');
         if (s(r.type) === 'free' && (n(r.buyQty) <= 0 || n(r.freeQty) <= 0)) err(v, i, 'buyQty', 'Buy and free quantities needed');
@@ -518,9 +518,25 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       break;
     }
     case 'products': {
+      // companies named in the sheet but not on this phone yet: made once each (a new distributor starts with none)
+      const cos = await db.companies.toArray();
+      const made = new Map<string, string>();
+      const taken = new Set(cos.map(c => c.code));
+      const companyFor = (name: string) => {
+        const k = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const have = cos.find(c => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === k)?.id ?? made.get(k);
+        if (have) return have;
+        const words = name.split(/\s+/).filter(w => /^[a-z]/i.test(w));
+        let code = (words.length > 1 ? words.map(w => w[0]).join('') : name.replace(/[^a-z]/gi, '').slice(0, 3)).toUpperCase().slice(0, 4) || 'CO';
+        for (let i = 2; taken.has(code); i++) code = code.replace(/\d+$/, '') + i;
+        taken.add(code);
+        const c = cs.put<Company>('companies', { name: name.trim(), code, gstin: '', nextBillNo: 1 }, 'company added from product sheet');
+        made.set(k, c.id);
+        return c.id;
+      };
       for (const r of p.rows) {
         cs.put<Product>('products', {
-          id: s(r.id) || undefined, companyId: s(r.companyId), name: s(r.name), code: s(r.code), hsn: s(r.hsn), gst: n(r.gst),
+          id: s(r.id) || undefined, companyId: s(r.companyId) || companyFor(s(r.companyName)), name: s(r.name), code: s(r.code), hsn: s(r.hsn), gst: n(r.gst),
           mrp: n(r.mrp), rate: n(r.rate), purchaseRate: n(r.purchaseRate), caseSize: n(r.caseSize) || 1,
           aliases: [s(r.code)].filter(Boolean), active: true,
         }, 'product');

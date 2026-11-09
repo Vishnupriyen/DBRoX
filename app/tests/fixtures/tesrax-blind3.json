@@ -194,7 +194,6 @@
   ["HUL claim file download", "export:claims"],
   ["hi", "help", "salesman"],
   ["good morning", "help", "godown"],
-  ["vanakkam", "help"],
   ["annai super market phone 9443000099", "shop:Annai Super Market:phone=9443000099", "salesman"],
   ["classmate rate 50", "product:Classmate:rate=50", "office"],
   ["surf 4 pcs short in godown", "stockFix:Surf:92", "godown"],

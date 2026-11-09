@@ -250,7 +250,7 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
   for (const n of NEW_NAMES) for (const t of NS_T) add('newshop', t(n), 'newshop', pick(['owner', 'salesman'] as Role[]));
 
   // ------------------------------------------------------------------------------------- help and nonsense
-  for (const s of ['help', 'what can you do', 'what can i ask', 'options', 'menu', 'how to use', 'hi', 'hello', 'good morning', 'vanakkam', 'thanks', 'hi tesrax', 'hello there', 'thank you', 'good evening'])
+  for (const s of ['help', 'what can you do', 'what can i ask', 'options', 'menu', 'how to use', 'hi', 'hello', 'good morning', 'thanks', 'hi tesrax', 'hello there', 'thank you', 'good evening'])
     for (const r of ['owner', 'salesman', 'delivery'] as Role[]) add('help', s, 'help', r);
   for (const s of ['asdfgh', 'qwerty', 'blah blah', 'xyz 123 abc'.replace('123', 'abc')]) add('ask', s, 'ask');
   for (const shop of SHOP_NAMES) { add('ask', `${sv(shop)} hello 12 something 40`, 'ask'); }

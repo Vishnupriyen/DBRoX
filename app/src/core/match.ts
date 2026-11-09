@@ -3,7 +3,15 @@ import type { Product, Shop } from './types';
 export const norm = (s: string) =>
   s.toLowerCase().normalize('NFC').replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 
-function tokens(s: string) { return norm(s).split(' ').filter(Boolean); }
+// "Four Line 172 pages" and "4 line 172pages" are the same words: number words become digits, "172 pages" one token
+const TOKNUM: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', twelve: '12' };
+const TOKUNIT = new Set(['g', 'gm', 'gms', 'kg', 'kgs', 'ml', 'l', 'ltr', 'pages', 'pc', 'pcs', 'bags', 'pads']);
+function tokens(s: string) {
+  const w = norm(s).split(' ').filter(Boolean).map(x => TOKNUM[x] ?? x);
+  const out: string[] = [];
+  for (let i = 0; i < w.length; i++) { if (/^\d+(\.\d+)?$/.test(w[i]) && TOKUNIT.has(w[i + 1])) { out.push(w[i] + w[i + 1]); i++; } else out.push(w[i]); }
+  return out;
+}
 
 // Simple, explainable similarity: shared words, with partial credit for prefixes ("surf" ~ "surfexcel").
 export function similarity(query: string, target: string): number {
@@ -14,6 +22,8 @@ export function similarity(query: string, target: string): number {
     let best = 0;
     for (const b of tt) {
       if (a === b) best = Math.max(best, 1);
+      else { const x = a.match(/^(\d+(?:\.\d+)?)([a-z]+)$/), y = b.match(/^(\d+(?:\.\d+)?)([a-z]+)$/); if (x && y && x[1] === y[1] && x[2][0] === y[2][0]) best = Math.max(best, 0.9); }
+      if (best >= 0.9) continue;
       else if (a.length >= 3 && (b.startsWith(a) || a.startsWith(b))) best = Math.max(best, 0.8);
       else if (a.length >= 4 && b.includes(a)) best = Math.max(best, 0.6);
       else if (a.length >= 5 && b.length >= 5 && lev(a, b) === 1) best = Math.max(best, 0.85); // one slip: "lifeboy", "classamte"
@@ -24,23 +34,78 @@ export function similarity(query: string, target: string): number {
   return hit / Math.max(q.length, 1);
 }
 
-export function bestProduct(products: Product[], q: string): { product?: Product; score: number } {
-  let best: Product | undefined; let score = 0;
-  for (const p of products) {
-    const names = [p.name, p.code ?? '', ...p.aliases];
-    for (const n of names) {
+// a pack size written in the message ("100g", "4x125g", "1 kg" → "1kg") must be the product's pack size
+const SIZE = /^\d+(\.\d+)?(g|gm|gms|kg|kgs|ml|l|ltr|pc|pcs|pages|bags|pads)$|^\d+x\d+(\.\d+)?(g|ml)$/;
+const sizeTokens = (s: string) => tokens(s.replace(/(\d)\s+(g|gm|gms|kg|kgs|ml|l|ltr|pages|pcs)\b/gi, '$1$2')).filter(t => SIZE.test(t)).map(t => t.replace(/gms?$/, 'g').replace(/kgs$/, 'kg').replace(/ltr$/, 'l'));
+
+/**
+ * The product a few words mean. Every word typed counts (recall); among equals, the name with fewest extra words wins
+ * ("Surf Excel Easy Wash 1kg" over "… 1kg (Promo Pack)"). When two or more products fit the words equally
+ * ("surf excel 1kg": Easy Wash or Quick Wash), they come back in `ambiguous` and the caller must ask, never guess.
+ */
+export function bestProduct(products: Product[], q: string): { product?: Product; score: number; ambiguous?: Product[] } {
+  const want = sizeTokens(q);
+  let pool = products;
+  if (want.length) { const sized = products.filter(p => { const have = sizeTokens(p.name); return want.every(w => have.includes(w)); }); if (sized.length) pool = sized; }
+  // a full name typed is exact even when written a little differently ("four"/"4", "10 bags"/"10bags", "pack of 4"/"pack 4")
+  const key = (x: string) => tokens(x).filter(w => w !== 'of' && w !== 'and' && w !== 'the').join(' ');
+  const nq = key(q);
+  const scored: { p: Product; s: number; extra: number }[] = [];
+  for (const p of pool) {
+    let s = 0, extra = 0;
+    for (const n of [p.name, p.code ?? '', ...p.aliases]) {
       if (!n) continue;
-      const s = n && norm(n) === norm(q) ? 1.2 : similarity(q, n);
-      if (s > score) { score = s; best = p; }
+      const v = key(n) === nq ? 1.2 : similarity(q, n);
+      if (v > s) { s = v; extra = similarity(n, q); }
     }
+    if (s > 0) scored.push({ p, s, extra });
   }
-  return { product: score >= 0.6 ? best : undefined, score };
+  if (!scored.length) return { score: 0 };
+  scored.sort((a, b) => b.s - a.s || b.extra - a.extra);
+  const top = scored[0];
+  // every typed word fits two packs equally ("navratna 100ml": Cool Oil or Almond) → ask; a full name typed wins outright
+  const ties = scored.filter(x => Math.abs(x.s - top.s) < 1e-9).map(x => x.p);
+  return { product: top.s >= 0.6 ? top.p : undefined, score: top.s, ambiguous: top.s >= 0.6 && top.s < 1.2 && ties.length > 1 ? ties : undefined };
+}
+
+// numbers that belong to a product's name ("5 Star", "Total 10", "5 Grain", "3 Roses"), learnt from the catalogue
+let GLUE = new Set<string>();
+let VOCAB = new Set<string>();      // every word used in a product name ("bar" in "Rin Bar" is a name, not a unit)
+let JOINS: string[] = [];           // "hot & sour", "sweet and spicy": an "&" / "and" inside a name never splits a message
+let glueKey = '';
+const NUMWORD: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', twelve: '12' };
+export function learnNames(products: Product[]) {
+  const key = `${products.length}|${products[products.length - 1]?.id ?? ''}`;
+  if (key === glueKey) return;
+  glueKey = key; GLUE = new Set(); VOCAB = new Set(); const joins = new Set<string>();
+  for (const p of products) {
+    // the message reaches us with number words already turned into digits ("Four Line" → "4 line")
+    const t = tokens(p.name).map(w => NUMWORD[w] ?? w);
+    for (const w of t) VOCAB.add(w);
+    t.forEach((w, i) => {
+      const prev = t[i - 1], next = t[i + 1];
+      if (/^\d+$/.test(w)) {
+        if (i > 0 && !/^\d/.test(prev)) GLUE.add(`${prev} ${w}`);
+        if (next && !/^\d/.test(next) && !SIZE.test(next)) GLUE.add(`${w} ${next}`);
+      } else if (/^\d+[a-z]+$/.test(w) && i > 0) GLUE.add(`${prev} ${w}`); // "spray 1pc", "refill 10pcs"
+    });
+    const low = p.name.toLowerCase();
+    for (const m of low.matchAll(/([a-z0-9]+)\s+(&|and)\s+([a-z0-9]+)/g)) joins.add(`${m[1]} ${m[2]} ${m[3]}`);
+  }
+  JOINS = [...joins];
+}
+/** "&"/"and" that belong to a product name are hidden from message splitting */
+export function protectNames(t: string): string {
+  let out = t;
+  for (const j of JOINS) { const i = out.toLowerCase().indexOf(j); if (i >= 0) out = out.slice(0, i) + j.replace(/ (&|and) /, ' ＋ ') + out.slice(i + j.length); }
+  return out;
 }
 
 // Generic words in shop names. "Lakshmi" finds "Sri Lakshmi Traders"; "stores" alone finds nothing.
 const SHOP_GENERIC = new Set(['sri', 'shree', 'shri', 'new', 'the', 'stores', 'store', 'traders', 'trader', 'mart', 'super', 'market', 'supermarket', 'agency', 'agencies', 'provision', 'provisions', 'kirana', 'wholesale', 'shop', 'enterprises', 'general', 'and', 'co', 'company', 'centre', 'center', 'bros', 'brothers']);
 
-export function findShopInText(shops: Shop[], text: string): { shop?: Shop; rest: string } {
+export interface ShopPrefer { salesmanId?: string; day?: string }
+export function findShopInText(shops: Shop[], text: string, prefer?: ShopPrefer): { shop?: Shop; rest: string; ties?: Shop[] } {
   const n = ` ${norm(text)} `;
   const areas = new Set(shops.map(s => norm(s.area ?? '')).filter(Boolean));
   const scored: { shop: Shop; score: number; phrase: string }[] = [];
@@ -66,12 +131,30 @@ export function findShopInText(shops: Shop[], text: string): { shop?: Shop; rest
   }
   if (!scored.length) return { rest: text };
   scored.sort((a, b) => b.score - a.score);
-  // the same distinctive word in two shops (e.g. two "Murugan"s) → don't guess; the caller asks
-  if (scored.length > 1 && scored[1].score === scored[0].score && scored[1].shop.id !== scored[0].shop.id) return { rest: text };
-  const best = scored[0].shop;
+  // the same name in two shops (e.g. "Sri Murugan Stores" in two towns): the town said, then the salesman's own
+  // shop on today's beat; otherwise don't guess — the caller asks, naming the towns
+  let best = scored[0].shop;
+  const tied = [...new Map(scored.filter(x => x.score === scored[0].score).map(x => [x.shop.id, x.shop])).values()];
+  if (tied.length > 1) {
+    const one = (list: Shop[]) => list.length === 1 ? list[0] : undefined;
+    const byTown = tied.filter(s => s.area && n.includes(` ${norm(s.area)} `));
+    const mine = prefer?.salesmanId ? (byTown.length ? byTown : tied).filter(s => s.salesmanId === prefer.salesmanId) : [];
+    const today = prefer?.day ? mine.filter(s => s.beat === prefer.day || s.aliases.includes(`beat:${prefer.day}`)) : [];
+    const pick = one(byTown) ?? one(mine) ?? one(today);
+    if (!pick) return { rest: text, ties: byTown.length > 1 ? byTown : tied };
+    best = pick;
+  }
   // take the shop's words out of the ORIGINAL text, keeping commas so item lines still split
   const escape = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let rest = text;
+  if (best.area) {
+    const town = best.area.trim().split(/\s+/).map(escape).join('[\\s.,-]*');
+    for (const name of [best.name, ...best.aliases]) {
+      const nm = name.trim().split(/\s+/).map(escape).join('[\\s.,-]*');
+      const before = rest; rest = rest.replace(new RegExp(`${nm}[\\s.,-]*${town}(?=[^a-z0-9]|$)`, 'i'), ' ').replace(new RegExp(`${town}[\\s.,-]*${nm}`, 'i'), ' ');
+      if (rest !== before) break;
+    }
+  }
   for (const name of [best.name, ...best.aliases].sort((x, y) => y.length - x.length)) {
     const words = name.trim().split(/\s+/).map(escape).join('[\\s.,-]*');
     rest = rest.replace(new RegExp(words, 'i'), ' ');
@@ -84,8 +167,8 @@ const CASE_WORDS = ['case', 'cases', 'cs', 'c', 'cse', 'box', 'boxes', 'ctn', 'c
 const PCS_WORDS = ['pc', 'pcs', 'piece', 'pieces', 'nos', 'no', 'units', 'unit', 'pkt', 'pkts', 'packet', 'packets', 'bag', 'bags', 'bottle', 'bottles', 'tin', 'tins', 'bar', 'bars'];
 const DOZEN_WORDS = ['dozen', 'dozens', 'dz', 'dzn', 'doz'];
 // pack sizes are part of the product name, never a quantity: "5kg", "250 g", "172 pages"
-const MEASURE = new Set(['kg', 'kgs', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'l', 'ltr', 'litre', 'liter', 'pages', 'page', 'mm', 'cm']);
-const FILLER = new Set(['order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
+const MEASURE = new Set(['kg', 'kgs', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'l', 'ltr', 'litre', 'liter', 'pages', 'page', 'mm', 'cm', 'pads']);
+const FILLER = new Set(['and', 'also', 'order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
 
 export interface ParsedLine { text: string; qty: number; unit: 'case' | 'pcs' | 'dozen'; productText: string }
 const unitOf = (w: string): ParsedLine['unit'] | null => CASE_WORDS.includes(w) ? 'case' : DOZEN_WORDS.includes(w) ? 'dozen' : PCS_WORDS.includes(w) ? 'pcs' : null;
@@ -93,17 +176,22 @@ const unitOf = (w: string): ParsedLine['unit'] | null => CASE_WORDS.includes(w) 
 // "5 case surf, 10 lifebuoy and 2 dozen good day", "surf 2 case lifebuoy 48", "2cs surf 1 dz vim" → lines.
 export function parseItemLines(text: string): ParsedLine[] {
   // "2,450" is one number, not two items
-  const parts = text.replace(/(\d),(\d{3})\b/g, '$1$2').split(/,|\n|;|\+| and | also | & /i).map(x => x.trim()).filter(Boolean);
+  const parts = protectNames(text).replace(/(\d),(\d{3})\b/g, '$1$2').split(/,|\n|;|\+|\s(?:and|also|&)\s(?=\d)/i).map(x => x.replace(/ ＋ /g, ' & ').trim()).filter(Boolean);
   const out: ParsedLine[] = [];
   for (const part of parts) {
     // split glued quantity+unit ("2cs", "1c", "12pcs"), keep pack sizes glued ("5kg", "250g")
-    const raw = norm(part).split(' ').flatMap(w => { const m = w.match(/^(\d+)([a-z]+)$/); return m && !MEASURE.has(m[2]) && unitOf(m[2]) ? [m[1], m[2]] : [w]; });
+    const words0 = norm(part).split(' ');
+    const raw = words0.flatMap((w, i) => { const m = w.match(/^(\d+)([a-z]+)$/); return m && !MEASURE.has(m[2]) && unitOf(m[2]) && !GLUE.has(`${words0[i - 1]} ${w}`) ? [m[1], m[2]] : [w]; });
     // a number followed by a measure word belongs to the name ("172 pages", "5 kg")
     const toks: { w: string; num: boolean }[] = [];
     for (let i = 0; i < raw.length; i++) {
       const w = raw[i];
       if (/^\d+(\.\d+)?$/.test(w) && MEASURE.has(raw[i + 1] ?? '')) { toks.push({ w: `${w}${raw[i + 1]}`, num: false }); i++; continue; }
-      if (FILLER.has(w)) continue;
+      // "maggi 2 case" stays two cases of Maggi even though "Maggi 2-Minute" has a 2: a unit word after it means quantity
+      if (/^\d+$/.test(w) && !unitOf(raw[i + 1] ?? '') && (GLUE.has(`${raw[i - 1]} ${w}`) || GLUE.has(`${w} ${raw[i + 1]}`))) { toks.push({ w, num: false }); continue; }
+      // "6 pcs tetley classic 25 bags": a quantity was already given and a name word comes before → "25 bags" is the pack
+      if (/^\d+$/.test(w) && unitOf(raw[i + 1] ?? '') && i > 0 && GLUE.has(`${raw[i - 1]} ${w}${raw[i + 1]}`)) { toks.push({ w: `${w}${raw[i + 1]}`, num: false }); i++; continue; }
+      if (FILLER.has(w) && !(w.length > 3 && VOCAB.has(w))) continue; // "book" an order, but "Drawing Book"
       toks.push({ w, num: /^\d+(\.\d+)?$/.test(w) });
     }
     if (!toks.some(t => t.num)) continue;
@@ -128,7 +216,7 @@ export function parseItemLines(text: string): ParsedLine[] {
       if (words.length && items.length) items[items.length - 1].words.push(...words.filter(w => !unitOf(w)));
     }
     for (const it of items) {
-      const productText = it.words.filter(w => !unitOf(w) || it.words.length === 1).join(' ').trim();
+      const productText = it.words.filter(w => !unitOf(w) || VOCAB.has(w) || it.words.length === 1).join(' ').trim();
       if (productText && it.qty > 0) out.push({ text: part, qty: it.qty, unit: it.unit, productText });
     }
   }
