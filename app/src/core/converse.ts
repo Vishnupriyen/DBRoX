@@ -136,7 +136,8 @@ async function followUp(said: string, last: Reply): Promise<Reply | null> {
   const others = named.filter(s => s.id !== curShopId);
   const shop = named.length === 1 ? named[0] : others.length === 1 ? others[0] : undefined;
   let rest = textIn;
-  for (const s of named) rest = findShopInText([s], rest).rest;
+  // longest name first: "Selvam Kirana, Pennadam" (shop + town) must not eat the start of "Pennadam Wholesale Agency"
+  for (const s of [...named].sort((a, b) => b.name.length - a.name.length)) rest = findShopInText([s], rest).rest;
   let restBare = norm(rest).replace(FILL, ' ');
   for (const a of [...areas, ...staff]) restBare = restBare.replace(new RegExp(`\\b${a}\\b`, 'g'), ' ');
   restBare = restBare.replace(/\s+/g, ' ').trim();
