@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
-import { billingLockedBy, closeDay, dayChecklist, daySummary, settleDifference } from '../core/pipeline';
+import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
 import { inr } from '../core/i18n';
 import { confirmBox } from './dialog';
 import type { Page } from './Home';
-import type { Invoice } from '../core/types';
+import type { Invoice, Payment } from '../core/types';
 
 
 // Owner: the day cannot close until every line is zero. Each line opens the screen that clears it.
@@ -15,6 +15,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
   const [received, setReceived] = useState<Record<string, string>>({});
   const [tick, setTick] = useState(0);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
   const [staffNames, setStaffNames] = useState<[string, string][]>([]);
   useEffect(() => { db.staff.toArray().then(ss => setStaffNames(ss.map(x => [x.id, x.name]))); }, []);
   const [date, setDate] = useState(today());
@@ -34,13 +35,14 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
     { n: c.refs.length, en: 'UPI / cheque without reference', page: 'cheques' },
     { n: c.waitingOrders.length, en: 'Orders waiting for you', page: 'orders-received' },
     { n: c.newShops.length, en: 'New shops to approve', page: 'newshops' },
-    { n: c.dupes.length, en: 'Possible duplicate collections', page: 'cheques' },
+    { n: c.dupes.length, en: 'Possible duplicate collections', action: () => setDupOpen(true) },
     { n: c.unapprovedExpenses.length, en: 'Expenses to approve', page: 'expenses' },
   ];
   const open = items.filter(i => i.n > 0).length;
   const canClose = !s.closed && open === 0 && cashDone;
 
   if (diffOpen) return <Differences invoices={c.diffs} onBack={() => { setDiffOpen(false); setTick(x => x + 1); }} />;
+  if (dupOpen) return <Duplicates payments={c.dupes} onBack={() => { setDupOpen(false); setTick(x => x + 1); }} />;
 
   return (
     <div className="stack">
@@ -140,6 +142,36 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
         );
       })}
       {!list.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'All differences settled.'}<div><button className="btn primary" style={{ marginTop: 8 }} onClick={onBack}>{'Back to day close'}</button></div></div>}
+    </div>
+  );
+}
+
+// The same amount twice from one shop today: the owner says both are real, or cancels the one entered twice.
+function Duplicates({ payments, onBack }: { payments: Payment[]; onBack: () => void }) {
+  const [list, setList] = useState(payments);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => { (async () => { setNames(new Map([...(await db.shops.toArray()).map(s => [s.id, s.name] as [string, string]), ...(await db.staff.toArray()).map(s => [s.id, s.name] as [string, string])])); })(); }, []);
+  const groups = [...list.reduce((m, p) => m.set(`${p.shopId}|${p.amount}`, [...(m.get(`${p.shopId}|${p.amount}`) ?? []), p]), new Map<string, Payment[]>()).values()];
+  const real = async (g: Payment[]) => { await confirmNotDuplicate(g.map(p => p.id)); setList(l => l.filter(p => !g.some(x => x.id === p.id))); };
+  const cancel = async (g: Payment[], p: Payment) => {
+    if (!await confirmBox(`Cancel ${inr(p.amount)} by ${names.get(p.collectedBy) ?? ''}?`, 'It was entered twice. It stays in the history; the bills it paid are open again.', 'Cancel it')) return;
+    await cancelPayment(p.id, 'Entered twice (day close)');
+    const rest = g.filter(x => x.id !== p.id);
+    setList(l => l.filter(x => x.id !== p.id && !(rest.length < 2 && rest.some(r => r.id === x.id))));
+  };
+  return (
+    <div className="stack">
+      <div className="sechead"><h3>{'Possible duplicate collections'} · {groups.length}</h3><button className="link" onClick={onBack}>{'← Day close'}</button></div>
+      {groups.map(g => (
+        <div key={g[0].id} className="card stack" style={{ gap: 8 }}>
+          <div><b>{names.get(g[0].shopId)}</b><div className="muted">{inr(g[0].amount)} × {g.length} {'today'}</div></div>
+          <div className="list">
+            {g.map(p => <div key={p.id} className="row"><span className="grow">{p.createdAt.slice(11, 16)} · {p.mode} · {names.get(p.collectedBy) ?? ''}</span><button className="btn small" onClick={() => cancel(g, p)}>{'Cancel this one'}</button></div>)}
+          </div>
+          <button className="btn primary" onClick={() => real(g)}><Check /> {'Both are real'}</button>
+        </div>
+      ))}
+      {!groups.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'All checked.'}</div>}
     </div>
   );
 }

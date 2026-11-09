@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-react';
 import { ChangeSet, db } from '../core/db';
 import { approveOrder, rejectOrder, shopHistory } from '../core/pipeline';
+import { allOutstanding } from '../core/ledger';
 import { inr } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
@@ -11,7 +12,8 @@ type Hist = Awaited<ReturnType<typeof shopHistory>>;
 
 // Bill → Orders received. The owner sees the shop's history before saying yes; clean orders approve in one tap.
 export function OrdersReceived() {
-  const [orders, setOrders] = useState<(Order & { shop: Shop; hist: Hist; salesman: string })[]>([]);
+  const [list, setOrders] = useState<(Order & { shop: Shop; hist: Hist; salesman: string })[] | null>(null);
+  const orders = list ?? [];
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -20,14 +22,17 @@ export function OrdersReceived() {
       const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'new' || o.status === 'needs_ok').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      setOrders(await Promise.all(os.map(async o => ({ ...o, shop: shops.get(o.shopId)!, hist: await shopHistory(o.shopId), salesman: staff.get(o.salesmanId ?? '') ?? o.source }))));
+      const dues = await allOutstanding(); // one pass over the bills for every shop, not one per order
+      const hist = (s: Shop): Hist => { const d = dues.get(s.id); return { bills: d?.bills ?? 0, amount: d?.amount ?? 0, oldestDays: d?.oldestDays ?? 0, limit: s.creditLimit, days: s.creditDays }; };
+      setOrders(os.map(o => { const shop = shops.get(o.shopId)!; return { ...o, shop, hist: hist(shop), salesman: staff.get(o.salesmanId ?? '') ?? o.source }; }));
     })();
   }, [tick]);
 
   const value = (o: Order) => o.lines.reduce((a, l) => { const p = products.get(l.productId); return a + l.qty * l.rate * (1 + (p?.gst ?? 0) / 100); }, 0);
   const bad = (o: typeof orders[0]) => (o.hist.limit > 0 && o.hist.amount + value(o) > o.hist.limit) || (o.hist.days > 0 && o.hist.oldestDays > o.hist.days);
   const clean = orders.filter(o => !o.issues.length && !bad(o) && !o.rateRemark);
-  const ok = async (id: string) => { await approveOrder(id); setTick(x => x + 1); };
+  // approving takes the order off the list; no full reload after every tap
+  const ok = async (id: string) => { await approveOrder(id); setOrders(l => (l ?? []).filter(o => o.id !== id)); };
 
   return (
     <div className="stack">
@@ -60,7 +65,8 @@ export function OrdersReceived() {
           </div>
         );
       })}
-      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'No orders waiting.'}</div>}
+      {!list && <div className="card muted">{'Loading orders…'}</div>}
+      {list && !orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'No orders waiting.'}</div>}
     </div>
   );
 }

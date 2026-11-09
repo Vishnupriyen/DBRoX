@@ -122,9 +122,10 @@ h1, h2, h3, h4 { font-family: var(--display); font-weight: 700; margin: 0; lette
 
 /* KPI tiles */
 .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; min-width: 0; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; min-width: 0; container-type: inline-size; }
 .kpi.navy { background: var(--navy); color: var(--on-navy); border-color: var(--navy); }
-.kpi .v { font-family: var(--display); font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.1; }
+/* real amounts ("₹31,60,494.73") shrink to fit their box instead of being cut off */
+.kpi .v { font-family: var(--display); font-size: clamp(15px, 12.5cqi, 26px); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
 .kpi .l { font-size: 12px; margin-top: 4px; color: var(--ink-2); }
 .kpi.navy .l { color: var(--on-navy-2); }
 .kpi .d { font-size: 12px; margin-top: 2px; font-weight: 600; }

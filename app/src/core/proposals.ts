@@ -437,7 +437,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'order': {
       const shop = (await db.shops.get(s(fieldValue(p, 'shopId'))))!;
       const lines = p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) }));
-      const order = await bookOrder(cs, shop, lines, session().userId, { source: 'office' });
+      // a salesman typing his order is his order (the owner is not asked how it came)
+      const by = await db.staff.get(session().userId);
+      const order = await bookOrder(cs, shop, lines, session().userId, { source: by?.role === 'salesman' ? 'salesman' : 'office' });
       orderId = order.id;
       message = `Order for ${shop.name} sent to the godown for picking.` + (order.issues.length ? ` Flagged for you: ${order.issues.join('; ')}.` : '');
       break;

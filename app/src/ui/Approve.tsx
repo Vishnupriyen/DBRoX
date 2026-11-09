@@ -11,7 +11,9 @@ import type { Invoice, Order, Product, Shop } from '../core/types';
 
 // Bill → Picked, to verify. Owner checks the physical pack against the screen, may edit, taps Done → bill. No send-back.
 export function Approve({ go }: { go?: (p: string) => void }) {
-  const [orders, setOrders] = useState<(Order & { shop: Shop })[]>([]);
+  const [orders, setOrders0] = useState<(Order & { shop: Shop })[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setOrders: typeof setOrders0 = v => { setLoaded(true); setOrders0(v); };
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
   const [edit, setEdit] = useState<Record<string, Record<number, number>>>({}); // orderId → picked line index → qty
@@ -84,7 +86,8 @@ export function Approve({ go }: { go?: (p: string) => void }) {
           </div>
         );
       })}
-      {!orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'Nothing to verify.'}</div>}
+      {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !orders.length && <div className="card" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto 8px' }}><Check /></div>{'Nothing to verify.'}</div>}
     </div>
   );
 }

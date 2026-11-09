@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MapPin, ChevronRight, Phone, IndianRupee, PackageCheck, Store, AlertTriangle } from 'lucide-react';
 import { ChangeSet, db, nowIso, session, today, activeShops } from '../core/db';
-import { shopOutstanding } from '../core/ledger';
+import { allOutstanding } from '../core/ledger';
 import { inr, t } from '../core/i18n';
 import type { Shop, Visit } from '../core/types';
 import { OrderBook } from './OrderBook';
@@ -12,7 +12,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 // Salesman: today's beat. Overdue shops first (Q101); check-in by location (4.11); order or collect.
 export function Beat() {
-  const [stops, setStops] = useState<Stop[]>([]);
+  const [stops, setStops] = useState<Stop[] | null>(null);
   const [open, setOpen] = useState<{ stop: Stop; mode: 'order' | 'collect' } | null>(null);
   const [tick, setTick] = useState(0);
   const [showAll, setShowAll] = useState(false);
@@ -24,10 +24,11 @@ export function Beat() {
       const shops = (await activeShops()).filter(s => s.salesmanId === me || !s.salesmanId);
       const visits = (await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === me);
       const orders = await db.orders.toArray();
+      const dues = await allOutstanding();
       const list: Stop[] = [];
       for (const shop of shops) {
         if (!showAll && shop.beat !== DAYS[dayIdx] && !shop.aliases.includes(`beat:${DAYS[dayIdx]}`)) continue;
-        const o = await shopOutstanding(shop.id);
+        const o = dues.get(shop.id) ?? { total: 0, maxOverdueDays: 0 };
         const mine = orders.filter(x => x.shopId === shop.id && x.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date));
         list.push({ shop, due: o.total, overdue: o.maxOverdueDays, lastOrder: mine[0]?.date, visit: visits.find(v => v.shopId === shop.id), billedToday: mine[0]?.date === today() });
       }
@@ -48,14 +49,15 @@ export function Beat() {
   if (open?.mode === 'order') return <OrderBook shop={open.stop.shop} visit={open.stop.visit} onClose={() => { setOpen(null); setTick(x => x + 1); }} />;
   if (open?.mode === 'collect') return <CollectShop shop={{ ...open.stop.shop, due: open.stop.due }} onClose={() => { setOpen(null); setTick(x => x + 1); }} />;
 
-  const done = stops.filter(s => s.billedToday || s.visit?.outcome).length;
-  const totalDue = stops.reduce((a, s) => a + s.due, 0);
+  const list = stops ?? [];
+  const done = list.filter(s => s.billedToday || s.visit?.outcome).length;
+  const totalDue = list.reduce((a, s) => a + s.due, 0);
   return (
     <div className="stack">
       <div className="kpi navy">
         <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{DAYS[dayIdx]} · {"Today's beat"}</div>
         <div className="row" style={{ marginTop: 6, gap: 18 }}>
-          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done'}</div></div>
+          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{list.length}</span></div><div className="l">{'shops done'}</div></div>
           <div><div className="v">{inr(totalDue)}</div><div className="l">{'to collect on this beat'}</div></div>
         </div>
       </div>
@@ -64,7 +66,7 @@ export function Beat() {
         <button className="link" onClick={() => setShowAll(x => !x)}>{showAll ? ('Today only') : ('All shops')}</button>
       </div>
       <div className="route">
-        {stops.map(s => (
+        {list.map(s => (
           <div key={s.shop.id} className={`stop card ${s.billedToday ? 'done' : s.visit ? 'now' : ''}`} style={{ padding: 12 }}>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <div className={`avatar ${s.overdue > 0 ? 'bad' : s.billedToday ? 'ok' : ''}`}><Store size={22} /></div>
@@ -90,7 +92,8 @@ export function Beat() {
             </div>
           </div>
         ))}
-        {!stops.length && <div className="card muted">{'No shops on today\'s beat. Tap "All shops".'}</div>}
+        {stops && !stops.length && <div className="card muted">{'No shops on today\'s beat. Tap "All shops".'}</div>}
+        {!stops && <div className="card muted">{'Loading today\'s shops…'}</div>}
       </div>
     </div>
   );

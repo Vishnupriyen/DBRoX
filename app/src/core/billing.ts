@@ -45,6 +45,13 @@ export function pickBatches(batches: Batch[], productId: string, qty: number, da
   return { picks, short: need };
 }
 
+/** every product's sellable stock in one read (the order screen did 2,000 separate reads) */
+export async function allStock(): Promise<Map<string, number>> {
+  const t = today(); const out = new Map<string, number>();
+  for (const b of await db.batches.toArray()) if (b.expiry >= t) out.set(b.productId, (out.get(b.productId) ?? 0) + b.qty);
+  return out;
+}
+
 export async function stockOf(productId: string) {
   const bs = await db.batches.where('productId').equals(productId).toArray();
   return bs.filter(b => b.expiry >= today()).reduce((s, b) => s + b.qty, 0);
@@ -106,7 +113,8 @@ export function finYear(date: string) {
   return `${String(start).slice(2)}-${String(start + 1).slice(2)}`;
 }
 
-export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numbers?: { first: number; prefix: string }, billDate?: string): Promise<Invoice[]> {
+export interface BillCut { productId: string; name: string; wanted: number; billed: number }
+export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numbers?: { first: number; prefix: string }, billDate?: string, cuts?: BillCut[]): Promise<Invoice[]> {
   const settings = await getSettings();
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
@@ -123,8 +131,15 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
   const out: Invoice[] = [];
   for (const [companyId, lines] of byCompany) {
     const invLines: InvoiceLine[] = [];
-    for (const l of lines) {
-      const p = products.get(l.productId)!;
+    for (const l0 of lines) {
+      const p = products.get(l0.productId)!;
+      // never bill pieces no lot can cover: cut to what stock holds (the owner sees the cut on the order)
+      const usable = batches.filter(b => b.productId === p.id && b.qty > 0 && b.expiry >= date).reduce((a, b) => a + b.qty, 0);
+      let qty = l0.qty;
+      while (qty > 0 && qty + applySchemes(p, qty, l0.rate, activeSchemes(schemes, p, date)).freeQty > usable) qty--;
+      if (qty < l0.qty) cuts?.push({ productId: p.id, name: p.name, wanted: l0.qty, billed: qty });
+      if (qty <= 0) continue;
+      const l = { ...l0, qty };
       const sch = applySchemes(p, l.qty, l.rate, activeSchemes(schemes, p, date));
       // the picker's batch first (what is physically in the van), the rest oldest-expiry first
       const picks: ReturnType<typeof pickBatches>['picks'] = [];
@@ -146,6 +161,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
         total: r2(taxable + tax), batches: picks, schemeNames: sch.names,
       });
     }
+    if (!invLines.length) continue; // nothing of this company was in stock
     const taxable = r2(invLines.reduce((s, x) => s + x.taxable, 0));
     const cgst = r2(invLines.reduce((s, x) => s + x.cgst, 0));
     const sgst = r2(invLines.reduce((s, x) => s + x.sgst, 0));

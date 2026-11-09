@@ -57,6 +57,26 @@ export async function shopOutstanding(shopId: string) {
   };
 }
 
+/** every shop's dues in one pass over the bills (the beat screen: one pass per shop took 7.8 s on a cheap phone) */
+export interface ShopDue { total: number; overdue: number; maxOverdueDays: number; bills: number; amount: number; oldestDays: number }
+export async function allOutstanding(): Promise<Map<string, ShopDue>> {
+  const { rows, advanceLeft } = await balancesAndAdvance();
+  const out = new Map<string, ShopDue>();
+  const blank = (): ShopDue => ({ total: 0, overdue: 0, maxOverdueDays: 0, bills: 0, amount: 0, oldestDays: 0 });
+  const now = Date.now();
+  for (const b of rows) {
+    if (b.balance <= 0.5) continue;
+    const v = out.get(b.invoice.shopId) ?? blank();
+    v.total = r2(v.total + b.balance); v.amount = r2(v.amount + b.balance); v.bills++;
+    v.oldestDays = Math.max(v.oldestDays, Math.floor((now - new Date(b.invoice.date).getTime()) / 86400000));
+    if (b.overdueDays > 0) v.overdue = r2(v.overdue + b.balance);
+    v.maxOverdueDays = Math.max(v.maxOverdueDays, b.overdueDays);
+    out.set(b.invoice.shopId, v);
+  }
+  for (const [shopId, adv] of advanceLeft) if (adv > 0) { const v = out.get(shopId) ?? blank(); v.total = r2(v.total - Math.max(0, adv)); out.set(shopId, v); }
+  return out;
+}
+
 // Payment allocation: oldest bill first (default rule from the definition doc).
 export async function allocateOldestFirst(shopId: string, amount: number) {
   const bills = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);

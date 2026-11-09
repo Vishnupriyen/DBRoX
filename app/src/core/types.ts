@@ -229,6 +229,7 @@ export interface Payment extends Base {
   bankLineId?: string;
   status: 'ok' | 'waiting_shop' | 'bounced' | 'cancelled';
   correctionOf?: string; // this payment replaces a wrong one (kept, cancelled, for the audit trail)
+  dupOk?: boolean;       // the owner checked: the same amount twice from this shop today is real, not a double entry
   note?: string;
 }
 

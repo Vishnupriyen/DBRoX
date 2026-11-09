@@ -14,13 +14,16 @@ const month = () => today().slice(0, 7);
 // ---------- Outstanding by shop and age ----------
 export function Outstanding() {
   const [open, setOpen] = useState<string | null>(null);
-  const [rows, setRows] = useState<{ id: string; name: string; phone?: string; area: string; total: number; b0: number; b8: number; b16: number; b31: number; days: number; limit: number }[]>([]);
+  const [list, setRows] = useState<{ id: string; name: string; phone?: string; area: string; total: number; b0: number; b8: number; b16: number; b31: number; days: number; limit: number }[] | null>(null);
+  const rows = list ?? [];
   useEffect(() => { (async () => {
     const shops = await activeShops(); const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
-    setRows(shops.map(s => { const mine = bal.filter(b => b.invoice.shopId === s.id); const age = (b: typeof mine[0]) => Math.floor((Date.now() - new Date(b.invoice.date).getTime()) / 86400000); const sum = (f: (d: number) => boolean) => r2(mine.filter(b => f(age(b))).reduce((a, b) => a + b.balance, 0)); return { id: s.id, name: s.name, phone: s.phone, area: s.area, total: r2(mine.reduce((a, b) => a + b.balance, 0)), b0: sum(d => d <= 7), b8: sum(d => d > 7 && d <= 15), b16: sum(d => d > 15 && d <= 30), b31: sum(d => d > 30), days: Math.max(0, ...mine.map(age)), limit: s.creditLimit }; }).filter(r => r.total > 0.5).sort((a, b) => b.days - a.days || b.total - a.total));
+    const byShop = new Map<string, typeof bal>(); for (const b of bal) byShop.set(b.invoice.shopId, [...(byShop.get(b.invoice.shopId) ?? []), b]); // grouped once, not 1,200 searches
+    setRows(shops.map(s => { const mine = byShop.get(s.id) ?? []; const age = (b: typeof mine[0]) => Math.floor((Date.now() - new Date(b.invoice.date).getTime()) / 86400000); const sum = (f: (d: number) => boolean) => r2(mine.filter(b => f(age(b))).reduce((a, b) => a + b.balance, 0)); return { id: s.id, name: s.name, phone: s.phone, area: s.area, total: r2(mine.reduce((a, b) => a + b.balance, 0)), b0: sum(d => d <= 7), b8: sum(d => d > 7 && d <= 15), b16: sum(d => d > 15 && d <= 30), b31: sum(d => d > 30), days: Math.max(0, ...mine.map(age)), limit: s.creditLimit }; }).filter(r => r.total > 0.5).sort((a, b) => b.days - a.days || b.total - a.total));
   })(); }, []);
   const tot = (k: 'b0' | 'b8' | 'b16' | 'b31') => r2(rows.reduce((a, r) => a + r[k], 0));
   if (open) return <ShopStatement shopId={open} onBack={() => setOpen(null)} />;
+  if (!list) return <div className="card muted">{'Loading…'}</div>; // never "₹0 in the market" before the numbers are in
   return (
     <div className="stack">
       <div className="kpi navy"><div className="v">{inr(rows.reduce((a, r) => a + r.total, 0))}</div><div className="l">{'in the market'} · {rows.length} {'shops'}</div></div>

@@ -123,6 +123,24 @@ describe('DBRoX server', () => {
     expect((res as { status: number; body: unknown }[]).filter(r => r.status !== 200).map(r => `${r.status} ${JSON.stringify(r.body)}`)).toEqual([]);
   }, 30000);
 
+  it('a new phone downloads only recent history-log rows; the full log stays on the server (working-app test, 9 Nov 2026)', async () => {
+    // a month of a busy distributor = ~120,000 log rows (80% of all data): no phone needs them all
+    const s = await post('/v1/signup', { firmName: 'Log Agencies', ownerName: 'Owner', phone: '9877700002', pin: '1111' });
+    const old = new Date(Date.now() - 10 * 86400000).toISOString(), now = new Date().toISOString();
+    await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'audit', id: 'a-old', updatedAt: old, data: { at: old, action: 'old' } },
+      { table: 'audit', id: 'a-new', updatedAt: now, data: { at: now, action: 'new' } },
+      { table: 'shops', id: 'sh-old', updatedAt: old, data: { name: 'Old shop' } },
+    ] }, s.body.token);
+    const pull = await post('/v1/sync', { cursor: 0, changes: [] }, s.body.token);
+    const got = pull.body.changes.map((c: { id: string }) => c.id);
+    expect(got).toContain('a-new');
+    expect(got).toContain('sh-old'); // every other table: everything
+    expect(got).not.toContain('a-old');
+    const kept = await pool.query("SELECT count(*)::int n FROM docs WHERE tbl='audit' AND tenant_id=$1", [s.body.tenantId]);
+    expect(kept.rows[0].n).toBe(2);
+  });
+
   it('issues bill numbers on the server, never twice', async () => {
     const a = await post('/v1/number', { kind: 'bill', count: 2 }, owner.token);
     const b = await post('/v1/number', { kind: 'bill' }, owner.token);

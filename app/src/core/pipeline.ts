@@ -2,7 +2,7 @@
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
 import { ChangeSet, db, nowIso, session, today, daysFrom } from './db';
-import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches } from './billing';
+import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches, type BillCut } from './billing';
 import { r2 } from './ledger';
 import { nextNumbers } from './sync';
 import type { Invoice, Order, OrderLine, Role, Shop, Trip, Van } from './types';
@@ -78,6 +78,11 @@ export async function pickOrder(orderId: string, picked: { productId: string; qt
 
 export async function suggestPick(o: Order) {
   const batches = await db.batches.toArray();
+  // stock already packed for another order (picked, not billed yet) is not on the shelf any more
+  for (const other of await db.orders.where('status').equals('picked').toArray()) {
+    if (other.id === o.id) continue;
+    for (const pk of other.picked ?? []) { if (!pk.batchId || !pk.qty) continue; const b = batches.find(x => x.id === pk.batchId); if (b) b.qty -= pk.qty; }
+  }
   return o.lines.map(l => {
     const { picks, short } = pickBatches(batches, l.productId, l.qty);
     for (const p of picks) { const b = batches.find(x => x.id === p.batchId)!; b.qty -= p.qty; } // reserve within this order
@@ -106,8 +111,10 @@ async function approvePickedOnce(orderId: string) {
   const companies = new Set(lines.map(l => products.get(l.productId)));
   const numbers = (await nextNumbers('bill', companies.size)) ?? undefined;
   const billed = cs.put<Order>('orders', { ...o, status: 'billed', lines: o.lines, invoiceIds: [] }, 'owner approved');
-  const invs = lines.length ? await makeInvoices(cs, { ...billed, lines }, shop, numbers) : [];
+  const cuts: BillCut[] = [];
+  const invs = lines.length ? await makeInvoices(cs, { ...billed, lines }, shop, numbers, undefined, cuts) : [];
   billed.invoiceIds = invs.map(i => i.id);
+  if (cuts.length) billed.issues = [...billed.issues, ...cuts.map(c => `Billed ${c.billed} of ${c.wanted} ${c.name}: stock had no more`)];
   const batchId = await cs.commit('Approved & billed');
   return { invoices: invs, batchId };
 }
@@ -272,7 +279,7 @@ export async function dayChecklist(date = today()) {
   const refs = pays.filter(p => p.date === date && p.mode !== 'cash' && !(p.ref && p.ref.length >= 4) && !p.confirmPhoto);
   const waitingOrders = orders.filter(o => o.date <= date && (o.status === 'new' || o.status === 'needs_ok' || o.status === 'picked'));
   const newShops = shops.filter(s => !s.approved);
-  const dupes = pays.filter(p => p.status === 'ok' && p.date === date).filter((p, _, all) => all.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount));
+  const dupes = pays.filter(p => p.status === 'ok' && p.date === date && !p.dupOk).filter((p, _, all) => all.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount));
   const cashOpen = pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok' && p.date <= date);
   const unapprovedExpenses = expenses.filter(e => !(e as { approved?: boolean }).approved && e.category !== 'advance');
   const shortfallsOpen = (await db.advances.toArray()).filter(a => a.kind === 'shortfall' && a.status === 'approved' && (a.recovered ?? 0) < a.amount);
@@ -282,6 +289,23 @@ export async function dayChecklist(date = today()) {
 // Owner's choice for a bill with delivery differences: re-issue the same number with delivered quantities, or a credit note.
 // Re-issue a bill with new quantities under the SAME number (allowed until it is printed, and at day close for
 // delivery differences). The original lines are kept inside the bill; stock is corrected for the change.
+/** day close: the owner checked the same amount twice from one shop — both are real collections */
+export async function confirmNotDuplicate(paymentIds: string[]) {
+  const cs = new ChangeSet();
+  for (const id of paymentIds) { const p = await db.payments.get(id); if (p && p.status === 'ok') cs.put('payments', { ...p, dupOk: true }, 'checked: not a duplicate'); }
+  await cs.commit('Not a duplicate');
+}
+
+/** day close: one of two equal collections was entered twice — cancel it (kept for the audit, bills open again) */
+export async function cancelPayment(paymentId: string, reason: string) {
+  const p = await db.payments.get(paymentId);
+  if (!p || p.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
+  if (p.bankLineId) throw new Error('This payment is matched to the bank statement. Unmatch it in Accounts → Bank first.');
+  const cs = new ChangeSet();
+  cs.put('payments', { ...p, status: 'cancelled', note: reason }, 'payment cancelled');
+  await cs.commit('Payment cancelled');
+}
+
 export function reviseInvoice(inv: Invoice, qtyByLine: number[]): Invoice {
   const lines = inv.lines.map((l, i) => {
     const qty = Math.max(0, qtyByLine[i] ?? l.qty); if (qty === l.qty) return l;

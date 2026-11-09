@@ -16,7 +16,9 @@ interface Stop { shop: Shop; invoices: Invoice[] }
 // While the trip is out, the phone sends its location every 30 s so the owner sees the van live.
 export function Delivery() {
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [stops, setStops] = useState<Stop[]>([]);
+  const [stops, setStops0] = useState<Stop[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setStops: typeof setStops0 = v => { setLoaded(true); setStops0(v); };
   const [open, setOpen] = useState<Stop | null>(null);
   const [tick, setTick] = useState(0);
   const [ending, setEnding] = useState(false);
@@ -66,7 +68,8 @@ export function Delivery() {
             </button>
           );
         })}
-        {!stops.length && <div className="card muted">{t('noItems')}</div>}
+        {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !stops.length && <div className="card muted">{t('noItems')}</div>}
       </div>
       {trip?.status === 'out' && <button className="btn big block" onClick={() => setEnding(true)}><Flag /> {'End trip'}{left.length ? ` (${left.length} ${'not delivered'})` : ''}</button>}
     </div>

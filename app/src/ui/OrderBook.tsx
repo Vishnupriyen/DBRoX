@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Repeat, Search, Flame, Gift, AlertTriangle, Check } from 'lucide-react';
 import { ChangeSet, db, session, today, daysFrom } from '../core/db';
-import { activeSchemes, applySchemes, stockOf } from '../core/billing';
+import { activeSchemes, applySchemes, allStock } from '../core/billing';
 import { bookOrder, updateMyOrder } from '../core/pipeline';
 import { askText } from './dialog';
 import { r2, shopOutstanding } from '../core/ledger';
@@ -35,15 +35,14 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
   useEffect(() => {
     (async () => {
       const ps = (await db.products.toArray()).filter(p => p.active);
-      setProducts(ps); setCompanies(await db.companies.toArray()); setSchemes(await db.schemes.toArray());
-      const st: Record<string, number> = {};
-      for (const p of ps) st[p.id] = await stockOf(p.id);
-      setStock(st);
-      const o = await shopOutstanding(shop.id); setDue({ total: o.total, overdue: o.overdue });
+      // what this shop usually buys first (the salesman's first tap), then stock in one read, then dues
       const past = (await db.orders.where('shopId').equals(shop.id).toArray()).filter(x => x.status !== 'cancelled').sort((a, b) => b.date.localeCompare(a.date));
       const u = new Set<string>(); for (const o2 of past.slice(0, 6)) for (const l of o2.lines) u.add(l.productId);
       setUsual(u);
       setLastOrder(past[0]?.lines ?? []);
+      setProducts(ps); setCompanies(await db.companies.toArray()); setSchemes(await db.schemes.toArray());
+      setStock(Object.fromEntries(await allStock()));
+      const o = await shopOutstanding(shop.id); setDue({ total: o.total, overdue: o.overdue });
       if (existing) { const pm = new Map(ps.map(p => [p.id, p])); const init: Record<string, Line> = {}; for (const l of existing.lines) { const p = pm.get(l.productId); if (p) init[p.id] = { product: p, cases: Math.floor(l.qty / p.caseSize), pcs: l.qty % p.caseSize, rate: l.rate !== p.rate ? l.rate : undefined }; } setLines(init); setCat('all'); }
     })();
   }, [shop.id]);

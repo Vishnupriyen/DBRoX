@@ -15,7 +15,9 @@ export function Pick() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vanId, setVanId] = useState<string>('');
   const [tick, setTick] = useState(0);
-  const [invs, setInvs] = useState<Invoice[]>([]);
+  const [invs, setInvs0] = useState<Invoice[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setInvs: typeof setInvs0 = v => { setLoaded(true); setInvs0(v); };
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [shops, setShops] = useState<Map<string, string>>(new Map());
   const [ticked, setTicked] = useState<Set<string>>(new Set());
@@ -90,7 +92,8 @@ export function Pick() {
               </button>
             );
           })}
-          {!lines.length && <div className="card muted">{'No trip planned for this van yet. The owner confirms the delivery plan first.'}</div>}
+          {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !lines.length && <div className="card muted">{'No trip planned for this van yet. The owner confirms the delivery plan first.'}</div>}
         </div>
       ) : (
         <div className="stack">

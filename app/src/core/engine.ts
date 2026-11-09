@@ -3,7 +3,7 @@
 // read photos, never to decide money.
 import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
-import { invoiceBalances, r2, shopOutstanding } from './ledger';
+import { allOutstanding, invoiceBalances, r2 } from './ledger';
 import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
 import {
   companyOptions, orderRow, productOptions, shopOptions, type Col, type Proposal, type Row,
@@ -855,9 +855,10 @@ async function importShops(file: File): Promise<Reply> {
 async function outstandingTable(shopId?: string, above?: number): Promise<Reply> {
   const shops = await db.shops.toArray();
   const rows: (string | number)[][] = [];
+  const dues = await allOutstanding(); // one pass over the bills (1,200 shops)
   for (const s of shops.filter(x => !shopId || x.id === shopId)) {
-    const o = await shopOutstanding(s.id);
-    if (o.total > 0.5 && (!above || o.total >= above)) rows.push([s.name, s.area, o.total, o.overdue, o.maxOverdueDays, o.bills.length]);
+    const o = dues.get(s.id);
+    if (o && o.total > 0.5 && (!above || o.total >= above)) rows.push([s.name, s.area, o.total, o.overdue, o.maxOverdueDays, o.bills]);
   }
   rows.sort((a, b) => Number(b[2]) - Number(a[2]));
   const total = r2(rows.reduce((a, r) => a + Number(r[2]), 0));

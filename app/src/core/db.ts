@@ -146,9 +146,12 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
       const same = await db.invoices.where('number').equals(r.number as string).toArray();
       if (same.some(x => x.id !== rec.id) || writes.some(x => x.table === 'invoices' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number))
         throw new GuardError(`Bill number ${String(r.number)} is already used. A bill number can never repeat.`);
-      for (const l of (r.lines as { qty: number; batches: { qty: number }[] }[]) ?? []) {
+      const isNew = !(await db.invoices.get(rec.id));
+      for (const l of (r.lines as { qty: number; freeQty?: number; name?: string; batches: { qty: number }[] }[]) ?? []) {
         if (!fin(l.qty) || l.qty < 0) throw new GuardError('A bill line has an invalid quantity.');
         if (l.batches.some(b => !fin(b.qty) || b.qty < 0)) throw new GuardError('A bill line has an invalid batch quantity.');
+        // a new bill charges only for pieces taken out of stock lots (a shop is never billed for goods that weren't there)
+        if (isNew && l.batches.reduce((a, b) => a + b.qty, 0) !== l.qty + (l.freeQty ?? 0)) throw new GuardError(`Not enough stock for ${l.name ?? 'an item'} on this bill. A bill can only charge for pieces that are in stock.`);
       }
     }
     if (table === 'creditNotes') {

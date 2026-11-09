@@ -63,7 +63,9 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
 let running = false;
 export async function syncNow(): Promise<string> {
   let msg = '';
-  for (let i = 0; i < 25; i++) { // keep going while there is more to send or to pull
+  // keep going until everything is sent and received: stopping early left a busy owner's phone showing only a third of
+  // the bills after first login (the cap is only a guard against a server that never says "done")
+  for (let i = 0; i < 2000; i++) {
     const r = await syncOnce();
     msg = r.msg;
     if (!r.more) break;

@@ -9,7 +9,9 @@ interface Row { product: Product; ordered: number; qty: number; batches: Batch[]
 
 // Godown: pick each approved order. Qty up or down, batch (oldest first), MRP — never a new product.
 export function PickOrders() {
-  const [orders, setOrders] = useState<(Order & { shop: Shop })[]>([]);
+  const [orders, setOrders0] = useState<(Order & { shop: Shop })[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setOrders: typeof setOrders0 = v => { setLoaded(true); setOrders0(v); };
   const [open, setOpen] = useState<(Order & { shop: Shop }) | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [tick, setTick] = useState(0);
@@ -84,7 +86,8 @@ export function PickOrders() {
             <span className="badge warn">{'pick'}</span>
           </button>
         ))}
-        {!orders.length && <div className="card muted">{'Nothing to pick. Orders appear here after the owner approves them.'}</div>}
+        {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !orders.length && <div className="card muted">{'Nothing to pick. Orders appear here after the owner approves them.'}</div>}
       </div>
     </div>
   );

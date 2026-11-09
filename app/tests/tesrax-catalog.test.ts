@@ -132,3 +132,15 @@ describe('the same shop name in different towns', () => {
     expect(r.text).toMatch(/Tittakudi/); expect(r.text).toMatch(/Pennadam/);
   });
 });
+
+describe('who an order came from', () => {
+  it('an order a salesman types to TESRAX is his order, not an office order the owner must explain', async () => {
+    const { commit } = await import('../src/core/proposals');
+    as('ravi'); const r = await handle('lakshmi traders 1 case vim bar 200g', []);
+    const { orderId } = await commit(r.proposal!);
+    expect((await db.orders.get(orderId!))?.source).toBe('salesman');
+    as('owner'); const r2 = await handle('lakshmi traders 2 case vim bar 200g', []);
+    const { orderId: o2 } = await commit(r2.proposal!);
+    expect((await db.orders.get(o2!))?.source).toBe('office');
+  });
+});

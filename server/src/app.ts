@@ -162,7 +162,9 @@ export async function buildApp(pool: pg.Pool) {
 
     const cursor = Number(b.cursor ?? 0);
     const rows = (await pool.query(
-      `SELECT tbl, id, data, updated_at, version FROM docs WHERE tenant_id=$1 AND version > $2 AND tbl = ANY($3) ORDER BY version LIMIT $4`,
+      // the history log is 80% of all data: phones get only its last 3 days (morning summary, undo); the full log stays here
+      `SELECT tbl, id, data, updated_at, version FROM docs WHERE tenant_id=$1 AND version > $2 AND tbl = ANY($3)
+         AND (tbl <> 'audit' OR updated_at > now() - interval '3 days') ORDER BY version LIMIT $4`,
       [c.t, cursor, READ[c.r] ?? [], config.pullLimit])).rows;
     const maxVersion = rows.length ? Number(rows[rows.length - 1].version) : cursor;
     return {

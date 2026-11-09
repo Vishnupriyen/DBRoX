@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { PayBox } from './PayBox';
 import { ArrowLeft, Store } from 'lucide-react';
 import { activeShops } from '../core/db';
-import { shopOutstanding } from '../core/ledger';
+import { allOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { inr, t } from '../core/i18n';
 import type { Shop } from '../core/types';
 
 // TESRAX Collection: overdue shops first; bill number first, then amount, mode, shop ✓.
 export function Collect() {
-  const [shops, setShops] = useState<(Shop & { due: number; overdue: number })[]>([]);
+  const [shops, setShops0] = useState<(Shop & { due: number; overdue: number })[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setShops: typeof setShops0 = v => { setLoaded(true); setShops0(v); };
   const [q, setQ] = useState('');
   const [sel, setSel] = useState<(Shop & { due: number }) | null>(null);
   const [tick, setTick] = useState(0);
@@ -18,7 +20,8 @@ export function Collect() {
       const me = (await import('../core/db')).session().userId;
       const role = (await (await import('../core/db')).db.staff.get(me))?.role;
       const ss = (await activeShops()).filter(s => role !== 'salesman' || !s.salesmanId || s.salesmanId === me);
-      const withDue = await Promise.all(ss.map(async s => { const o = await shopOutstanding(s.id); return { ...s, due: o.total, overdue: o.maxOverdueDays }; }));
+      const dues = await allOutstanding(); // one pass over the bills, not one per shop
+      const withDue = ss.map(s => { const o = dues.get(s.id); return { ...s, due: o?.total ?? 0, overdue: o?.maxOverdueDays ?? 0 }; });
       setShops(withDue.filter(s => s.due > 0.5).sort((a, b) => b.overdue - a.overdue || b.due - a.due));
     })();
   }, [tick]);
@@ -37,7 +40,8 @@ export function Collect() {
             <div style={{ textAlign: 'right' }}><div className="amt num">{inr(s.due)}</div>{s.overdue > 0 && <span className="badge bad">{s.overdue} days late</span>}</div>
           </button>
         ))}
-        {!list.length && <div className="card muted">{t('noItems')}</div>}
+        {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !list.length && <div className="card muted">{t('noItems')}</div>}
       </div>
     </div>
   );

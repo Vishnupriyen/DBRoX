@@ -9,7 +9,9 @@ import type { Advance, Payment } from '../core/types';
 
 // Owner: every rupee of cash that is not yet on his table — who holds it, from which shop, which bill, when. Receiving happens at day close.
 export function CashWithStaff() {
-  const [groups, setGroups] = useState<{ staffId: string; name: string; total: number; older: number; pays: (Payment & { shop: string; bills: string })[] }[]>([]);
+  const [groups, setGroups0] = useState<{ staffId: string; name: string; total: number; older: number; pays: (Payment & { shop: string; bills: string })[] }[]>([]);
+  const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
+  const setGroups: typeof setGroups0 = v => { setLoaded(true); setGroups0(v); };
   const [shortfalls, setShortfalls] = useState<(Advance & { name: string })[]>([]);
   const [openStaff, setOpenStaff] = useState<string | null>(null);
   const [openShop, setOpenShop] = useState<string | null>(null);
@@ -41,7 +43,8 @@ export function CashWithStaff() {
           </div>}
         </div>
       ))}
-      {!groups.length && <div className="card muted">{'All cash is on your table.'}</div>}
+      {!loaded && <div className="card muted">{'Loading…'}</div>}
+      {loaded && !groups.length && <div className="card muted">{'All cash is on your table.'}</div>}
       <div className="muted">{'You receive and count cash at Day close; the difference is recorded against the person.'}</div>
     </div>
   );

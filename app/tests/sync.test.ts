@@ -33,3 +33,19 @@ describe('sync', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('first sync of a busy distributor', () => {
+  it('keeps pulling until the server has nothing more (a month of history is ~150,000 records)', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      calls++;
+      const b = JSON.parse(init.body) as { cursor: number };
+      const more = calls < 60; // 60 pages of 2,000 = 120,000 records
+      return new Response(JSON.stringify({ cursor: b.cursor + 2000, changes: [], accepted: [], more }), { status: 200 });
+    });
+    const { syncNow } = await import('../src/core/sync');
+    await syncNow();
+    expect(calls).toBe(60);
+    vi.unstubAllGlobals();
+  });
+});
