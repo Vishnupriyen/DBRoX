@@ -1,6 +1,6 @@
 // Demo distributor so the app can be tried before real data is loaded.
 // GST rates and HSN codes here are demo values — real ones come from the company purchase bill.
-import { ChangeSet, db, setSession, today } from './db';
+import { ChangeSet, daysFrom, db, setSession, today } from './db';
 import { makeInvoices } from './billing';
 import { allocateOldestFirst } from './ledger';
 import type { Company, Order, Payment, Product, Settings, Shop, Staff, Van } from './types';
@@ -12,8 +12,9 @@ export function gstinWithCheck(first14: string) {
   return first14 + chars[(36 - (sum % 36)) % 36];
 }
 
-const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+// local days, the same as the app's today() (UTC dates were a day behind between midnight and 5:30 AM in India)
+const daysAgo = (n: number) => daysFrom(-n);
+const inDays = (n: number) => daysFrom(n);
 
 const SEED_VERSION = 'v0.9';
 export async function seedDemo(tenantId = 'demo') {

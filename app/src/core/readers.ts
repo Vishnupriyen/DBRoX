@@ -79,8 +79,8 @@ export function toIsoDate(s: string): string {
     let y = Number(m[3]); if (y < 100) y += 2000;
     return `${y}-${String(mon).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
   }
-  const d = new Date(t);
-  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+  const d = new Date(t); // "November 3, 2026" is read as local midnight: take the local day, not UTC (a day early in India)
+  return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // ---------- purchase bill lines ----------

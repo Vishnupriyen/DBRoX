@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, Boxes, Camera, FileSpreadsheet, MessageSquareText, Split, Tag } from 'lucide-react';
-import { ChangeSet, db, session, today, monthEnd, ymd, daysFrom } from '../core/db';
+import { ChangeSet, db, localDay, session, today, monthEnd, ymd, daysFrom } from '../core/db';
 import { inr } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
@@ -106,7 +106,7 @@ export function StockPosition() {
               <div key={b.id} className="card stack" style={{ gap: 6 }}>
                 <div className="row" style={{ flexWrap: 'nowrap' }}>
                   <span className="badge navy">{k + 1}</span>
-                  <div className="grow"><b>{'Expiry'} {b.expiry.slice(5, 7)}/{b.expiry.slice(2, 4)}</b> <span className={`badge ${days <= 45 ? 'bad' : days <= 90 ? 'warn' : ''}`}>{days}d</span><div className="s">{'batch'} {b.batch} · MRP {b.mrp} · {'in'} {b.createdAt.slice(0, 10)}</div></div>
+                  <div className="grow"><b>{'Expiry'} {b.expiry.slice(5, 7)}/{b.expiry.slice(2, 4)}</b> <span className={`badge ${days <= 45 ? 'bad' : days <= 90 ? 'warn' : ''}`}>{days}d</span><div className="s">{'batch'} {b.batch} · MRP {b.mrp} · {'in'} {localDay(b.createdAt)}</div></div>
                   <b className="num">{b.qty} pcs</b>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
@@ -199,7 +199,7 @@ export function Damages() {
   const [photo, setPhoto] = useState<string>();
   const [list, setList] = useState<{ id: string; name: string; qty: number; kind: string; amount: number; date: string }[]>([]);
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const ps = await db.products.toArray(); setProducts(ps); const pm = new Map(ps.map(p => [p.id, p.name])); setList((await db.claimEntries.toArray()).filter(c => c.kind !== 'scheme').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10).map(c => ({ id: c.id, name: pm.get(c.productId ?? '') ?? '', qty: c.qty, kind: c.kind, amount: c.amount, date: c.createdAt.slice(0, 10) }))); })(); }, [tick]);
+  useEffect(() => { (async () => { const ps = await db.products.toArray(); setProducts(ps); const pm = new Map(ps.map(p => [p.id, p.name])); setList((await db.claimEntries.toArray()).filter(c => c.kind !== 'scheme').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10).map(c => ({ id: c.id, name: pm.get(c.productId ?? '') ?? '', qty: c.qty, kind: c.kind, amount: c.amount, date: localDay(c.createdAt) }))); })(); }, [tick]);
   const save = async () => {
     if (!sel || qty <= 0) return;
     const cs = new ChangeSet();

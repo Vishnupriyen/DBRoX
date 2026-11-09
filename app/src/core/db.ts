@@ -96,6 +96,10 @@ export const nowIso = () => new Date().toISOString();
 // Dates are always the phone's local (Indian) calendar date, never UTC: between 00:00 and 05:30 IST
 // UTC is still on the previous day.
 export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** the local day of a saved timestamp (createdAt, at): never its UTC date, which is the previous day before 5:30 AM in India */
+export const localDay = (iso: string) => ymd(new Date(iso));
+/** the local day before "YYYY-MM-DD" (never through UTC: in India that is two days before) */
+export const dayBefore = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return ymd(new Date(y, m - 1, d - 1)); };
 export const today = () => ymd(new Date());
 export const daysFrom = (n: number) => ymd(new Date(Date.now() + n * 86400000));
 export const thisMonth = () => today().slice(0, 7);

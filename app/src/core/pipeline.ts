@@ -1,7 +1,7 @@
 // The order chain, one step hands to the next:
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
-import { ChangeSet, db, nowIso, session, today, daysFrom } from './db';
+import { ChangeSet, db, nowIso, session, today, daysFrom, ymd } from './db';
 import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches, type BillCut } from './billing';
 import { r2 } from './ledger';
 import { nextNumbers } from './sync';
@@ -127,7 +127,9 @@ export async function billingLockedBy(): Promise<string | null> {
   for (const x of await db.trips.toArray()) if (x.date < t) days.add(x.date);
   for (const p of await db.payments.toArray()) if (p.date < t) days.add(p.date);
   const closed = new Set((await db.dayCloses.toArray()).map(d => d.date));
-  const first = (await db.audit.orderBy('at').first())?.at.slice(0, 10) ?? t; // nothing before the app started counts
+  // nothing before the app started counts — the local day it started (a UTC timestamp is the previous day before 5:30 AM in India)
+  const firstAt = (await db.audit.orderBy('at').first())?.at;
+  const first = firstAt ? ymd(new Date(firstAt)) : t;
   const open = [...days].filter(d => !closed.has(d) && d >= first).sort();
   return open[0] ?? null;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
-import { db, setSession, today } from './core/db';
+import { dayBefore, db, setSession, today } from './core/db';
 import { seedDemo } from './core/seed';
 import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { t } from './core/i18n';
@@ -215,7 +215,7 @@ function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => v
   if (!lic || lic.demo) return null;
   const left = lic.paidThrough ? Math.round((Date.parse(`${lic.paidThrough}T00:00:00`) - Date.parse(`${new Date().toDateString()}`)) / 86400000) : 99;
   const fmt = (d?: string) => d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
-  const lockDay = lic.lockOn ? new Date(Date.parse(`${lic.lockOn}T00:00:00`) - 86400000).toISOString().slice(0, 10) : undefined;
+  const lockDay = lic.lockOn ? dayBefore(lic.lockOn) : undefined;
   const text = lic.status === 'locked' ? 'Plan not renewed — new orders and bills are paused. Tap to renew.'
     : lic.status === 'expired' ? 'Connect to the internet to renew your licence.'
     : lic.status === 'grace' ? `Payment pending — renew by ${fmt(lockDay)} to keep billing.`

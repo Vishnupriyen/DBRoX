@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Phone, MapPin, Receipt, IndianRupee, FileMinus, Printer } from 'lucide-react';
-import { db } from '../core/db';
+import { db, localDay } from '../core/db';
 import { invoiceBalances, shopOutstanding } from '../core/ledger';
 import { inr } from '../core/i18n';
 import { PrintBill } from './PrintBill';
@@ -51,7 +51,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
         {rows.map((r, i) => { const after = running; running = r.kind === 'bill' ? running - r.debit : running + r.credit; return (
           <button key={i} className="item tap" onClick={() => r.inv && setPrinting(r.inv)} disabled={!r.inv}>
             <div className={`avatar ${r.kind === 'payment' ? 'ok' : r.kind === 'cn' ? 'gold' : ''}`}>{r.kind === 'bill' ? <Receipt size={18} /> : r.kind === 'payment' ? <IndianRupee size={18} /> : <FileMinus size={18} />}</div>
-            <div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.ref}</div><div className="s">{r.at.slice(0, 10)} · {r.note.replace(/by (\w+)/, (_, id) => `${'by'} ${staff.get(id) ?? id}`)}</div></div>
+            <div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.ref}</div><div className="s">{localDay(r.at)} · {r.note.replace(/by (\w+)/, (_, id) => `${'by'} ${staff.get(id) ?? id}`)}</div></div>
             <div style={{ textAlign: 'right' }}><div className={`amt num`} style={{ color: r.kind === 'bill' ? undefined : 'var(--ok)' }}>{r.kind === 'bill' ? inr(r.debit) : `−${inr(r.credit)}`}</div><div className="s num">{'bal'} {inr(Math.max(0, after))}</div></div>
             {r.inv && <Printer size={16} style={{ color: 'var(--ink-3)' }} />}
           </button>); })}

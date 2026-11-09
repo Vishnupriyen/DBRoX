@@ -1,5 +1,5 @@
 // TESRAX Accounts + TESRAX Claim Prep outputs. Pure code: exact, repeatable, explainable.
-import { ChangeSet, db, getSettings } from './db';
+import { ChangeSet, db, getSettings, localDay } from './db';
 import { r2 } from './ledger';
 import { downloadText, downloadWorkbook } from './readers';
 import type { Reply } from './engine';
@@ -184,7 +184,7 @@ export async function exportClaims(month: string): Promise<Reply> {
     sheets.push({
       name: `${c.code} ${month}`,
       header: ['Type', 'Bill / note', 'Date', 'Product', 'Qty', 'Claim ₹', 'Scheme / reason'],
-      rows: es.map(e => [e.kind, e.invoiceId ? invs.get(e.invoiceId)?.number ?? '' : 'Godown entry', e.invoiceId ? invs.get(e.invoiceId)?.date ?? '' : e.createdAt.slice(0, 10), products.get(e.productId ?? '')?.name ?? '', e.qty, e.amount, e.note ?? '']),
+      rows: es.map(e => [e.kind, e.invoiceId ? invs.get(e.invoiceId)?.number ?? '' : 'Godown entry', e.invoiceId ? invs.get(e.invoiceId)?.date ?? '' : localDay(e.createdAt), products.get(e.productId ?? '')?.name ?? '', e.qty, e.amount, e.note ?? '']),
     });
   }
   if (cs.size) await cs.commit('Claim drafts');
