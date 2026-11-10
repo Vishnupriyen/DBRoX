@@ -44,7 +44,7 @@ await pool.query('ANALYZE');
 const { companyReport, refreshCover, refreshChanged } = await import('../src/reports.js');
 t = performance.now(); await refreshCover(pool, T); const full = Math.round(performance.now() - t); log('daily remake, every stock row', full, 'ms');
 // a busy few minutes: 2,000 distributors billed, 10 products each changed → 20,000 product figures to remake
-await pool.query(`INSERT INTO cover_dirty(tenant_id, link_id, product_id) SELECT $1, 'L' || l, 'P' || (1 + (l * 7 + k * 101) % $2::int) FROM generate_series(1, 2000) l, generate_series(1, 10) k ON CONFLICT DO NOTHING`, [T, PRODUCTS]);
+await pool.query(`INSERT INTO cover_dirty(tenant_id, link_id, product_id) SELECT $1, 'L' || l, 'P' || (1 + (l * 7 + k * 101) % $2::int) FROM generate_series(1, 2000) l, generate_series(1, 10) k`, [T, PRODUCTS]);
 t = performance.now(); const n = await refreshChanged(pool, T); const changedMs = Math.round(performance.now() - t); log(`remake ${n} changed products`, changedMs, 'ms');
 const R: Record<string, unknown> = { links: LINKS, products: PRODUCTS, stockRows: LINKS * PRODUCTS, dailyRows: LINKS * 30 * SOLD, dailyRemakeMs: full, changed20kMs: changedMs };
 for (const [kind, args] of [['links', {}], ['products', {}], ['stock', { status: 'low' }], ['outlets', { q: 'S1' }], ['stock', { dbLinkId: 'L42' }], ['products', { dbLinkId: 'L42' }]] as [string, Record<string, unknown>][]) {

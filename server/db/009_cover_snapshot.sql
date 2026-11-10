@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS cover_link (            -- per distributor: stock val
   tenant_id text NOT NULL, link_id text NOT NULL, value numeric NOT NULL DEFAULT 0, low integer NOT NULL DEFAULT 0, high integer NOT NULL DEFAULT 0,
   ok integer NOT NULL DEFAULT 0, none integer NOT NULL DEFAULT 0, PRIMARY KEY (tenant_id, link_id)
 );
--- which distributor's products changed since their figures were made (only those are remade)
-CREATE TABLE IF NOT EXISTS cover_dirty (tenant_id text NOT NULL, link_id text NOT NULL, product_id text NOT NULL, PRIMARY KEY (tenant_id, link_id, product_id));
+-- which distributor's products changed since their figures were made (only those are remade). Add-only, no unique key:
+-- the relay never waits on a mark the remake job is clearing (repeats are merged when remade). Unlogged (fast): marks lost
+-- in a database crash are covered by the daily full remake
+CREATE UNLOGGED TABLE IF NOT EXISTS cover_dirty (tenant_id text NOT NULL, link_id text NOT NULL, product_id text NOT NULL);
+CREATE INDEX IF NOT EXISTS cover_dirty_tenant ON cover_dirty (tenant_id);
 -- when every row was last remade (daily: "sold per day" moves with the date)
 CREATE TABLE IF NOT EXISTS cover_state (tenant_id text PRIMARY KEY, at timestamptz NOT NULL);

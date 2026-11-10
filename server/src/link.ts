@@ -103,7 +103,7 @@ export async function writeInto(pool: pg.Pool, tenant: string, writes: Write[]) 
        SELECT $1, t, i, d::jsonb, u::timestamptz FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(t, i, d, u)
        ON CONFLICT (tenant_id,tbl,id) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at, version=nextval('docs_version_seq')`,
       [tenant, recs.map(r => r.tbl), recs.map(r => r.data.id), recs.map(r => JSON.stringify(r.data)), recs.map(r => r.t)]);
-    if (changed.size) await client.query(`INSERT INTO cover_dirty(tenant_id, link_id, product_id) SELECT $1, l, p FROM unnest($2::text[], $3::text[]) AS x(l, p) ON CONFLICT DO NOTHING`,
+    if (changed.size) await client.query(`INSERT INTO cover_dirty(tenant_id, link_id, product_id) SELECT $1, l, p FROM unnest($2::text[], $3::text[]) AS x(l, p)`,
       [tenant, [...changed].map(k => k.split('|')[0]), [...changed].map(k => k.split('|')[1])]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

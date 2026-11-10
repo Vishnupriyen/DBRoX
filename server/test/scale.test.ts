@@ -12,7 +12,7 @@ let link: typeof import('../src/link.js');
 let reports: typeof import('../src/reports.js');
 const port = 54335;
 beforeAll(async () => {
-  process.env.RELAY_INLINE = '0'; // the real thing: the relay runs in the background
+  process.env.RELAY_INLINE = '0'; process.env.COVER_DELAY_MS = '0'; // the real thing: the relay runs in the background
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-scale-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
   await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
   pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });

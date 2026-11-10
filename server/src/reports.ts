@@ -95,7 +95,7 @@ export async function refreshChanged(pool: pg.Pool, tenant: string, max = 20000)
   try {
     await client.query('BEGIN'); await lockCover(client, tenant);
     // the marks go first: a sale landing while this runs marks its product again and is picked up next time
-    const got = (await client.query(`DELETE FROM cover_dirty WHERE (tenant_id, link_id, product_id) IN (SELECT tenant_id, link_id, product_id FROM cover_dirty WHERE tenant_id=$1 LIMIT $2)
+    const got = (await client.query(`DELETE FROM cover_dirty WHERE ctid IN (SELECT ctid FROM cover_dirty WHERE tenant_id=$1 LIMIT $2)
       RETURNING link_id, product_id`, [tenant, max])).rows as { link_id: string; product_id: string }[];
     if (got.length) {
       await client.query(`${coverSql(true)} ${SET_FIGURES}`, [tenant, daysAgo(30), got.map(r => r.link_id), got.map(r => r.product_id)]);
@@ -129,6 +129,8 @@ function background(pool: pg.Pool, tenant: string, full: boolean) {
   if (busy.has(tenant)) { again.add(tenant); return; }
   busy.add(tenant);
   void (async () => {
+    // wait a moment so a burst of bills is remade together (fewer, bigger passes; the relay keeps its speed)
+    const wait = Number(process.env.COVER_DELAY_MS ?? 5000); if (wait > 0) await new Promise(r => setTimeout(r, wait));
     if (full) await refreshCover(pool, tenant);
     do { again.delete(tenant); while (await refreshChanged(pool, tenant) > 0) { /* until none left */ } } while (again.has(tenant));
   })().catch(() => {}).finally(() => busy.delete(tenant));
