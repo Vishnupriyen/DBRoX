@@ -281,12 +281,12 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (paid > 0.5) v.warnings.push(`${inr(r2(paid))} already paid against this bill will stay with the shop as advance`);
         if (inv.deliveryStatus === 'delivered') v.warnings.push('This bill was delivered: make sure the goods came back, the stock is added back to the godown');
       }
-      v.summary = `Bill ${s(fieldValue(p, 'number'))} · ${inr(n(fieldValue(p, 'total')))} cancelled, stock back`;
+      v.summary = `Bill ${s(fieldValue(p, 'number'))} · ${inr(n(fieldValue(p, 'total')))} will be cancelled and its stock put back`;
       break;
     }
     case 'paymentCancel': {
       if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'Say why';
-      v.summary = `${inr(n(fieldValue(p, 'amount')))} payment cancelled · bills open again`;
+      v.summary = `${inr(n(fieldValue(p, 'amount')))} payment will be cancelled · its bills open again`;
       break;
     }
     case 'expenseFix': {
