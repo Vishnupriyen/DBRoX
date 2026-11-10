@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Truck, PackageOpen, AlertTriangle } from 'lucide-react';
 import { db, today } from '../core/db';
 import { tripLoaded } from '../core/pipeline';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 import { Pack } from './Pack';
 
@@ -56,6 +56,8 @@ export function Pick() {
   const allDone = lines.length > 0 && lines.every(l => ticked.has(l.product.id));
   const toggle = (id: string) => setTicked(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
+  // nothing to load yet: say so plainly instead of empty counters (0 bills · 0/0 lines)
+  if (loaded && !vans.length) return <div className="card"><div className="t">{'No van to load yet'}</div><div className="muted" style={{ marginTop: 4 }}>{'When the owner confirms today\'s delivery plan, each van\'s bills appear here to pick and pack.'}</div></div>;
   return (
     <div className="stack">
       <div className="segmented">
@@ -63,7 +65,7 @@ export function Pick() {
       </div>
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{mine.length} <span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>{'bills'}</span></div><div className="l">{[...new Set(mine.map(i => i.shopId))].length} {'shops'} · {inr(total)}</div></div>
+          <div><div className="v">{mine.length} <span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>{'bills'}</span></div><div className="l">{plural([...new Set(mine.map(i => i.shopId))].length, 'shop')} · {inr(total)}</div></div>
           <div style={{ textAlign: 'right' }}><div className="v">{ticked.size}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{lines.length}</span></div><div className="l">{'lines picked'}</div></div>
         </div>
       </div>

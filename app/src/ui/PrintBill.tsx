@@ -1,3 +1,5 @@
+import { inr } from '../core/i18n';
+import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { db, getSettings } from '../core/db';
 import { shopOutstanding } from '../core/ledger';
@@ -21,7 +23,7 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 50, overflow: 'auto', padding: 16 }}>
       <div className="row noprint" style={{ maxWidth: width, margin: '0 auto 8px' }}>
-        <button className="btn primary" onClick={() => window.print()}>🖨 Print / Save PDF</button>
+        <button className="btn primary" onClick={() => void printPage()}>🖨 Print / Save PDF</button>
         <button className="btn" onClick={onClose}>Close</button>
       </div>
       <div className="bill" style={{ maxWidth: width, margin: '0 auto', fontFamily: s.billFormat === 'dotmatrix' ? 'monospace' : undefined }}>
@@ -61,8 +63,8 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
           <div style={{ flex: 1 }}>
             <div>Amount in words: <b>{rupeesInWords(invoice.total)}</b></div>
             {invoice.schemeSaving > 0 && <div>Scheme savings: <b>₹{invoice.schemeSaving.toFixed(2)}</b></div>}
-            <div>Previous balance: ₹{oldBal.toLocaleString('en-IN')}</div>
-            <div>Total due: <b>₹{(oldBal + invoice.total).toLocaleString('en-IN')}</b></div>
+            <div>Previous balance: {inr(oldBal)}</div>
+            <div>Total due: <b>{inr((oldBal + invoice.total))}</b></div>
           </div>
           <table style={{ width: 220 }}>
             <tbody>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
 import { dayBefore, db, setSession, sideNow, today } from './core/db';
 import { wireDemoRelay } from './core/link';
@@ -67,6 +67,7 @@ export default function App() {
   const [page, setPage] = useState<Page | CoPage>('home');
   const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
+  const [moreKey, setMoreKey] = useState(0);
   const [soundOn, setSoundOn] = useState(sound.isOn());
   const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
@@ -111,6 +112,32 @@ export default function App() {
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); window.removeEventListener('dbrox:logout', kicked); };
+  }, []);
+
+  // a screen with its own levels (More → Settings) handles "back" first; returns true if it did
+  const stepBack = () => { const e = new Event('hanubix:back', { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; };
+  // Android app: the phone's back button closes RoX, then the open module, then goes home; on home it puts the app away.
+  // One listener for the app's whole life, reading the current screen (a listener per screen change used to pile up,
+  // and an old one could put the app away from any screen).
+  const nav = useRef({ rox, module, page });
+  nav.current = { rox, module, page };
+  useEffect(() => {
+    let off: (() => void) | undefined, gone = false;
+    void (async () => {
+      const { Capacitor } = await import('@capacitor/core');
+      if (!Capacitor.isNativePlatform()) return;
+      const { App: Native } = await import('@capacitor/app');
+      const h = await Native.addListener('backButton', () => {
+        const n = nav.current;
+        if (n.rox) setRox(false);
+        else if (stepBack()) { /* a screen went back one level itself */ }
+        else if (n.page !== 'home') setPage('home'); // a screen first: home shows the module it came from
+        else if (n.module) setModule(null);
+        else void Native.minimizeApp();
+      });
+      if (gone) void h.remove(); else off = () => { void h.remove(); };
+    })();
+    return () => { gone = true; off?.(); };
   }, []);
 
 
@@ -190,7 +217,7 @@ export default function App() {
       case 'billing': return <Billing role={me.role} />;
       case 'inbound': return <CompanyBills />;
       case 'reorder': return <OrderToCompany />;
-      case 'more': return <More role={me.role} onLogout={logout} onPlan={() => setPage('billing')} />;
+      case 'more': return <More key={moreKey} role={me.role} onLogout={logout} onPlan={() => setPage('billing')} />; // tapping More always shows the More menu
     }
   };
 
@@ -198,7 +225,7 @@ export default function App() {
     <div className="app">
       <GradDefs />
       <header className="top">
-        {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={home} aria-label="Home"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
@@ -227,7 +254,7 @@ export default function App() {
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{'Home'}</button>
         {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
         <button className="fab" onClick={openRox} aria-label="TESRAX"><TesraxCore size={64} interactive={false} /></button>
-        <button className={page === 'more' ? 'on' : ''} onClick={() => setPage('more')}><span className="ic"><Menu /></span>{'More'}</button>
+        <button className={page === 'more' ? 'on' : ''} onClick={() => { setPage('more'); setMoreKey(k => k + 1); }}><span className="ic"><Menu /></span>{'More'}</button>
       </nav>
     </div>
   );

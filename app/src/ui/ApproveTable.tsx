@@ -48,7 +48,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     setBusy(true);
     try {
       const res = await commit(p);
-      setClosed(res.message);
+      setClosed('Approved'); // the result itself follows as TESRAX's next message (said once, with Undo)
       onDone(res);
     } catch (e) {
       setClosed(null);
@@ -97,7 +97,9 @@ export function ApproveTable({ proposal, onDone }: Props) {
                   const e = v?.errors[ri]?.[c.key];
                   if (c.readonly) {
                     const shown = c.type === 'select' ? c.options?.find(o => o.value === r[c.key])?.label : r[c.key];
-                    return <td key={c.key} className={`ro ${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>{String(shown ?? '')}</td>;
+                    // read-only amounts the Indian way (1,506.62), never 1506.62
+                    const txt = c.type === 'number' && typeof shown === 'number' ? shown.toLocaleString('en-IN', { minimumFractionDigits: shown % 1 ? 2 : 0, maximumFractionDigits: 2 }) : String(shown ?? '');
+                    return <td key={c.key} className={`ro ${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>{txt}</td>;
                   }
                   return (
                     <td key={c.key} className={`${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>

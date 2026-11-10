@@ -1,0 +1,13 @@
+{
+  "appId": "com.hanubix.app",
+  "appName": "Hanubix",
+  "webDir": "dist-apk",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#000000",
+    "adjustMarginsForEdgeToEdge": "force"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

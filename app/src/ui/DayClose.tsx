@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
 import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, showDate, plural } from '../core/i18n';
 import { confirmBox } from './dialog';
 import type { Page } from './Home';
 import type { Invoice, Payment } from '../core/types';
@@ -46,8 +46,8 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
 
   return (
     <div className="stack">
-      <div className="sechead"><h3><Scale size={18} style={{ verticalAlign: -3 }} /> {'Day close'} · {s.date}</h3>{s.closed && <span className="badge ok"><Check size={12} /> {'closed'}</span>}</div>
-      {date !== today() && !s.closed && <div className="alert"><AlertTriangle /><div>{`${date} is still open — close it first, then today.`}</div></div>}
+      <div className="sechead"><h3><Scale size={18} style={{ verticalAlign: -3 }} /> {'Day close'} · {showDate(s.date)}</h3>{s.closed && <span className="badge ok"><Check size={12} /> {'closed'}</span>}</div>
+      {date !== today() && !s.closed && <div className="alert"><AlertTriangle /><div>{`${showDate(date)} is still open — close it first, then today.`}</div></div>}
       {c.shortfallsOpen.length > 0 && <div className="alert bad"><AlertTriangle /><div>{'Cash still pending from staff:'} {c.shortfallsOpen.map(a => `${names.get(a.staffId) ?? a.staffId} ${inr(a.amount - (a.recovered ?? 0))}`).join(' · ')}</div></div>}
       <div className="kpis">
         <div className="kpi navy"><div className="v">{inr(s.sales)}</div><div className="l">{'billed today'}</div></div>
@@ -56,10 +56,10 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
 
       <div className="sechead"><h3>{'Checklist'} · {open ? `${open} ${'open'}` : 'all clear'}</h3></div>
       <div className="stack" style={{ gap: 8 }}>
-        {items.map(i => (
+        {[...items].sort((a, b) => (b.n > 0 ? 1 : 0) - (a.n > 0 ? 1 : 0)).map(i => (
           <button key={i.en} className={`check ${i.n ? 'tap' : ''}`} onClick={() => { if (!i.n) return; if (i.action) i.action(); else if (i.page && go) go(i.page); }} disabled={!i.n}>
             <span className={`n ${i.n ? '' : 'ok'}`}>{i.n ? i.n : <Check size={16} />}</span>
-            <span className="grow" style={{ textAlign: 'left' }}>{i.en}</span>
+            <span className="grow" style={{ textAlign: 'left', color: i.n ? undefined : 'var(--dim)' }}>{i.n ? i.en : `${i.en.replace(/ \(.*\)$/, '')} — none`}</span>
             {i.n > 0 && <ChevronRight />}
           </button>
         ))}
@@ -101,7 +101,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
       {!s.closed && <button className="btn primary big block" disabled={!canClose} onClick={async () => {
         if (!await confirmBox('Close the day?', 'Cash you entered is marked received. Everything else is already decided above.', 'Close day')) return;
         await closeDay(date, Object.fromEntries(Object.entries(received).map(([k, v]) => [k, Number(v) || 0]))); setTick(x => x + 1);
-      }}><Check /> {canClose ? 'Close day' : open ? `${open} item(s) to clear first` : 'Enter cash received from everyone'}</button>}
+      }}><Check /> {canClose ? 'Close day' : open ? `${plural(open, 'item')} to clear first` : 'Enter cash received from everyone'}</button>}
       {s.closed && <div className="alert ok"><Check /><div>{'Closed. Sleep peacefully.'}</div></div>}
     </div>
   );

@@ -6,7 +6,7 @@ import { bookOrder, updateMyOrder } from '../core/pipeline';
 import { askText } from './dialog';
 import { r2, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
-import { inr, t } from '../core/i18n';
+import { inr, t, plural } from '../core/i18n';
 import type { Order, Company, Product, Scheme, Shop, Visit, Invoice } from '../core/types';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
@@ -159,7 +159,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
                   <div><div className="eyebrow">{'Cases'}</div><Stepper value={l?.cases ?? 0} onChange={v => setQty(p, v, l?.pcs ?? 0)} /></div>
                   <div><div className="eyebrow">{'Pcs'}</div><Stepper value={l?.pcs ?? 0} onChange={v => setQty(p, l?.cases ?? 0, v)} /></div>
                 </div>
-                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${'rate per piece'} (std ₹${p.rate})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>₹{l.rate ?? p.rate}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
+                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${'rate per piece'} (std ${inr(p.rate)})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>{inr(l.rate ?? p.rate)}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
                 {info && <div className="row" style={{ gap: 6, marginLeft: 'auto' }}>
                   {info.free > 0 && <span className="badge ok">+{info.free} free</span>}
                   {info.short > 0 && <span className="badge bad">{info.short} short</span>}
@@ -172,7 +172,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
         {!shown.length && <div className="card muted">{'Nothing here'}</div>}
       </div>
       <div className="sticky-foot">
-        <div className="grow"><div className="eyebrow">{totals.items} {'items'}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: 22 }}>{inr(totals.amount)}</div></div>
+        <div className="grow"><div className="eyebrow">{plural(totals.items, 'item')}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: 22 }}>{inr(totals.amount)}</div></div>
         <button className="btn primary big" disabled={!totals.items || busy} onClick={confirm}><Check /> {t('approve').replace(' ✓', '')}</button>
       </div>
     </div>

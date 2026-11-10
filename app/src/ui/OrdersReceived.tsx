@@ -3,7 +3,7 @@ import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-rea
 import { ChangeSet, db } from '../core/db';
 import { approveOrder, rejectOrder, shopHistory } from '../core/pipeline';
 import { allOutstanding } from '../core/ledger';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
 import type { Order, Product, Shop } from '../core/types';
@@ -52,14 +52,16 @@ export function OrdersReceived() {
             </div>
             {/* shop history strip — the one line that decides credit */}
             <div className={`hist ${warn ? 'bad' : ''}`}>
-              <Store size={14} /> <b>{o.hist.bills}</b> {'bills pending'} · <b>{inr(o.hist.amount)}</b> · {'oldest'} <b>{o.hist.oldestDays}d</b>
-              {o.hist.limit > 0 && <> · {'limit'} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> / {o.hist.days}d</>}
+              <Store size={14} /> {o.hist.bills
+                ? <><b>{inr(o.hist.amount)}</b> {'unpaid on'} {plural(o.hist.bills, 'bill')} · {'oldest'} <b>{plural(o.hist.oldestDays, 'day')}</b></>
+                : <>{'No unpaid bills'}</>}
+              {o.hist.limit > 0 && <> · {'credit limit'} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> · {plural(o.hist.days, 'day')} {'credit'}</>}
             </div>
             {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{'Rate request'}:</b> {o.rateRemark}</div></div>}
             {o.source !== 'salesman' && o.source !== 'company' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{'How did this order come?'}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{'pick'}</option><option value="phone">{'Phone'}</option><option value="in_person">{'In person'}</option><option value="whatsapp">WhatsApp</option><option value="other">{'Other'}</option></select></div>}
             {o.issues.length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.map((x, i) => <div key={i}>{x}</div>)}</div></div>}
             <div className="list">
-              {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">@{l.rate}</span></div>; })}
+              {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">× {inr(l.rate)}</span></div>; })}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <button className="btn primary grow" disabled={o.source === 'office'} onClick={() => ok(o.id)}><Check /> {'Approve → godown'}</button>

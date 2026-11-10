@@ -1,3 +1,4 @@
+import { inr } from './i18n';
 // The order chain, one step hands to the next:
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
@@ -56,7 +57,7 @@ export async function approveOrder(orderId: string) {
   cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso() }, 'owner approved');
   // every rate decrease goes to Claims automatically; the owner keeps or rejects it there (spec 15.1 Sales)
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-  for (const l of o.lines) { const p = products.get(l.productId); if (p && l.rate < p.rate) cs.put('claimEntries', { companyId: p.companyId, month: today().slice(0, 7), kind: 'scheme', productId: p.id, qty: l.qty, amount: r2((p.rate - l.rate) * l.qty), note: `Rate ₹${l.rate} vs ₹${p.rate} · ${o.rateRemark ?? ''}` }, 'rate decrease → claim'); }
+  for (const l of o.lines) { const p = products.get(l.productId); if (p && l.rate < p.rate) cs.put('claimEntries', { companyId: p.companyId, month: today().slice(0, 7), kind: 'scheme', productId: p.id, qty: l.qty, amount: r2((p.rate - l.rate) * l.qty), note: `Rate ${inr(l.rate)} vs ${inr(p.rate)} · ${o.rateRemark ?? ''}` }, 'rate decrease → claim'); }
   await cs.commit('Order approved');
 }
 
@@ -392,6 +393,7 @@ export async function counts() {
     tripsToday: trips.length,
     stopsLeft: myStops,
     cashStaff: new Set(pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok').map(p => p.collectedBy)).size,
+    cashWithStaff: r2(pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok').reduce((a, p) => a + p.amount, 0)),
     waitingShop: pays.filter(p => p.status === 'waiting_shop').length,
     stockAlerts: batches.filter(b => b.qty > 0 && b.expiry <= soon).length + outOfStock,
     claimsOpen: claims.filter(c => c.status === 'submitted' || c.status === 'draft').length,

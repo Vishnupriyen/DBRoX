@@ -3,7 +3,7 @@ import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIco
 import { CompanyLinks } from './CompanyLinks';
 import { SIDE_KEY } from '../core/db';
 import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
-import { inr, t } from '../core/i18n';
+import { inr, t, showDate } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
 import { ENV_SERVER, syncNow } from '../core/sync';
@@ -20,7 +20,13 @@ type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'li
 export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
-  const back = <button className="btn small" style={{ marginBottom: 10 }} onClick={() => setPage('menu')}>← {t('more')}</button>;
+  // the app's one back (header arrow or the phone's back button) steps from a More page to the More menu
+  useEffect(() => {
+    const onBack = (e: Event) => { if (page !== 'menu') { e.preventDefault(); setPage('menu'); } };
+    window.addEventListener('hanubix:back', onBack);
+    return () => window.removeEventListener('hanubix:back', onBack);
+  }, [page]);
+  const back = null;
   if (page === 'bills' && initial === 'bills') return <Bills canCancel={boss} />;
   if (page === 'claims' && initial === 'claims') return <Claims />;
   if (page === 'staff' && initial === 'staff') return <StaffPage editable={role === 'owner'} />;
@@ -172,7 +178,7 @@ function StaffPage({ editable }: { editable: boolean }) {
             <div key={s.id} className="item stacked">
               <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
               <div className="avatar">{s.name[0]}</div>
-              <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.role} · {s.phone}{s.role !== 'owner' ? ` · ₹${s.salary ?? 0}/mo + ₹${s.batta ?? 0}/day` : ''}</div></div>
+              <div className="grow"><div className="t">{s.name}</div><div className="muted">{s.role[0].toUpperCase() + s.role.slice(1)} · {s.phone}{s.role !== 'owner' ? ` · ${s.salary ? `${inr(s.salary)} a month` : 'salary not set'}${s.batta ? ` + ${inr(s.batta)} a day` : ''}` : ''}</div></div>
               </div>
               {s.role !== 'owner' && editable && <div className="row actions">
               <button className="btn small" onClick={async () => { const sal = await askText(`${s.name}: monthly salary ₹`, String(s.salary ?? ''), 'number'); if (sal === null) return; const bat = await askText('Batta per present day ₹', String(s.batta ?? ''), 'number'); if (bat === null) return; const cs = new ChangeSet(); cs.put('staff', { ...s, salary: Number(sal) || 0, batta: Number(bat) || 0 }, 'salary set'); await cs.commit('Salary set'); load(); }}>Salary</button>
@@ -208,7 +214,7 @@ function Bills({ canCancel }: { canCancel: boolean }) {
   const [editing, setEditing] = useState<Invoice | null>(null);
   const load = async () => {
     const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
-    setList((await db.invoices.orderBy('date').reverse().limit(300).toArray()).map(i => ({ ...i, shopName: shops.get(i.shopId) ?? '' })));
+    setList((await db.invoices.orderBy('date').reverse().limit(300).toArray()).sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number)).map(i => ({ ...i, shopName: shops.get(i.shopId) ?? '' }))); // newest first, then by bill number
   };
   useEffect(() => { load(); }, []);
   const cancel = async (i: Invoice) => {
@@ -226,7 +232,7 @@ function Bills({ canCancel }: { canCancel: boolean }) {
           <div key={i.id} className="item stacked">
             <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
               <div className="grow"><div className="t" style={{ whiteSpace: 'nowrap' }}>{i.number} {i.cancelled && <span className="badge bad">Cancelled</span>}</div>
-                <div className="s">{i.shopName} · {i.date} · {i.kind} · {i.deliveryStatus}</div></div>
+                <div className="s">{i.shopName} · {showDate(i.date)} · {i.kind} · {i.deliveryStatus}</div></div>
               <span className="amt num">{inr(i.total)}</span>
             </div>
             <div className="row actions">

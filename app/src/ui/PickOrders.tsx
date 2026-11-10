@@ -1,3 +1,4 @@
+import { plural, showDate } from '../core/i18n';
 import { useEffect, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, PackageOpen, Minus, Plus, Copy } from 'lucide-react';
 import { db, today } from '../core/db';
@@ -34,7 +35,7 @@ export function PickOrders() {
     // same product can be packed from two MRPs: each line goes to the bill as its own line
     return (
       <div className="stack">
-        <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{open.shop.name}</div><div className="muted">{open.shop.area} · {rows.length} {'items'}</div></div></div>
+        <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{open.shop.name}</div><div className="muted">{open.shop.area} · {plural(rows.length, 'item')}</div></div></div>
         <div className="list">
           {rows.map((r, i) => {
             const p = r.product; const stock = r.batches.reduce((a, b) => a + b.qty, 0);
@@ -82,7 +83,7 @@ export function PickOrders() {
         {orders.map(o => (
           <button key={o.id} className="item tap" onClick={() => start(o)}>
             <div className="avatar"><PackageOpen size={20} /></div>
-            <div className="grow"><div className="t">{o.shop.name}</div><div className="s">{o.shop.area} · {o.lines.length} {'items'} · {o.date}</div></div>
+            <div className="grow"><div className="t">{o.shop.name}</div><div className="s">{o.shop.area} · {plural(o.lines.length, 'item')} · {showDate(o.date)}</div></div>
             <span className="badge warn">{'pick'}</span>
           </button>
         ))}

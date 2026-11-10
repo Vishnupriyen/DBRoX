@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { db, session, thisMonth, today } from '../core/db';
-import { inr as inrExact } from '../core/i18n';
+import { inr as inrExact, plural } from '../core/i18n';
 import { CLAIM_KINDS, checkClaim, decideClaim, type ClaimCheck } from '../core/claims';
 import { addExpense, decideTravel, monthClaim, submitMonth, travelToDecide, type MonthClaim } from '../core/travel';
 import { myTeam } from '../core/company';
@@ -35,7 +35,7 @@ export function ClaimsInbox({ role }: { role: Role }) {
       <div className="segmented"><button className={tab === 'open' ? 'on' : ''} onClick={() => setTab('open')}>{`To decide (${rows.filter(r => !final(r.d)).length})`}</button><button className={tab === 'done' ? 'on' : ''} onClick={() => setTab('done')}>{'Decided'}</button></div>
       <div className="list">{shown.map(({ c, link, d }) => (
         <button key={c.id} className="item tap" onClick={() => setOpen(c)}>
-          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{link?.name ?? 'Distributor'}</div><div className="s">{[c.month, `${c.lines.length} lines`, d ? (d.status === 'recommended' ? `recommended by ${d.decidedBy}` : d.status === 'approved' ? `approved ${inr(d.amount)} · ${d.creditNoteNo}` : 'rejected') : 'new'].join(' · ')}</div></div>
+          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{link?.name ?? 'Distributor'}</div><div className="s">{[c.month, `${plural(c.lines.length, 'line')}`, d ? (d.status === 'recommended' ? `recommended by ${d.decidedBy}` : d.status === 'approved' ? `approved ${inr(d.amount)} · ${d.creditNoteNo}` : 'rejected') : 'new'].join(' · ')}</div></div>
           <div className="num">{inr(c.amount)}</div><ChevronRight size={18} />
         </button>
       ))}</div>
@@ -113,7 +113,7 @@ export function MyExpenses() {
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}><b>{`This month: ${inr(m.total)}`}</b>{sent && <span className="muted">{sent.status === 'waiting' ? 'Sent — waiting' : sent.status === 'approved' ? `Approved by ${sent.decidedBy}` : `Rejected: ${sent.note}`}</span>}</div>
         {m.flags.length > 0 && <div style={{ marginTop: 6 }}>{m.flags.map(f => <div key={f} className="s" style={{ color: 'var(--warn)' }}>{f}</div>)}</div>}
-        {(!sent || sent.status === 'rejected') && <button className="btn primary" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Send this month\'s claim?', `${inr(m.total)} goes to your manager with everything shown here.`, 'Send') && await act(() => submitMonth())) void load(); }}>{'Send to manager'}</button>}
+        {(!sent || sent.status === 'rejected') && <button className="btn primary" style={{ marginTop: 8 }} disabled={!m.total} /* nothing to send yet */ onClick={async () => { if (await confirmBox('Send this month\'s claim?', `${inr(m.total)} goes to your manager with everything shown here.`, 'Send') && await act(() => submitMonth())) void load(); }}>{'Send to manager'}</button>}
       </div>
       {!form && <button className="btn block" onClick={() => setForm({ category: 'Food', amount: '', note: '', date: today() })}><Plus size={16} /> {'Add expense'}</button>}
       {form && (

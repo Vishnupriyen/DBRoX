@@ -108,7 +108,7 @@ describe('travel and expenses', () => {
       expect(m.kmAmount).toBeCloseTo(m.km * DEFAULT_POLICY.bike, 1);
       expect(m.daDays).toBe(1);
       expect(m.expenses).toBe(1620);
-      expect(m.flags.some(f => /over the ₹1200 limit/.test(f))).toBe(true);
+      expect(m.flags.some(f => /over the ₹1,200 limit/.test(f))).toBe(true);
       expect(m.flags.some(f => /same bill photo/.test(f))).toBe(true);
       expect(m.flags.some(f => /not ended/.test(f))).toBe(true);
     });
@@ -135,7 +135,8 @@ describe('travel and expenses', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-12-01T00:30:00+05:30'));
     const { thisMonth } = await import('../src/core/db');
-    expect(thisMonth()).toBe(process.env.TZ === 'UTC' ? '2026-11' : '2026-12');
+    // the phone's own clock decides (phones are in India); a machine on UTC time is still in November
+    expect(thisMonth()).toBe(new Date().getTimezoneOffset() === 0 ? '2026-11' : '2026-12');
     vi.useRealTimers();
   });
 });

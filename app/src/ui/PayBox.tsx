@@ -40,7 +40,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
 
   return (
     <div className="card stack">
-      <div className="eyebrow">{'1. Which bill(s)?'}</div>
+      <div className="eyebrow">{'1. Which bills?'}</div>
       <div className="list">
         {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : <span style={{ fontSize: 13 }}>{b.date.slice(8)}/{b.date.slice(5, 7)}</span>}</div><div className="grow"><div className="t">{b.number}</div><div className="s">{b.date}</div></div><span className="amt num">{inr(b.balance)}</span></button>)}
         {!bills.length && <div className="muted">{'No bills pending for this shop.'}</div>}

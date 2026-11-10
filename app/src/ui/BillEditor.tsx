@@ -90,7 +90,7 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
             </tbody>
           </table>
           <div className="field"><input placeholder={'Add a product…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Add product" />
-            {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => addProduct(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">₹{p.rate} · MRP {p.mrp}</span></button>)}</div>}
+            {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => addProduct(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">{inr(p.rate)} · MRP {p.mrp}</span></button>)}</div>}
           </div>
           <div className="bill-totals">
             <div><span>{'Taxable'}</span><b className="num">{inr(totals.taxable)}</b></div>

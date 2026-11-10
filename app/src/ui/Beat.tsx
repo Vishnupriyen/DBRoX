@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapPin, ChevronRight, Phone, IndianRupee, PackageCheck, Store, AlertTriangle } from 'lucide-react';
 import { ChangeSet, db, nowIso, session, today, activeShops } from '../core/db';
 import { allOutstanding } from '../core/ledger';
-import { inr, t } from '../core/i18n';
+import { inr, t, showDate } from '../core/i18n';
 import type { Shop, Visit } from '../core/types';
 import { OrderBook } from './OrderBook';
 import { CollectShop } from './Collect';
@@ -72,7 +72,7 @@ export function Beat() {
               <div className={`avatar ${s.overdue > 0 ? 'bad' : s.billedToday ? 'ok' : ''}`}><Store size={22} /></div>
               <div className="grow">
                 <div className="t">{s.shop.name}</div>
-                <div className="s">{s.shop.area}{s.shop.owner ? ` · ${s.shop.owner}` : ''}{s.lastOrder ? ` · last order ${s.lastOrder.slice(5).replace('-', '/')}` : ''}</div>
+                <div className="s">{s.shop.area}{s.shop.owner ? ` · ${s.shop.owner}` : ''}{s.lastOrder ? ` · last order ${showDate(s.lastOrder)}` : ''}</div>
                 <div className="row" style={{ marginTop: 4 }}>
                   {s.due > 0.5 && <span className={`badge ${s.overdue > 0 ? 'bad' : ''}`}>{inr(s.due)} {s.overdue > 0 ? `· ${s.overdue}d late` : 'due'}</span>}
                   {s.shop.cashOnly && <span className="badge warn">Cash only</span>}

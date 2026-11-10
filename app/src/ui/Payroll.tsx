@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, MapPin, Clock, LogIn, UserX, IndianRupee, Download } from 'lucide-react';
 import { ChangeSet, db, nowIso, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, showMonth, plural, showDate } from '../core/i18n';
 import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
 import { askText, confirmBox } from './dialog';
@@ -18,11 +18,15 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   const late = now.toTimeString().slice(0, 5) > threshold;
   const go = async () => {
     setBusy(true);
-    const pos = await getPos();
-    const d = pos && settings.godownLat && settings.godownLng ? Math.round(dist(pos.lat, pos.lng, settings.godownLat, settings.godownLng)) : undefined;
+    // the day opens at once (GPS indoors can take many seconds); the place is added when the phone finds it
     const cs = new ChangeSet();
-    cs.put<CheckIn>('checkIns', { staffId: me.id, date: today(), at: nowIso(), lat: pos?.lat, lng: pos?.lng, distanceM: d, late }, 'check-in');
+    const ci = cs.put<CheckIn>('checkIns', { staffId: me.id, date: today(), at: nowIso(), late }, 'check-in');
     await cs.commit('Check-in'); onDone();
+    const pos = await getPos();
+    if (!pos) return;
+    const d = settings.godownLat && settings.godownLng ? Math.round(dist(pos.lat, pos.lng, settings.godownLat, settings.godownLng)) : undefined;
+    const cur = await db.checkIns.get(ci.id);
+    if (cur) { const up = new ChangeSet({ noAudit: true }); up.put<CheckIn>('checkIns', { ...cur, lat: pos.lat, lng: pos.lng, distanceM: d }); await up.commit('Check-in place'); }
   };
   return (
     <div className="gate">
@@ -78,7 +82,7 @@ export function Today() {
         ))}
       </div>
       {(leaves.filter(l => l.status === 'waiting').length > 0 || advances.length > 0) && <div className="sechead"><h3>{'Requests'}</h3></div>}
-      {leaves.filter(l => l.status === 'waiting').map(l => <div key={l.id} className="item"><div className="grow"><div className="t">{l.name} · {'leave'}</div><div className="s">{l.from}{l.to !== l.from ? ` → ${l.to}` : ''} · {l.reason}</div></div><button className="btn small primary" onClick={() => decide('leaves', l, true)}><Check /></button><button className="btn small" onClick={() => decide('leaves', l, false)}><X /></button></div>)}
+      {leaves.filter(l => l.status === 'waiting').map(l => <div key={l.id} className="item"><div className="grow"><div className="t">{l.name} · {'leave'}</div><div className="s">{showDate(l.from)}{l.to !== l.from ? ` → ${showDate(l.to)}` : ''} · {l.reason}</div></div><button className="btn small primary" onClick={() => decide('leaves', l, true)}><Check /></button><button className="btn small" onClick={() => decide('leaves', l, false)}><X /></button></div>)}
       {advances.map(a => <div key={a.id} className="item"><div className="grow"><div className="t">{a.name} · {'advance'} {inr(a.amount)}</div><div className="s">{a.reason}</div></div><button className="btn small primary" onClick={() => decide('advances', a, true)}><Check /></button><button className="btn small" onClick={() => decide('advances', a, false)}><X /></button></div>)}
       <div className="muted">{'Staff type "leave Monday" or "advance 1000" to TESRAX; you approve here.'}</div>
     </div>
@@ -131,9 +135,21 @@ export function Salary() {
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{m}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
-      <table className="tbl"><thead><tr><th>{'Name'}</th><th>{'Days'}</th><th>{'Fixed'}</th><th>{'Batta'}</th><th>{'Adv'}</th><th>{'Short'}</th><th>{'Net'}</th><th></th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}{r.unpaidLeave ? <span className="muted"> −{r.unpaidLeave}</span> : null}</td><td className="num">{r.fixed || <span className="muted">{'set'}</span>}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b>{r.carry > 0 ? <div className="muted" style={{ fontSize: 11 }}>{inr(r.carry)} {'next month'}</div> : null}</td><td>{r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Paid'}</button>}</td></tr>)}</tbody></table>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
+      {/* one card per person: fits any phone; the full sheet is the Excel */}
+      <div className="list">{rows.map(r => (
+        <div key={r.s.id} className="item">
+          <div className="grow">
+            <div className="t">{r.s.name.split(' (')[0]}</div>
+            <div className="s">{[plural(r.present, 'day'), r.unpaidLeave ? `${r.unpaidLeave} unpaid leave` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
+            {r.carry > 0 && <div className="s">{inr(r.carry)} {'carries to next month'}</div>}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div className="num" style={{ fontWeight: 700, fontSize: 17 }}>{inr(r.net)}</div>
+            {r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Mark paid'}</button>}
+          </div>
+        </div>))}
+      </div>
       <div className="muted">{'Set each person\'s salary and batta in Staff. 2 paid leave days a month; beyond that is deducted. Advances come back in the instalments set, then cash shortfalls — never more than the salary; anything left carries to next month.'}</div>
     </div>
   );

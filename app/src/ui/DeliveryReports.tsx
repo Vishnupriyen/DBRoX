@@ -1,7 +1,8 @@
+import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 
@@ -88,11 +89,11 @@ export function PrintLoad() {
     <div className="stack">
       <div className="row no-print" style={{ gap: 8 }}>
         {trips.length > 1 && <div className="segmented">{trips.map((x, k) => <button key={x.id} className={sel === k ? 'on' : ''} onClick={() => setSel(k)}>{x.van.name}</button>)}</div>}
-        <button className="btn primary" onClick={() => window.print()}><Printer /> {'Print'}</button>
+        <button className="btn primary" onClick={() => void printPage()}><Printer /> {'Print'}</button>
       </div>
       <div className="card" style={{ background: '#fff', color: '#000' }}>
         <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 18 }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{t.date} · {'Driver'}: {t.driver || '—'}</span></div>
-        <div className="muted">{t.invs.length} {'bills'} · {stops.length} {'stops'} · {inr(t.invs.reduce((a, i) => a + i.total, 0))}</div>
+        <div className="muted">{plural(t.invs.length, 'bill')} · {plural(stops.length, 'stop')} · {inr(t.invs.reduce((a, i) => a + i.total, 0))}</div>
         <h4 style={{ margin: '12px 0 4px' }}>A. {'By product'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>☐</th><th>{'Product'}</th><th>{'Batch · expiry'}</th><th>{'Cases'}</th><th>{'Pcs'}</th></tr></thead>
           <tbody>{[...byProduct.values()].sort((a, b) => a.p.companyId.localeCompare(b.p.companyId) || a.p.name.localeCompare(b.p.name)).map(v => <tr key={v.p.id}><td style={{ fontSize: 18 }}>☐</td><td>{v.p.name}</td><td>{[...v.batches.entries()].map(([k, q]) => <div key={k}>{k} × {q}</div>)}</td><td className="num">{Math.floor(v.qty / v.p.caseSize) || ''}</td><td className="num">{v.qty % v.p.caseSize || (Math.floor(v.qty / v.p.caseSize) ? '' : v.qty)}</td></tr>)}</tbody></table>

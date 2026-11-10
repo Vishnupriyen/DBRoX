@@ -15,7 +15,7 @@ export function UndoToast() {
   const [cur, setCur] = useState<{ label: string; batchId: string } | null>(null);
   useEffect(() => {
     let timer = 0;
-    const on = (e: Event) => { const d = (e as CustomEvent).detail as { label: string; batchId: string }; if (/^(undo|sync|location|shop visit)/i.test(d.label)) return; const tables = ((e as CustomEvent).detail.tables as string[] | undefined) ?? [];
+    const on = (e: Event) => { const d = (e as CustomEvent).detail as { label: string; batchId: string }; if ((e as CustomEvent).detail.quiet || /^(undo|sync|location|shop visit)/i.test(d.label)) return; /* a quiet save (a GPS reading) has nothing to undo */ const tables = ((e as CustomEvent).detail.tables as string[] | undefined) ?? [];
       if (sideNow() === 'company' ? tables.some(t => CROSSES.has(t)) : (tables.some(t => DB_CROSSES.has(t)) || /^Claim to /.test(d.label))) return; setCur(d); window.clearTimeout(timer); timer = window.setTimeout(() => setCur(null), 6000); };
     window.addEventListener('dbrox:commit', on); return () => { window.removeEventListener('dbrox:commit', on); window.clearTimeout(timer); };
   }, []);

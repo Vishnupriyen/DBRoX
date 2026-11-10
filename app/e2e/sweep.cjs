@@ -1,4 +1,4 @@
-// Release gate, part 2: opens EVERY screen for EVERY role at small-phone width (360 px) and fails on:
+// Release gate, part 2: opens EVERY screen for EVERY role at small-phone width (360 px) and the common Android width (412 px), and fails on:
 // crashes, console errors, sideways scrolling, text cut off, elements off screen, leftover light backgrounds,
 // and text too faint to read (contrast below 3:1).   node e2e/sweep.cjs [outDir]
 const { chromium } = require('playwright');
@@ -30,13 +30,41 @@ const audit = () => {
     if (direct && (cs.overflow === 'hidden' || cs.overflowX === 'hidden') && el.scrollWidth > el.clientWidth + 2 && cs.textOverflow !== 'ellipsis' && !cs.webkitLineClamp) { const k = `CLIPPED ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
     if (r.right > de.clientWidth + 2 && !el.closest('.tablewrap, table, .chips, .cat, .segmented, [style*="overflow"]') && cs.position !== 'fixed') { const k = `OFFSCREEN ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${(el.textContent || '').trim().slice(0, 30)}" right=${Math.round(r.right)}`; if (!seen.has(k) && seen.size < 400) { seen.add(k); out.push(k); } }
   }
+  // text drawn over other text (a label running into its neighbour on a wider phone)
+  const texts = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (el.closest('.bill, .pack, svg, canvas, .no-audit, .toast, .dialog-back, .engine')) continue;
+    const t = [...el.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim());
+    if (!t.length) continue;
+    const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
+    // what is actually visible: cut to any clipping box above it (ellipsis, scroll areas); fixed bars are their own layer
+    let box = { left: -1e9, top: -1e9, right: 1e9, bottom: 1e9 }, layer = 'page';
+    for (let a = el; a && a !== document.body; a = a.parentElement) {
+      const as = getComputedStyle(a);
+      if (as.position === 'fixed' || as.position === 'sticky') { layer = a; break; }
+      if (as.overflowX !== 'visible' || as.overflowY !== 'visible') { const q = a.getBoundingClientRect(); box = { left: Math.max(box.left, q.left), top: Math.max(box.top, q.top), right: Math.min(box.right, q.right), bottom: Math.min(box.bottom, q.bottom) }; }
+    }
+    for (const n of t) { const rg = document.createRange(); rg.selectNodeContents(n); for (const q of rg.getClientRects()) {
+      const r = { left: Math.max(q.left, box.left), top: Math.max(q.top, box.top), right: Math.min(q.right, box.right), bottom: Math.min(q.bottom, box.bottom) };
+      if (r.right - r.left > 2 && r.bottom - r.top > 2) texts.push({ el, r, layer, s: n.textContent.trim().slice(0, 20) });
+    } }
+  }
+  for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
+    const a = texts[i], b = texts[j]; if (a.layer !== b.layer || a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+    const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left), h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+    if (w > 3 && h > 3) { const k = `OVERLAP "${a.s}" / "${b.s}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
+  }
   return out;
 };
-(async () => {
+module.exports = { audit, ROLES }; // the Android check (e2e/android-sweep.cjs) uses the same rules on the real phone app
+if (require.main === module) (async () => {
   const b = await chromium.launch();
   const report = []; let screens = 0;
-  for (let who of ROLES) {
-    const ctx = await b.newContext({ viewport: { width: 360, height: 780 }, geolocation: { latitude: 11.4066, longitude: 79.2577 }, permissions: ['geolocation'] });
+  const WIDTHS = (process.env.SWEEP_WIDTHS || '360,412').split(',').map(Number);
+  for (const width of WIDTHS) for (let who of ROLES) {
+    const ctx = await b.newContext({ viewport: { width, height: width === 360 ? 780 : 900 }, geolocation: { latitude: 11.4066, longitude: 79.2577 }, permissions: ['geolocation'] });
+    // GPS as a real phone indoors: the first position takes 4 seconds
+    await ctx.addInitScript(() => { const g = navigator.geolocation, orig = g.getCurrentPosition.bind(g); g.getCurrentPosition = (ok, bad, o) => setTimeout(() => orig(ok, bad, o), 4000); });
     const p = await ctx.newPage();
     const errs = [];
     p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
@@ -46,8 +74,10 @@ const audit = () => {
     if (isCo) { await p.click('text=Company demo'); await p.waitForTimeout(800); await p.waitForSelector(`text=${who}`, { timeout: 60000 }); await p.waitForTimeout(800); }
     await p.click(`text=${who}`); await p.waitForTimeout(1200);
     const gate = await p.$('.gate .big-btn');
-    if (gate) { await gate.click(); await p.waitForTimeout(1500); }
-    const tag = who.split(' ')[0];
+    // check-in must not wait for GPS (indoors a phone can take many seconds): the day opens at once
+    if (gate) { await gate.click(); await p.waitForTimeout(1000); if (await p.$('.gate')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['CHECK-IN still waiting after 1 s'] }); await p.waitForTimeout(3600);
+      const toast = await p.$eval('.toast', el => el.textContent).catch(() => ''); if (/place/i.test(toast || '')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['an Undo bubble for the GPS place covers the screen'] }); }
+    const tag = who.split(' ')[0] + (width === 360 ? '' : `@${width}`);
     const check = async (name) => {
       await p.waitForTimeout(450);
       const a = await p.evaluate(audit);

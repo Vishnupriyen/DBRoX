@@ -6,7 +6,7 @@ import { Approvals, MyMonth, MyOrders, MyWorkDay, NewShopRequest, TeamToday, Tar
 import { ClaimsInbox, MyExpenses } from './CompanyClaims';
 import { myDay, todaysBeat } from '../core/field';
 import { db, session, thisMonth, today } from '../core/db';
-import { inr as inrExact } from '../core/i18n';
+import { inr as inrExact, plural, showMonth } from '../core/i18n';
 // company screens show whole rupees (they are summaries); exact paise stay on the bills themselves
 const inr = (n: number) => inrExact(Math.round(n));
 import {
@@ -92,7 +92,7 @@ export function CompanyHome({ role, go }: { role: Role; go: (p: CoPage) => void 
       {head.rep ? (
         <div className="morning"><div className="grow">
           <div className="t">{hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}{head.name ? `, ${head.name}` : ''}.</div>
-          <div className="s">{!head.rep.started ? 'Start your day to begin your beat.' : head.rep.ended ? 'Your day is ended.' : head.rep.left ? `${head.rep.left} of ${head.rep.total} shops left on today's beat.` : 'All shops on today\'s beat visited.'}</div>
+          <div className="s">{!head.rep.started ? 'Start your day to begin your beat.' : head.rep.ended ? 'Your day is ended.' : head.rep.left ? `${head.rep.left} of ${plural(head.rep.total, 'shop')} left on today's beat.` : 'All shops on today\'s beat visited.'}</div>
           <div className="kv"><div><b>{head.rep.total - head.rep.left}/{head.rep.total}</b><span>{'visited'}</span></div><div><b>{head.rep.km} km</b><span>{'today'}</span></div></div>
           <button className="pill" onClick={() => go(head.rep!.started ? 'fd-beat' : 'fd-day')}>{head.rep.started ? 'Open beat' : 'Start day'} →</button>
         </div></div>
@@ -229,7 +229,7 @@ export function Sales() {
   const months = [0, 1, 2, 3, 4, 5].map(i => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   return (
     <div className="stack">
-      <div className="chips">{months.map(m => <button key={m} className={`chip ${m === month ? 'on' : ''}`} onClick={() => setMonth(m)}>{new Date(`${m}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}</button>)}</div>
+      <div className="chips">{months.map(m => <button key={m} className={`chip ${m === month ? 'on' : ''}`} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div>
       <div className="kpis">
         <div className="kpi"><div className="v">{inr(p)}</div><div className="l">{'sales to distributors'}</div></div>
         <div className="kpi"><div className="v">{inr(s - ret)}</div><div className="l">{'distributor sales to shops'}</div></div>
@@ -239,7 +239,7 @@ export function Sales() {
       <div className="card">
         <h3>{'By distributor'}</h3>
         <div className="tablewrap"><table className="tbl"><thead><tr><th>{'Distributor'}</th><th>{'To them'}</th><th>{'To shops'}</th></tr></thead>
-          <tbody>{rows.map(r => <tr key={r.link.id}><td>{r.link.name}<div className="s">{`${r.shops} shops · ${r.bills} bills`}</div></td><td className="num">{inr(r.primary)}</td><td className="num">{inr(r.secondary - r.returns)}</td></tr>)}</tbody></table></div>
+          <tbody>{rows.map(r => <tr key={r.link.id}><td>{r.link.name}<div className="s">{`${plural(r.shops, 'shop')} · ${plural(r.bills, 'bill')}`}</div></td><td className="num">{inr(r.primary)}</td><td className="num">{inr(r.secondary - r.returns)}</td></tr>)}</tbody></table></div>
         {!rows.length && <div className="muted">{'No linked distributors yet.'}</div>}
       </div>
       <div className="card">
@@ -335,7 +335,7 @@ export function Invoices() {
         {drafts.map(d => (
           <div key={d.invoice.number} className="card">
             <div className="row" style={{ justifyContent: 'space-between' }}><b>{d.invoice.number}</b><span className="num">{inr(d.invoice.total)}</span></div>
-            <div className="muted">{[day(d.invoice.date), links.get(d.invoice.dbLinkId)?.name, `${d.invoice.lines.length} lines`].filter(Boolean).join(' · ')}</div>
+            <div className="muted">{[day(d.invoice.date), links.get(d.invoice.dbLinkId)?.name, `${plural(d.invoice.lines.length, 'line')}`].filter(Boolean).join(' · ')}</div>
             {d.problems.map(p => <div key={p} style={{ color: 'var(--bad)' }}>{p}</div>)}
           </div>
         ))}
@@ -408,7 +408,7 @@ export function Products() {
           const rows = readProductRows(await readSheet(f));
           if (!rows?.length) throw new Error('Could not find products. The sheet needs a product name column.');
           const list = rows.map(r => ({ name: r.name, code: r.code, hsn: r.hsn, gst: r.gst, mrp: r.mrp, rate: r.rate, purchaseRate: r.purchase || Math.round(r.rate * 0.9 * 100) / 100, caseSize: Math.round(r.caseSize) || 1 }));
-          if (!await confirmBox(`Save ${list.length} products?`, 'Same code or name = the existing product is updated.', 'Save')) return;
+          if (!await confirmBox(`Save ${plural(list.length, 'product')}?`, 'Same code or name = the existing product is updated.', 'Save')) return;
           await saveProducts(list); await load();
         }); }} />
         <button className="btn" onClick={() => file.current?.click()}><FileUp size={16} /> {'From Excel'}</button>

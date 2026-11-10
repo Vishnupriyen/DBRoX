@@ -63,6 +63,7 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
+html { background: #000; } /* behind the phone keyboard and any gap, never white */
 body { background: var(--paper); color: var(--ink); font: 16px/1.45 var(--body); -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 button { font: inherit; cursor: pointer; color: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
@@ -600,7 +601,7 @@ table.grid td.ro { color: var(--mut); }
 .tile { height: 134px; }
 .morning .kv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .morning .kv b { font-size: 20px; white-space: nowrap; }
-.morning .kv span { font-size: 10px; white-space: nowrap; }
+.morning .kv span { font-size: 10px; display: block; line-height: 1.25; margin-top: 4px; } /* a long label wraps under its number, never into the next one */
 .engine .composer textarea { white-space: nowrap; overflow-x: hidden; }
 .gate .big-btn { background: var(--g); color: var(--on-g); box-shadow: 0 0 60px rgba(79, 227, 214, .25); font-weight: 700; letter-spacing: -.02em; }
 .check .n.ok { color: #04150D; }

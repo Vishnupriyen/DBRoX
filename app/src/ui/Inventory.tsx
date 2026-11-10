@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, Boxes, Camera, FileSpreadsheet, MessageSquareText, Split, Tag } from 'lucide-react';
 import { ChangeSet, db, localDay, session, today, monthEnd, ymd, daysFrom } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
 import { Pack } from './Pack';
@@ -64,7 +64,7 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
               <div className="field"><label>{'Batch (optional)'}</label><input value={r.batch} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, batch: e.target.value } : x))} style={{ width: 100 }} /></div>
             </div>
           </div>); })}
-        {rows.length > 0 && <button className="btn primary big block" disabled={bad.length > 0} onClick={save}><Check /> {bad.length ? `Fill expiry on ${bad.length} line(s)` : 'Add to stock'}</button>}
+        {rows.length > 0 && <button className="btn primary big block" disabled={bad.length > 0} onClick={save}><Check /> {bad.length ? `Fill expiry on ${plural(bad.length, 'line')}` : 'Add to stock'}</button>}
       </div>
       {msg && <div className="alert ok"><Check /><div>{msg}</div></div>}
       <RecentPurchases />
@@ -107,7 +107,7 @@ export function StockPosition() {
                 <div className="row" style={{ flexWrap: 'nowrap' }}>
                   <span className="badge navy">{k + 1}</span>
                   <div className="grow"><b>{'Expiry'} {b.expiry.slice(5, 7)}/{b.expiry.slice(2, 4)}</b> <span className={`badge ${days <= 45 ? 'bad' : days <= 90 ? 'warn' : ''}`}>{days}d</span><div className="s">{'batch'} {b.batch} · MRP {b.mrp} · {'in'} {localDay(b.createdAt)}</div></div>
-                  <b className="num">{b.qty} pcs</b>
+                  <b className="num">{b.qty.toLocaleString('en-IN')} pcs</b>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small" onClick={async () => { const n = await askText('How many pieces in the second lot?'); const q = Number(n); if (!q || q >= b.qty) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - q }, 'split'); cs.put<Batch>('batches', { productId: b.productId, batch: b.batch + 'B', expiry: b.expiry, mrp: b.mrp, qty: q, godown: b.godown }, 'split lot'); await cs.commit('Lot split'); setTick(x => x + 1); }}><Split size={14} /> {'Split'}</button>
@@ -128,13 +128,13 @@ export function StockPosition() {
     const ps = products.filter(p => p.companyId === company.id && p.active).sort((a, b) => a.name.localeCompare(b.name));
     return (
       <div className="stack">
-        <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setCompany(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{company.name}</div><div className="muted">{ps.length} {'products'}{owner ? ` · ${inr(ps.reduce((a, p) => a + value(p.id), 0))}` : ''}</div></div></div>
+        <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setCompany(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{company.name}</div><div className="muted">{plural(ps.length, 'product')}{owner ? ` · ${inr(ps.reduce((a, p) => a + value(p.id), 0))}` : ''}</div></div></div>
         <div className="list">
           {ps.map(p => { const q = qty(p.id); const lots = lotsOf(p.id); const soon = lots[0] && (new Date(lots[0].expiry).getTime() - Date.now()) / 86400000 <= 45; return (
             <button key={p.id} className="item tap" onClick={() => setProduct(p)}>
               <Pack product={p} />
-              <div className="grow"><div className="t">{p.name}</div><div className="s">{lots.length} {'lot(s)'}{soon ? ' · ' : ''}{soon && <span className="badge bad">{'expiring'}</span>}</div></div>
-              <div style={{ textAlign: 'right' }}><b className={`num ${q === 0 ? 'bad' : ''}`} style={{ color: q === 0 ? 'var(--bad)' : undefined }}>{q} pcs</b><div className="s">{Math.floor(q / p.caseSize)} cs{owner ? ` · ${inr(value(p.id))}` : ''}</div></div>
+              <div className="grow"><div className="t">{p.name}</div><div className="s">{plural(lots.length, 'lot')}{soon ? ' · ' : ''}{soon && <span className="badge bad">{'expiring'}</span>}</div></div>
+              <div style={{ textAlign: 'right' }}><b className={`num ${q === 0 ? 'bad' : ''}`} style={{ color: q === 0 ? 'var(--bad)' : undefined }}>{q.toLocaleString('en-IN')} pcs</b><div className="s">{Math.floor(q / p.caseSize)} cs{owner ? ` · ${inr(value(p.id))}` : ''}</div></div>
             </button>); })}
         </div>
       </div>
@@ -146,8 +146,8 @@ export function StockPosition() {
         {companies.map(c => { const ps = products.filter(p => p.companyId === c.id); const q = ps.reduce((a, p) => a + qty(p.id), 0); const out = ps.filter(p => p.active && qty(p.id) === 0).length; return (
           <button key={c.id} className="item tap" onClick={() => setCompany(c)}>
             <div className="avatar">{c.code.slice(0, 2)}</div>
-            <div className="grow"><div className="t">{c.name}</div><div className="s">{ps.length} {'products'}{out ? ' · ' : ''}{out > 0 && <span className="badge bad">{out} {'out of stock'}</span>}</div></div>
-            <div style={{ textAlign: 'right' }}><b className="num">{q} pcs</b>{owner && <div className="s">{inr(ps.reduce((a, p) => a + value(p.id), 0))}</div>}</div>
+            <div className="grow"><div className="t">{c.name}</div><div className="s">{plural(ps.length, 'product')}{out ? ' · ' : ''}{out > 0 && <span className="badge bad">{out} {'out of stock'}</span>}</div></div>
+            <div style={{ textAlign: 'right' }}><b className="num">{q.toLocaleString('en-IN')} pcs</b>{owner && <div className="s">{inr(ps.reduce((a, p) => a + value(p.id), 0))}</div>}</div>
           </button>); })}
       </div>
     </div>

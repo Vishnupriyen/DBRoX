@@ -1,3 +1,4 @@
+import { inr, showDate, plural } from './i18n';
 // Claims between a distributor and a company (step 3).
 // Distributor side: the month's claim lines (schemes given on bills, damage, expiry, transit, shortage at goods receipt,
 // rate difference, salesman salary) are sent to a linked company in one claim.
@@ -37,7 +38,7 @@ export async function sendClaim(companyId: string, month: string) {
   const lines = await openLines(companyId, month);
   if (!lines.length) throw new Error('Nothing new to claim for this month.');
   const cs = new ChangeSet();
-  const c = cs.put<Claim>('claims', { companyId, month, amount: r2(lines.reduce((a, e) => a + e.amount, 0)), status: 'submitted', lineIds: lines.map(e => e.id), note: `${lines.length} lines sent through Hanubix` } as Claim, 'claim sent');
+  const c = cs.put<Claim>('claims', { companyId, month, amount: r2(lines.reduce((a, e) => a + e.amount, 0)), status: 'submitted', lineIds: lines.map(e => e.id), note: `${plural(lines.length, 'line')} sent through Hanubix` } as Claim, 'claim sent');
   await cs.commit(`Claim to ${co.name}`);
   return c;
 }
@@ -97,12 +98,12 @@ export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
       const bl = bill.lines.find(x => x.productId === l.productId);
       if (!bl) { lines.push({ ...base, ok: false, why: `Bill ${bill.number} has no such product` }); continue; }
       const live = schemes.filter(s => (!s.productId || s.productId === l.productId) && s.from <= bill.date && s.to >= bill.date);
-      if (!live.length) { lines.push({ ...base, ok: false, why: `No scheme of ours on this product on ${bill.date}` }); continue; }
+      if (!live.length) { lines.push({ ...base, ok: false, why: `No scheme of ours on this product on ${showDate(bill.date)}` }); continue; }
       // valued at the lower of the bill's rate and our own price to shop (the distributor sets the bill rate)
       const at = { qty: bl.qty, rate: Math.min(bl.rate, ptr.get(bl.productId) ?? bl.rate) };
       const best = live.map(s => ({ s, v: schemeValue(s, at) })).sort((a, b) => b.v - a.v)[0];
       const key = `${l.invoiceId}|${l.productId}`, before = paid.scheme.get(key) ?? 0;
-      if (before + l.amount > best.v + 1) { lines.push({ ...base, ok: false, why: before ? `This bill line is already claimed (₹${r2(before)} of ₹${best.v})` : `Claimed ₹${l.amount}; "${best.s.name}" gives ₹${best.v} on this bill`, expected: r2(Math.max(0, best.v - before)), schemeId: best.s.id }); continue; }
+      if (before + l.amount > best.v + 1) { lines.push({ ...base, ok: false, why: before ? `This bill line is already claimed (${inr(r2(before))} of ${inr(best.v)})` : `Claimed ${inr(l.amount)}; "${best.s.name}" gives ${inr(best.v)} on this bill`, expected: r2(Math.max(0, best.v - before)), schemeId: best.s.id }); continue; }
       paid.scheme.set(key, before + l.amount);
       lines.push({ ...base, ok: true, why: `Matches "${best.s.name}" on bill ${bill.number}`, schemeId: best.s.id });
       continue;
@@ -117,12 +118,12 @@ export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
       if (before + l.qty > short) { lines.push({ ...base, ok: false, why: before ? `Already claimed ${before} of the ${short} short on this receipt` : `Goods receipt shows ${short} short, claim says ${l.qty}` }); continue; }
       paid.short.set(key, before + l.qty);
       const value = line ? r2(l.qty * line.rate * (1 + line.gst / 100)) : l.amount;
-      lines.push({ ...base, ok: l.amount <= value + 1, why: l.amount <= value + 1 ? `Matches goods receipt of ${inv.number}` : `Claimed ₹${l.amount}; ${l.qty} pcs at our rate is ₹${value}`, expected: value });
+      lines.push({ ...base, ok: l.amount <= value + 1, why: l.amount <= value + 1 ? `Matches goods receipt of ${inv.number}` : `Claimed ${inr(l.amount)}; ${l.qty} pcs at our rate is ${inr(value)}`, expected: value });
       continue;
     }
     if (l.kind === 'damage' || l.kind === 'expiry' || l.kind === 'transit') {
       // a photo shows the goods, not the amount: a person always looks at these (never ticked for approval by itself)
-      lines.push({ ...base, ok: false, why: l.photo ? `Photo attached — check ${l.qty} pcs for ₹${l.amount}` : 'No photo of the stock' });
+      lines.push({ ...base, ok: false, why: l.photo ? `Photo attached — check ${l.qty} pcs for ${inr(l.amount)}` : 'No photo of the stock' });
       continue;
     }
     lines.push({ ...base, ok: false, why: 'Check with the papers (rate letter / salary sheet)' });
@@ -132,7 +133,7 @@ export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
   const adding = new Map<string, number>();
   for (const l of lines) if (l.ok && l.schemeId) adding.set(l.schemeId, r2((adding.get(l.schemeId) ?? 0) + l.amount));
   const budget = [...adding].map(([id, add]) => ({ scheme: schemes.find(s => s.id === id)!, used: used.get(id) ?? 0, adding: add })).filter(b => b.scheme?.budget);
-  for (const b of budget) if (b.used + b.adding > b.scheme.budget!) for (const l of lines) if (l.ok && l.schemeId === b.scheme.id) { l.ok = false; l.why = `Over the "${b.scheme.name}" budget (₹${b.scheme.budget}: ₹${b.used} used)`; }
+  for (const b of budget) if (b.used + b.adding > b.scheme.budget!) for (const l of lines) if (l.ok && l.schemeId === b.scheme.id) { l.ok = false; l.why = `Over the "${b.scheme.name}" budget (${inr(b.scheme.budget)}: ${inr(b.used)} used)`; }
   // GST: a credit note for a bill of a past financial year counts only if issued by 30 November of the next year
   const m = Number(claim.month.slice(5, 7)), y = Number(claim.month.slice(0, 4));
   const fyEnd = m >= 4 ? y + 1 : y; const deadline = `${fyEnd}-11-30`;

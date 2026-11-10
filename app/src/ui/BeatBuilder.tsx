@@ -1,3 +1,4 @@
+import { plural } from '../core/i18n';
 import { useEffect, useState } from 'react';
 import { Check, Copy, Store } from 'lucide-react';
 import { ChangeSet, activeShops } from '../core/db';
@@ -40,7 +41,7 @@ export function BeatBuilder() {
       <div className="row" style={{ gap: 6, overflowX: 'auto', flexWrap: 'nowrap' }}>{DAYS.map(d => <button key={d} className={`chip ${day === d ? 'on' : ''}`} onClick={() => setDay(d)}>{d.slice(0, 3)}</button>)}</div>
       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
         <select value={who} onChange={e => setWho(e.target.value)}>{staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="">{'any salesman'}</option></select>
-        <span className="badge navy">{count} {'shops'}</span>
+        <span className="badge navy">{plural(count, 'shop')}</span>
         <button className="btn small" onClick={copyDay}><Copy size={14} /> {'Copy to another day'}</button>
       </div>
       <div className="field"><input placeholder={'Search shop or area…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Search" /></div>

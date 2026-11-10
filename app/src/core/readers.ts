@@ -1,3 +1,4 @@
+import { saveFile } from './files';
 // xlsx is loaded only when a file is read or downloaded, so the app opens fast on cheap phones
 const xlsx = () => import('xlsx');
 import { norm } from './match';
@@ -215,21 +216,21 @@ export async function downloadSheet(name: string, header: string[], rows: (strin
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
-  XLSX.writeFile(wb, `${name}.xlsx`);
+  await saveWorkbook(XLSX, wb, name);
 }
 
 export async function downloadWorkbook(name: string, sheets: { name: string; header: string[]; rows: (string | number)[][] }[]) {
   const XLSX = await xlsx();
   const wb = XLSX.utils.book_new();
   for (const s of sheets) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s.header, ...s.rows]), s.name.slice(0, 31));
-  XLSX.writeFile(wb, `${name}.xlsx`);
+  await saveWorkbook(XLSX, wb, name);
+}
+// one way to save, browser or Android app (core/files.ts)
+async function saveWorkbook(XLSX: Awaited<ReturnType<typeof xlsx>>, wb: unknown, name: string) {
+  const bytes = XLSX.write(wb as never, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  await saveFile(`${name}.xlsx`, new Uint8Array(bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 export function downloadText(filename: string, text: string, type = 'application/json') {
-  const blob = new Blob([text], { type });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  return saveFile(filename, text, type);
 }

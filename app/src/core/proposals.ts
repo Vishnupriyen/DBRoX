@@ -1,3 +1,4 @@
+import { inr, showMonth, plural } from './i18n';
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
@@ -95,7 +96,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (shop && !Object.keys(v.errors).length) {
         const bad = checkFieldOrder(shop, p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty) })), products);
         if (bad) v.fieldErrors.shopId = bad;
-        v.summary = `${p.rows.length} items · about ₹${r2(p.rows.reduce((a, r) => a + n(r.qty) * (products.get(s(r.productId))?.rate ?? 0), 0))} before GST · goes to the distributor for billing`;
+        v.summary = `${plural(p.rows.length, 'item')} · about ${inr(r2(p.rows.reduce((a, r) => a + n(r.qty) * (products.get(s(r.productId))?.rate ?? 0), 0)))} before GST · goes to the distributor for billing`;
       }
       break;
     }
@@ -129,9 +130,9 @@ export async function validate(p: Proposal): Promise<Validation> {
       const computed = r2(sumTaxable + sumTax);
       const tol = Math.max(2, p.rows.length * 0.5);
       if (billTotal && Math.abs(billTotal - computed) > tol && Math.abs(billTotal - r2(sumTaxable)) > tol) {
-        v.fieldErrors.billTotal = `Lines add up to ₹${computed}, bill says ₹${billTotal}`;
+        v.fieldErrors.billTotal = `Lines add up to ${inr(computed)}, bill says ${inr(billTotal)}`;
       }
-      v.summary = `${p.rows.length} items · taxable ₹${r2(sumTaxable)} · GST ₹${r2(sumTax)} · total ₹${computed}`;
+      v.summary = `${plural(p.rows.length, 'item')} · taxable ${inr(r2(sumTaxable))} · GST ${inr(r2(sumTax))} · total ${inr(computed)}`;
       break;
     }
     case 'expense': {
@@ -140,7 +141,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!s(r.category)) err(v, i, 'category', 'Pick a category');
         if (!toIsoDate(s(r.date))) err(v, i, 'date', 'Date missing');
       });
-      v.summary = `${p.rows.length} expense(s) · ₹${r2(p.rows.reduce((a, r) => a + n(r.amount), 0))}`;
+      v.summary = `${plural(p.rows.length, 'expense')} · ${inr(r2(p.rows.reduce((a, r) => a + n(r.amount), 0)))}`;
       break;
     }
     case 'bank': {
@@ -152,7 +153,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         }
         if (s(r.action) === 'check') err(v, i, 'action', 'Unclear — pick the shop and Match, or Ignore');
       });
-      v.summary = `${matched} payment(s) matched · ₹${r2(amt)}`;
+      v.summary = `${plural(matched, 'payment')} matched · ${inr(r2(amt))}`;
       break;
     }
     case 'order': {
@@ -167,7 +168,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         const c = await checkOrder(shop, lines);
         v.warnings.push(...c.issues);
         const me = await db.staff.get(session().userId);
-        v.summary = `${lines.length} items · about ₹${c.total} with GST` + (c.issues.length ? (me?.role === 'owner' ? ' · your ✓ approves and bills it' : ' · will wait for owner OK') : ' · ready to bill');
+        v.summary = `${plural(lines.length, 'item')} · about ${inr(c.total)} with GST` + (c.issues.length ? (me?.role === 'owner' ? ' · your ✓ approves and bills it' : ' · will wait for owner OK') : ' · ready to bill');
       }
       break;
     }
@@ -179,12 +180,12 @@ export async function validate(p: Proposal): Promise<Validation> {
       if ((mode === 'upi' || mode === 'cheque') && !s(fieldValue(p, 'ref'))) v.warnings.push('Add the UPI / cheque number to match the bank later');
       let alloc = 0;
       p.rows.forEach((r, i) => {
-        if (n(r.pay) > n(r.balance) + 0.5) err(v, i, 'pay', `More than balance ₹${r.balance}`);
+        if (n(r.pay) > n(r.balance) + 0.5) err(v, i, 'pay', `More than balance ${inr(r.balance)}`);
         alloc += n(r.pay);
       });
-      if (alloc > total + 0.5) v.fieldErrors.amount = `Bills add up to ₹${r2(alloc)}, more than amount`;
+      if (alloc > total + 0.5) v.fieldErrors.amount = `Bills add up to ${inr(r2(alloc))}, more than amount`;
       const extra = r2(total - alloc);
-      v.summary = `₹${total} · to bills ₹${r2(alloc)}` + (extra > 0.5 ? ` · ₹${extra} kept as advance` : '');
+      v.summary = `${inr(total)} · to bills ${inr(r2(alloc))}` + (extra > 0.5 ? ` · ${inr(extra)} kept as advance` : '');
       break;
     }
     case 'claim': {
@@ -192,7 +193,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
         if (n(r.qty) <= 0) err(v, i, 'qty', 'Quantity must be more than 0');
       });
-      v.summary = `${p.rows.length} line(s) · ₹${r2(p.rows.reduce((a, r) => a + n(r.amount), 0))}`;
+      v.summary = `${plural(p.rows.length, 'line')} · ${inr(r2(p.rows.reduce((a, r) => a + n(r.amount), 0)))}`;
       break;
     }
     case 'return': {
@@ -208,9 +209,9 @@ export async function validate(p: Proposal): Promise<Validation> {
       });
       if (total > settings.returnApprovalLimit && session().userId !== 'owner') {
         const me = await db.staff.get(session().userId);
-        if (me?.role !== 'owner') v.warnings.push(`Above ₹${settings.returnApprovalLimit}: owner must approve`);
+        if (me?.role !== 'owner') v.warnings.push(`Above ${inr(settings.returnApprovalLimit)}: owner must approve`);
       }
-      v.summary = `Credit note ₹${r2(total)}`;
+      v.summary = `Credit note ${inr(r2(total))}`;
       break;
     }
     case 'products': {
@@ -222,7 +223,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
         else if (!/^(\d{6}|\d{8})$/.test(s(r.hsn))) v.warnings.push(`Row ${i + 1}: e-invoice needs a 6 or 8 digit HSN`);
       });
-      v.summary = `${p.rows.length} product(s)`;
+      v.summary = `${plural(p.rows.length, 'product')}`;
       break;
     }
     case 'schemes': {
@@ -233,7 +234,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (s(r.type) === 'free' && (n(r.buyQty) <= 0 || n(r.freeQty) <= 0)) err(v, i, 'buyQty', 'Buy and free quantities needed');
         if (!s(r.from) || !s(r.to) || s(r.from) > s(r.to)) err(v, i, 'to', 'End date must be after start date');
       });
-      v.summary = `${p.rows.length} scheme(s) — applied automatically on every bill in these dates`;
+      v.summary = `${plural(p.rows.length, 'scheme')} — applied automatically on every bill in these dates`;
       break;
     }
     case 'shops':
@@ -243,7 +244,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (s(r.gstin) && !validGstin(s(r.gstin).toUpperCase())) err(v, i, 'gstin', 'GSTIN looks wrong');
         if (s(r.phone) && !/^[6-9]\d{9}$/.test(s(r.phone).replace(/\D/g, '').slice(-10))) err(v, i, 'phone', '10-digit mobile number');
       });
-      v.summary = `${p.rows.length} shop(s)`;
+      v.summary = `${plural(p.rows.length, 'shop')}`;
       break;
     }
     case 'orderEdit': {
@@ -263,7 +264,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (shop) v.warnings.push(...(await checkOrder(shop, keep.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) })))).issues);
       }
       const changed = p.rows.filter(r => n(r.qty) !== n(r.was)).length;
-      v.summary = `${keep.length} item(s) · ${changed} changed · about ₹${r2(keep.reduce((a, r) => a + n(r.amount), 0))} with GST`;
+      v.summary = `${plural(keep.length, 'item')} · ${changed} changed · about ${inr(r2(keep.reduce((a, r) => a + n(r.amount), 0)))} with GST`;
       break;
     }
     case 'orderCancel': {
@@ -277,15 +278,15 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (!inv || inv.cancelled) v.fieldErrors.number = 'This bill is already cancelled';
       else {
         const paid = (await db.payments.where('shopId').equals(inv.shopId).toArray()).filter(x => x.status === 'ok').reduce((a, x) => a + x.allocations.filter(al => al.invoiceId === inv.id).reduce((b, al) => b + al.amount, 0), 0);
-        if (paid > 0.5) v.warnings.push(`₹${r2(paid)} already paid against this bill will stay with the shop as advance`);
+        if (paid > 0.5) v.warnings.push(`${inr(r2(paid))} already paid against this bill will stay with the shop as advance`);
         if (inv.deliveryStatus === 'delivered') v.warnings.push('This bill was delivered: make sure the goods came back, the stock is added back to the godown');
       }
-      v.summary = `Bill ${s(fieldValue(p, 'number'))} · ₹${n(fieldValue(p, 'total'))} cancelled, stock back`;
+      v.summary = `Bill ${s(fieldValue(p, 'number'))} · ${inr(n(fieldValue(p, 'total')))} will be cancelled and its stock put back`;
       break;
     }
     case 'paymentCancel': {
       if (!s(fieldValue(p, 'reason'))) v.fieldErrors.reason = 'Say why';
-      v.summary = `₹${n(fieldValue(p, 'amount'))} payment cancelled · bills open again`;
+      v.summary = `${inr(n(fieldValue(p, 'amount')))} payment will be cancelled · its bills open again`;
       break;
     }
     case 'expenseFix': {
@@ -296,7 +297,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!s(r.category)) err(v, i, 'category', 'Pick a category');
         if (!toIsoDate(s(r.date))) err(v, i, 'date', 'Date missing');
       });
-      v.summary = del ? `₹${n(fieldValue(p, 'was'))} expense deleted` : `₹${n(fieldValue(p, 'was'))} → ₹${n(p.rows[0]?.amount)}`;
+      v.summary = del ? `${inr(n(fieldValue(p, 'was')))} expense deleted` : `${inr(n(fieldValue(p, 'was')))} → ${inr(n(p.rows[0]?.amount))}`;
       break;
     }
     case 'stockFix': {
@@ -309,7 +310,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       const prod = products.get(s(fieldValue(p, 'productId')));
       const d = cnt - sys;
       if (prod && Math.abs(d) > prod.caseSize * 5) v.warnings.push(`Big difference: ${d > 0 ? '+' : ''}${d} pcs (${r2(Math.abs(d) / prod.caseSize)} cases). Count again before saving.`);
-      v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod ? ` · ₹${r2(Math.abs(d) * prod.purchaseRate)}` : ''})`;
+      v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod ? ` · ${inr(r2(Math.abs(d) * prod.purchaseRate))}` : ''})`;
       break;
     }
     case 'productEdit': {
@@ -325,8 +326,8 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (prod) {
         const rate = get('rate', prod.rate), mrp = get('mrp', prod.mrp), buy = get('purchaseRate', prod.purchaseRate);
         const ri = p.rows.findIndex(x => s(x.key) === 'rate' || s(x.key) === 'mrp');
-        if (mrp > 0 && rate * (1 + prod.gst / 100) > mrp + 0.01 && ri >= 0) err(v, ri, 'value', `Selling rate with GST (₹${r2(rate * (1 + prod.gst / 100))}) is above MRP ₹${mrp}`);
-        if (buy > rate) v.warnings.push(`Buying rate ₹${buy} is above selling rate ₹${rate}: every sale loses money`);
+        if (mrp > 0 && rate * (1 + prod.gst / 100) > mrp + 0.01 && ri >= 0) err(v, ri, 'value', `Selling rate with GST (${inr(r2(rate * (1 + prod.gst / 100)))}) is above MRP ${inr(mrp)}`);
+        if (buy > rate) v.warnings.push(`Buying rate ${inr(buy)} is above selling rate ${inr(rate)}: every sale loses money`);
         if (p.rows.some(x => s(x.key) === 'mrp')) v.warnings.push('Lots already in stock keep the MRP printed on them');
       }
       v.summary = p.rows.map(r => `${r.field} ${r.was} → ${r.value}`).join(' · ');
@@ -347,7 +348,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       break;
     }
     case 'undo': {
-      v.summary = `${p.rows.length} change(s) will be put back`;
+      v.summary = `${plural(p.rows.length, 'change')} will be put back`;
       break;
     }
     default:
@@ -418,7 +419,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         supplierGstin: s(fieldValue(p, 'supplierGstin')).toUpperCase(), lines, taxable, tax, total: r2(taxable + tax),
         source: (p.meta.source as Purchase['source']) ?? 'typed',
       }, 'purchase bill');
-      message = `Stock updated: ${lines.length} items added. Purchase bill ${s(fieldValue(p, 'billNo'))} saved.`;
+      message = `Stock updated: ${plural(lines.length, 'item')} added. Purchase bill ${s(fieldValue(p, 'billNo'))} saved.`;
       break;
     }
     case 'expense': {
@@ -426,7 +427,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       for (const r of p.rows) {
         cs.put<Expense>('expenses', { by: session().userId, date: toIsoDate(s(r.date)) || today(), category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note), photo: p.meta.photo as string | undefined, ...(company ? { status: 'waiting' as const } : {}) }, 'expense');
       }
-      message = `Expense recorded: ₹${r2(p.rows.reduce((a, r) => a + n(r.amount), 0))}.`;
+      message = `Expense recorded: ${inr(r2(p.rows.reduce((a, r) => a + n(r.amount), 0)))}.`;
       break;
     }
     case 'bank': {
@@ -455,7 +456,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         }
         count++;
       }
-      message = `Bank statement saved. ${count} payment(s) matched and shop balances updated.`;
+      message = `Bank statement saved. ${plural(count, 'payment')} matched and shop balances updated.`;
       break;
     }
     case 'order': {
@@ -480,7 +481,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         confirmPhoto: p.meta.photo as string | undefined, allocations, advance: advance > 0.5 ? advance : 0,
         settled: inOffice, status: 'ok',
       }, 'payment');
-      message = `Payment ₹${amount} recorded.`;
+      message = `Payment ${inr(amount)} recorded.`;
       break;
     }
     case 'paymentFix': {
@@ -490,13 +491,13 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       const allocations = p.rows.filter(r => n(r.pay) > 0).map(r => ({ invoiceId: s(r.invoiceId), amount: n(r.pay) }));
       const amount = n(fieldValue(p, 'amount'));
       const advance = r2(amount - allocations.reduce((a, x) => a + x.amount, 0));
-      cs.put<Payment>('payments', { ...old, status: 'cancelled', note: `corrected to ₹${amount}` }, 'payment corrected (old)');
+      cs.put<Payment>('payments', { ...old, status: 'cancelled', note: `corrected to ${inr(amount)}` }, 'payment corrected (old)');
       cs.put<Payment>('payments', {
         shopId: old.shopId, amount, mode: s(fieldValue(p, 'mode')) as Payment['mode'], ref: s(fieldValue(p, 'ref')), date: old.date,
         collectedBy: old.collectedBy, shopConfirmed: old.shopConfirmed, confirmPhoto: old.confirmPhoto, allocations,
         advance: advance > 0.5 ? advance : 0, settled: old.settled, status: 'ok', correctionOf: old.id,
       }, 'payment corrected (new)');
-      message = `Payment corrected: ₹${old.amount} → ₹${amount}.`;
+      message = `Payment corrected: ${inr(old.amount)} → ${inr(amount)}.`;
       break;
     }
     case 'claim': {
@@ -514,7 +515,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
           }
         }
       }
-      message = `Added to claim register for ${month}.`;
+      message = `Added to claim register for ${showMonth(month)}.`;
       break;
     }
     case 'return': {
@@ -567,7 +568,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
           aliases: [s(r.code)].filter(Boolean), active: true,
         }, 'product');
       }
-      message = `${p.rows.length} product(s) saved.`;
+      message = `${plural(p.rows.length, 'product')} saved.`;
       break;
     }
     case 'schemes': {
@@ -578,7 +579,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
           from: s(r.from), to: s(r.to), source: s(r.source) || 'company', combine: s(r.combine) || 'add',
         }, 'scheme');
       }
-      message = `${p.rows.length} scheme(s) saved. They apply automatically and company schemes go into the monthly claim.`;
+      message = `${plural(p.rows.length, 'scheme')} saved. They apply automatically and company schemes go into the monthly claim.`;
       break;
     }
     case 'shops':
@@ -595,7 +596,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       }
       message = p.kind === 'newshop' && me?.role !== 'owner'
         ? 'New shop saved. Owner must approve it before the first bill.'
-        : `${p.rows.length} shop(s) saved.`;
+        : `${plural(p.rows.length, 'shop')} saved.`;
       break;
     }
     case 'orderEdit': case 'orderCancel': {
@@ -617,7 +618,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       if (!old || old.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
       if (old.bankLineId) throw new Error('This payment is matched to the bank statement. Unmatch it in Accounts → Bank first.');
       cs.put<Payment>('payments', { ...old, status: 'cancelled', note: s(fieldValue(p, 'reason')) }, 'payment cancelled');
-      message = `Payment ₹${old.amount} cancelled. The bills are open again.`;
+      message = `Payment ${inr(old.amount)} cancelled. The bills are open again.`;
       break;
     }
     case 'expenseFix': {
@@ -625,11 +626,11 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       if (!old) throw new Error('That expense is not there any more.');
       const r = p.rows[0];
       if (s(fieldValue(p, 'action')) === 'delete') {
-        cs.put<Expense>('expenses', { ...old, amount: 0, note: `Deleted (was ₹${old.amount})${old.note ? ` · ${old.note}` : ''}` }, 'expense deleted');
-        message = `Expense ₹${old.amount} deleted.`;
+        cs.put<Expense>('expenses', { ...old, amount: 0, note: `Deleted (was ${inr(old.amount)})${old.note ? ` · ${old.note}` : ''}` }, 'expense deleted');
+        message = `Expense ${inr(old.amount)} deleted.`;
       } else {
         cs.put<Expense>('expenses', { ...old, date: toIsoDate(s(r.date)) || old.date, category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note) }, 'expense corrected');
-        message = `Expense corrected: ₹${old.amount} → ₹${n(r.amount)}.`;
+        message = `Expense corrected: ${inr(old.amount)} → ${inr(n(r.amount))}.`;
       }
       break;
     }
