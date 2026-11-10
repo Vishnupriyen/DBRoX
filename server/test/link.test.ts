@@ -1,4 +1,5 @@
 // Company ⇄ distributor link on a real database: the privacy wall holds end to end (independent review, 10 Nov 2026).
+process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';

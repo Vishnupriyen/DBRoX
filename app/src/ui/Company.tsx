@@ -10,12 +10,12 @@ import { inr as inrExact } from '../core/i18n';
 // company screens show whole rupees (they are summaries); exact paise stay on the bills themselves
 const inr = (n: number) => inrExact(Math.round(n));
 import {
-  checkProduct, draftPrimary, inviteDistributor, myLinks, readPrimaryRows, saveProducts, saveScheme, saveStaff, salesByDistributor,
+  checkProduct, draftPrimary, inviteDistributor, myLinks, outletList, readPrimaryRows, saveProducts, saveScheme, saveStaff, salesByDistributor,
   salesByProduct, sendPrimary, setLinkStatus, setNorm, stockCover, type CoverRow, type DbRow, type PrimaryDraft, type ProductInput, type ProductRow, type StaffInput,
 } from '../core/company';
 import { readProductRows, readSheet } from '../core/readers';
 import { askText, confirmBox, notify } from './dialog';
-import type { DbLink, PrimaryInvoice, PrimaryOrder, Product, Role, Scheme, Shop, Staff } from '../core/types';
+import type { DbLink, PrimaryInvoice, PrimaryOrder, Product, Role, Scheme, Staff } from '../core/types';
 import { invoiceFromOrder } from '../core/grn';
 
 export type CoPage = 'co-distributors' | 'co-sales' | 'co-stock' | 'co-products' | 'co-schemes' | 'co-outlets' | 'co-invoices' | 'co-team'
@@ -173,7 +173,7 @@ function DistributorDetail({ id, role, onBack }: { id: string; role: Role; onBac
   const load = async () => {
     setLink((await db.dbLinks.get(id)) ?? null);
     setRow((await salesByDistributor()).find(r => r.link.id === id) ?? null);
-    setCover((await stockCover()).filter(c => c.dbLinkId === id));
+    setCover(await stockCover({ dbLinkId: id }));
     setProd(await salesByProduct(thisMonth(), id));
   };
   useEffect(() => { void load(); }, [id]);
@@ -283,32 +283,23 @@ export function StockAtDistributors() {
 
 // ---------------------------------------------------------------- shops (outlet list from linked distributors)
 export function Outlets() {
-  const [shops, setShops] = useState<Shop[] | null>(null);
+  const [d, setD] = useState<Awaited<ReturnType<typeof outletList>> | null>(null);
   const [links, setLinks] = useState<Map<string, DbLink>>(new Map());
-  const [billed, setBilled] = useState<Map<string, number>>(new Map());
   const [q, setQ] = useState('');
-  useEffect(() => { (async () => {
-    const mine = await myLinks(session().userId);
-    const ids = new Set(mine.map(l => l.id));
-    setLinks(new Map(mine.map(l => [l.id, l])));
-    const m = new Map<string, number>(); // value bought this month, per shop
-    for (const s of await db.secondary.toArray()) if (!s.cancelled && s.date.slice(0, 7) === thisMonth()) m.set(s.shopId, (m.get(s.shopId) ?? 0) + s.taxable);
-    setBilled(m);
-    setShops((await db.shops.toArray()).filter(s => s.active !== false && (!s.dbLinkId || ids.has(s.dbLinkId))).sort((a, b) => a.name.localeCompare(b.name)));
-  })(); }, []);
-  if (!shops) return <div className="card muted">{'Loading…'}</div>;
-  const shown = q.trim() ? shops.filter(s => `${s.name} ${s.area} ${s.beat}`.toLowerCase().includes(q.trim().toLowerCase())) : shops;
-  const active = shops.filter(s => billed.get(s.id)).length;
+  useEffect(() => { void (async () => setLinks(new Map((await myLinks(session().userId)).map(l => [l.id, l]))))(); }, []);
+  useEffect(() => { const t = setTimeout(() => { void outletList(q).then(setD).catch(e => notify('Shops', (e as Error).message)); }, q ? 300 : 0); return () => clearTimeout(t); }, [q]);
+  if (!d) return <div className="card muted">{'Loading…'}</div>;
   return (
     <div className="stack">
-      <div className="kpis"><div className="kpi"><div className="v">{shops.length}</div><div className="l">{'shops'}</div></div><div className="kpi"><div className="v">{active}</div><div className="l">{'bought this month'}</div></div><div className="kpi"><div className="v">{pct(active, shops.length)}%</div><div className="l">{'reached'}</div></div></div>
+      <div className="kpis"><div className="kpi"><div className="v">{d.total}</div><div className="l">{'shops'}</div></div><div className="kpi"><div className="v">{d.bought}</div><div className="l">{'bought this month'}</div></div><div className="kpi"><div className="v">{pct(d.bought, d.total)}%</div><div className="l">{'reached'}</div></div></div>
       <label className="home-search"><Search size={18} /><input value={q} onChange={e => setQ(e.target.value)} placeholder={'Search shop, town or beat…'} /></label>
-      <div className="list">{shown.map(s => (
+      <div className="list">{d.shops.map(s => (
         <div key={s.id} className="item">
           <div className="grow"><div className="t">{s.name}</div><div className="s">{[s.area, s.beat, links.get(s.dbLinkId ?? '')?.name, s.approved ? '' : 'waiting for distributor OK'].filter(Boolean).join(' · ')}</div></div>
-          {billed.get(s.id) ? <div className="num">{inr(billed.get(s.id)!)}</div> : <span className="muted">{'—'}</span>}
+          {s.monthValue ? <div className="num">{inr(s.monthValue)}</div> : <span className="muted">{'—'}</span>}
         </div>
       ))}</div>
+      {d.shops.length >= 300 && <div className="muted">{'Showing the first 300 — search to find a shop.'}</div>}
       <div className="muted">{'Shops come from your linked distributors. Phone numbers, owners and credit terms stay with the distributor.'}</div>
     </div>
   );

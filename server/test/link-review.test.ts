@@ -1,4 +1,5 @@
 // Regression tests for the independent code review of the company module (10 Nov 2026). Each failed before its fix.
+process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
