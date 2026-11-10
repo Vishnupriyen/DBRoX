@@ -32,7 +32,8 @@ const audit = () => {
   }
   return out;
 };
-(async () => {
+module.exports = { audit, ROLES }; // the Android check (e2e/android-sweep.cjs) uses the same rules on the real phone app
+if (require.main === module) (async () => {
   const b = await chromium.launch();
   const report = []; let screens = 0;
   for (let who of ROLES) {

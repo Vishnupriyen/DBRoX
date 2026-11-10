@@ -40,6 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save --no-package-lock playwright@1.63.0
+        working-directory: app
+        env: { PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' }
       - uses: actions/download-artifact@v4
         with: { name: hanubix-apk-unsigned, path: . }
       - name: KVM for the emulator
@@ -54,6 +59,3 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: bash .github/scripts/apk-smoke.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: { name: apk-smoke, path: apk-shots, retention-days: 7 }
