@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
 import { dayBefore, db, setSession, sideNow, today } from './core/db';
 import { wireDemoRelay } from './core/link';
@@ -113,23 +113,28 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); window.removeEventListener('dbrox:logout', kicked); };
   }, []);
 
-  // Android app: the phone's back button closes RoX, then the open module, then goes home; on home it puts the app away
+  // Android app: the phone's back button closes RoX, then the open module, then goes home; on home it puts the app away.
+  // One listener for the app's whole life, reading the current screen (a listener per screen change used to pile up,
+  // and an old one could put the app away from any screen).
+  const nav = useRef({ rox, module, page });
+  nav.current = { rox, module, page };
   useEffect(() => {
-    let off: (() => void) | undefined;
+    let off: (() => void) | undefined, gone = false;
     void (async () => {
       const { Capacitor } = await import('@capacitor/core');
       if (!Capacitor.isNativePlatform()) return;
       const { App: Native } = await import('@capacitor/app');
       const h = await Native.addListener('backButton', () => {
-        if (rox) setRox(false);
-        else if (module) setModule(null);
-        else if (page !== 'home') setPage('home');
+        const n = nav.current;
+        if (n.rox) setRox(false);
+        else if (n.module) setModule(null);
+        else if (n.page !== 'home') setPage('home');
         else void Native.minimizeApp();
       });
-      off = () => { void h.remove(); };
+      if (gone) void h.remove(); else off = () => { void h.remove(); };
     })();
-    return () => off?.();
-  }, [rox, module, page]);
+    return () => { gone = true; off?.(); };
+  }, []);
 
 
   if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;

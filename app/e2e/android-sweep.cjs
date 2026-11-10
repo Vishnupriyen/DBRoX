@@ -29,7 +29,8 @@ const SHOTS = process.env.SHOTS !== '0';
     await p.click(`text=${side}`).catch(() => {}); await p.waitForTimeout(1000);
     await p.waitForSelector(`text=${who}`, { timeout: 60000 }); await p.waitForTimeout(500);
     await p.click(`text=${who}`); await p.waitForTimeout(1500);
-    const gate = await p.$('.gate .big-btn'); if (gate) { await gate.click(); await p.waitForTimeout(1500); }
+    const gate = await p.$('.gate .big-btn');
+    if (gate) { await gate.click(); await p.waitForTimeout(1000); if (await p.$('.gate')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['CHECK-IN still waiting after 1 s'] }); await p.waitForTimeout(500); }
     const tag = who.split(' ')[0];
     const check = async (name) => {
       await p.waitForTimeout(450);

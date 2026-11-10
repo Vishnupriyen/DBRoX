@@ -18,11 +18,15 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   const late = now.toTimeString().slice(0, 5) > threshold;
   const go = async () => {
     setBusy(true);
-    const pos = await getPos();
-    const d = pos && settings.godownLat && settings.godownLng ? Math.round(dist(pos.lat, pos.lng, settings.godownLat, settings.godownLng)) : undefined;
+    // the day opens at once (GPS indoors can take many seconds); the place is added when the phone finds it
     const cs = new ChangeSet();
-    cs.put<CheckIn>('checkIns', { staffId: me.id, date: today(), at: nowIso(), lat: pos?.lat, lng: pos?.lng, distanceM: d, late }, 'check-in');
+    const ci = cs.put<CheckIn>('checkIns', { staffId: me.id, date: today(), at: nowIso(), late }, 'check-in');
     await cs.commit('Check-in'); onDone();
+    const pos = await getPos();
+    if (!pos) return;
+    const d = settings.godownLat && settings.godownLng ? Math.round(dist(pos.lat, pos.lng, settings.godownLat, settings.godownLng)) : undefined;
+    const cur = await db.checkIns.get(ci.id);
+    if (cur) { const up = new ChangeSet({ noAudit: true }); up.put<CheckIn>('checkIns', { ...cur, lat: pos.lat, lng: pos.lng, distanceM: d }); await up.commit('Check-in place'); }
   };
   return (
     <div className="gate">
