@@ -1,4 +1,4 @@
-import { plural } from '../core/i18n';
+import { plural, showDate } from '../core/i18n';
 import { useEffect, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, PackageOpen, Minus, Plus, Copy } from 'lucide-react';
 import { db, today } from '../core/db';
@@ -83,7 +83,7 @@ export function PickOrders() {
         {orders.map(o => (
           <button key={o.id} className="item tap" onClick={() => start(o)}>
             <div className="avatar"><PackageOpen size={20} /></div>
-            <div className="grow"><div className="t">{o.shop.name}</div><div className="s">{o.shop.area} · {plural(o.lines.length, 'item')} · {o.date}</div></div>
+            <div className="grow"><div className="t">{o.shop.name}</div><div className="s">{o.shop.area} · {plural(o.lines.length, 'item')} · {showDate(o.date)}</div></div>
             <span className="badge warn">{'pick'}</span>
           </button>
         ))}

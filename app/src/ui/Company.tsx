@@ -6,7 +6,7 @@ import { Approvals, MyMonth, MyOrders, MyWorkDay, NewShopRequest, TeamToday, Tar
 import { ClaimsInbox, MyExpenses } from './CompanyClaims';
 import { myDay, todaysBeat } from '../core/field';
 import { db, session, thisMonth, today } from '../core/db';
-import { inr as inrExact, plural } from '../core/i18n';
+import { inr as inrExact, plural, showMonth } from '../core/i18n';
 // company screens show whole rupees (they are summaries); exact paise stay on the bills themselves
 const inr = (n: number) => inrExact(Math.round(n));
 import {
@@ -229,7 +229,7 @@ export function Sales() {
   const months = [0, 1, 2, 3, 4, 5].map(i => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   return (
     <div className="stack">
-      <div className="chips">{months.map(m => <button key={m} className={`chip ${m === month ? 'on' : ''}`} onClick={() => setMonth(m)}>{new Date(`${m}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}</button>)}</div>
+      <div className="chips">{months.map(m => <button key={m} className={`chip ${m === month ? 'on' : ''}`} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div>
       <div className="kpis">
         <div className="kpi"><div className="v">{inr(p)}</div><div className="l">{'sales to distributors'}</div></div>
         <div className="kpi"><div className="v">{inr(s - ret)}</div><div className="l">{'distributor sales to shops'}</div></div>

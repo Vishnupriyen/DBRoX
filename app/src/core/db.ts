@@ -252,7 +252,7 @@ export class ChangeSet {
       }
     });
     for (const h of hooks) await h(db, this.writes.map(w => ({ table: w.table, id: w.rec.id })));
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, tables: [...new Set(this.writes.map(w => w.table))] } }));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, quiet: !!this.opts.noAudit, tables: [...new Set(this.writes.map(w => w.table))] } }));
     return this.batchId;
   }
 }

@@ -75,7 +75,8 @@ if (require.main === module) (async () => {
     await p.click(`text=${who}`); await p.waitForTimeout(1200);
     const gate = await p.$('.gate .big-btn');
     // check-in must not wait for GPS (indoors a phone can take many seconds): the day opens at once
-    if (gate) { await gate.click(); await p.waitForTimeout(1000); if (await p.$('.gate')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['CHECK-IN still waiting after 1 s'] }); await p.waitForTimeout(500); }
+    if (gate) { await gate.click(); await p.waitForTimeout(1000); if (await p.$('.gate')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['CHECK-IN still waiting after 1 s'] }); await p.waitForTimeout(3600);
+      const toast = await p.$eval('.toast', el => el.textContent).catch(() => ''); if (/place/i.test(toast || '')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['an Undo bubble for the GPS place covers the screen'] }); }
     const tag = who.split(' ')[0] + (width === 360 ? '' : `@${width}`);
     const check = async (name) => {
       await p.waitForTimeout(450);

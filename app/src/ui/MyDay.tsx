@@ -26,7 +26,9 @@ export function MyDay() {
       const pays = (await db.payments.where('date').equals(t).toArray()).filter(p => p.collectedBy === me && p.status === 'ok');
       const byStatus: Record<string, number> = {};
       for (const o of orders) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
-      setD({ visits: visits.length, shops: mine.length, orders: orders.length, value, collected: pays.reduce((a, p) => a + p.amount, 0), byStatus,
+      // the same count as Today's beat: a shop is done once visited or ordered today
+      const doneShops = mine.filter(s => visits.some(v => v.shopId === s.id) || orders.some(o => o.shopId === s.id && o.date === t)).length;
+      setD({ visits: doneShops, shops: mine.length, orders: orders.length, value, collected: pays.reduce((a, p) => a + p.amount, 0), byStatus,
         lines: orders.map(o => ({ id: o.id, o, shop: shops.get(o.shopId)?.name ?? '', value: o.lines.reduce((b, l) => b + l.qty * (l.rate || (prices.get(l.productId) ?? 0)), 0), status: o.status, delivered: invs.filter(i => o.invoiceIds.includes(i.id)).find(i => i.delivery)?.delivery?.at })) });
     })();
   }, [tick]);
@@ -47,7 +49,7 @@ export function MyDay() {
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops visited'}</div></div>
+        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops done'}</div></div>
         <div className="kpi navy"><div className="v">{d.orders}</div><div className="l">{'orders'} · {inr(d.value)}</div></div>
         <div className="kpi"><div className="v">{inr(d.collected)}</div><div className="l">{'collected'}</div></div>
         <div className="kpi"><div className="v">{d.byStatus.billed ?? 0}</div><div className="l">{'orders billed'}</div></div>

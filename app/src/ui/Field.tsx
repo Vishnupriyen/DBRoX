@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Play, Square, MapPin, ShoppingCart, Camera, Ban, Check, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import { db, session, thisMonth, today } from '../core/db';
-import { inr as inrExact, plural } from '../core/i18n';
+import { inr as inrExact, plural, showDate } from '../core/i18n';
 import {
   applyLeave, dayName, decideLeave, endDay, fieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
   repSales, requestShop, setTarget, startDay, teamToday, todaysBeat, visitShop, DAY_NAMES, type RepRow,
@@ -206,7 +206,7 @@ export function MyMonth() {
           const why = await askText('Reason'); if (!why) return;
           if (await act(() => applyLeave(from, to, why))) void load();
         }}>{'Apply for leave'}</button>
-        {d.leaves.map(l => <div key={l.id} className="muted" style={{ marginTop: 6 }}>{`${l.from} → ${l.to} · ${l.reason} · ${l.status === 'waiting' ? 'waiting' : l.status}`}</div>)}
+        {d.leaves.map(l => <div key={l.id} className="muted" style={{ marginTop: 6 }}>{`${showDate(l.from)} → ${showDate(l.to)} · ${l.reason} · ${l.status === 'waiting' ? 'waiting for OK' : l.status}`}</div>)}
       </div>
     </div>
   );
@@ -255,7 +255,7 @@ export function Approvals() {
     <div className="stack">
       <TravelApprovals />
       <div className="list">{leaves.map(l => (
-        <div key={l.id} className="item"><div className="grow"><div className="t">{l.who}</div><div className="s">{`Leave ${l.from} → ${l.to} · ${l.reason}`}</div></div>
+        <div key={l.id} className="item"><div className="grow"><div className="t">{l.who}</div><div className="s">{`Leave ${showDate(l.from)} → ${showDate(l.to)} · ${l.reason}`}</div></div>
           <button className="btn small" onClick={async () => { if (await act(() => decideLeave(l.id, true))) void load(); }}>{'Approve'}</button>
           <button className="btn small ghost" onClick={async () => { if (await act(() => decideLeave(l.id, false))) void load(); }}>{'Reject'}</button></div>
       ))}</div>

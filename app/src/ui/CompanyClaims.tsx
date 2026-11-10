@@ -113,7 +113,7 @@ export function MyExpenses() {
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}><b>{`This month: ${inr(m.total)}`}</b>{sent && <span className="muted">{sent.status === 'waiting' ? 'Sent — waiting' : sent.status === 'approved' ? `Approved by ${sent.decidedBy}` : `Rejected: ${sent.note}`}</span>}</div>
         {m.flags.length > 0 && <div style={{ marginTop: 6 }}>{m.flags.map(f => <div key={f} className="s" style={{ color: 'var(--warn)' }}>{f}</div>)}</div>}
-        {(!sent || sent.status === 'rejected') && <button className="btn primary" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Send this month\'s claim?', `${inr(m.total)} goes to your manager with everything shown here.`, 'Send') && await act(() => submitMonth())) void load(); }}>{'Send to manager'}</button>}
+        {(!sent || sent.status === 'rejected') && <button className="btn primary" style={{ marginTop: 8 }} disabled={!m.total} /* nothing to send yet */ onClick={async () => { if (await confirmBox('Send this month\'s claim?', `${inr(m.total)} goes to your manager with everything shown here.`, 'Send') && await act(() => submitMonth())) void load(); }}>{'Send to manager'}</button>}
       </div>
       {!form && <button className="btn block" onClick={() => setForm({ category: 'Food', amount: '', note: '', date: today() })}><Plus size={16} /> {'Add expense'}</button>}
       {form && (

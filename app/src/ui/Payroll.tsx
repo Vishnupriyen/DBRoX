@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, MapPin, Clock, LogIn, UserX, IndianRupee, Download } from 'lucide-react';
 import { ChangeSet, db, nowIso, today } from '../core/db';
-import { inr, showMonth, plural } from '../core/i18n';
+import { inr, showMonth, plural, showDate } from '../core/i18n';
 import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
 import { askText, confirmBox } from './dialog';
@@ -82,7 +82,7 @@ export function Today() {
         ))}
       </div>
       {(leaves.filter(l => l.status === 'waiting').length > 0 || advances.length > 0) && <div className="sechead"><h3>{'Requests'}</h3></div>}
-      {leaves.filter(l => l.status === 'waiting').map(l => <div key={l.id} className="item"><div className="grow"><div className="t">{l.name} · {'leave'}</div><div className="s">{l.from}{l.to !== l.from ? ` → ${l.to}` : ''} · {l.reason}</div></div><button className="btn small primary" onClick={() => decide('leaves', l, true)}><Check /></button><button className="btn small" onClick={() => decide('leaves', l, false)}><X /></button></div>)}
+      {leaves.filter(l => l.status === 'waiting').map(l => <div key={l.id} className="item"><div className="grow"><div className="t">{l.name} · {'leave'}</div><div className="s">{showDate(l.from)}{l.to !== l.from ? ` → ${showDate(l.to)}` : ''} · {l.reason}</div></div><button className="btn small primary" onClick={() => decide('leaves', l, true)}><Check /></button><button className="btn small" onClick={() => decide('leaves', l, false)}><X /></button></div>)}
       {advances.map(a => <div key={a.id} className="item"><div className="grow"><div className="t">{a.name} · {'advance'} {inr(a.amount)}</div><div className="s">{a.reason}</div></div><button className="btn small primary" onClick={() => decide('advances', a, true)}><Check /></button><button className="btn small" onClick={() => decide('advances', a, false)}><X /></button></div>)}
       <div className="muted">{'Staff type "leave Monday" or "advance 1000" to TESRAX; you approve here.'}</div>
     </div>
