@@ -113,6 +113,24 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); window.removeEventListener('dbrox:logout', kicked); };
   }, []);
 
+  // Android app: the phone's back button closes RoX, then the open module, then goes home; on home it puts the app away
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    void (async () => {
+      const { Capacitor } = await import('@capacitor/core');
+      if (!Capacitor.isNativePlatform()) return;
+      const { App: Native } = await import('@capacitor/app');
+      const h = await Native.addListener('backButton', () => {
+        if (rox) setRox(false);
+        else if (module) setModule(null);
+        else if (page !== 'home') setPage('home');
+        else void Native.minimizeApp();
+      });
+      off = () => { void h.remove(); };
+    })();
+    return () => off?.();
+  }, [rox, module, page]);
+
 
   if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {

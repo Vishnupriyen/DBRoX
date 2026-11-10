@@ -14,6 +14,9 @@
     "train:million": "vitest run -c vitest.million.config.ts && node tests/million/report.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.0",
+    "@capacitor/core": "8.6.0",
     "dexie": "^4.4.7",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.69.0",
@@ -23,6 +26,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@types/node": "^24.19.2",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.3.0",

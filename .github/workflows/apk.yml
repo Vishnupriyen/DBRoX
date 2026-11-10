@@ -1,0 +1,59 @@
+# The Android app (APK). Built here because Android's build tools live on GitHub's machines. The APK comes out
+# unsigned; it is signed with Hanubix's one permanent key outside GitHub (the key is never stored in this public repo).
+name: APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, apk]
+    paths: ['app/**', '.github/workflows/apk.yml', '.github/scripts/apk-smoke.sh']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app } }
+    env:
+      APK_VERSION_CODE: ${{ github.run_number }}
+      APK_VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
+      - run: npx tsc -b && npx vite build --base=./ --outDir dist-apk
+        env: { VITE_APK: '1', VITE_SERVER_URL: '${{ vars.SERVER_URL }}' }
+      - run: npx cap sync android
+      - run: ./gradlew assembleRelease assembleDebug --no-daemon
+        working-directory: app/android
+      - name: Android's signing tools (to sign outside GitHub)
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          mkdir -p ../signer/lib && cp $BT/lib/apksigner.jar ../signer/lib/ && cp $BT/zipalign ../signer/ && cp -r $BT/lib64 ../signer/ 2>/dev/null || true
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk ../signer/
+          cp android/app/build/outputs/apk/debug/app-debug.apk ../signer/
+      - uses: actions/upload-artifact@v4
+        with: { name: hanubix-apk-unsigned, path: signer, retention-days: 7 }
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: hanubix-apk-unsigned, path: . }
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: bash .github/scripts/apk-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: apk-smoke, path: apk-shots, retention-days: 7 }

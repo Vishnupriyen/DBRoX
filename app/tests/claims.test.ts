@@ -135,7 +135,8 @@ describe('travel and expenses', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-12-01T00:30:00+05:30'));
     const { thisMonth } = await import('../src/core/db');
-    expect(thisMonth()).toBe(process.env.TZ === 'UTC' ? '2026-11' : '2026-12');
+    // the phone's own clock decides (phones are in India); a machine on UTC time is still in November
+    expect(thisMonth()).toBe(new Date().getTimezoneOffset() === 0 ? '2026-11' : '2026-12');
     vi.useRealTimers();
   });
 });
