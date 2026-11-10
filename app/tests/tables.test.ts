@@ -3,7 +3,8 @@ import shared from '../../shared/tables.json';
 import type { TableName } from '../src/core/types';
 
 // The phone's table union and the shared list must match exactly; the server reads the same file.
-const PHONE: TableName[] = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices', 'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit', 'visits', 'targets', 'trips', 'dayCloses', 'dayPlans', 'liteEntries', 'checkIns', 'leaves', 'advances'];
+const PHONE: TableName[] = ['settings', 'staff', 'companies', 'products', 'shops', 'batches', 'schemes', 'orders', 'invoices', 'creditNotes', 'payments', 'purchases', 'expenses', 'bankLines', 'claimEntries', 'claims', 'vans', 'audit', 'visits', 'targets', 'trips', 'dayCloses', 'dayPlans', 'liteEntries', 'checkIns', 'leaves', 'advances',
+  'territories', 'dbLinks', 'secondary', 'secondaryReturns', 'dbStock', 'primaryInvoices', 'inbound', 'grns', 'primaryOrders', 'dbClaims', 'claimDecisions', 'shopRequests', 'workDays', 'travelClaims'];
 describe('shared table definition', () => {
   it('lists every phone table once', () => { expect([...shared.tables].sort()).toEqual([...PHONE].sort()); });
   it('every role list names real tables', () => {

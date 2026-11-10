@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck } from 'lucide-react';
+import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat } from 'lucide-react';
+import { CompanyLinks } from './CompanyLinks';
+import { SIDE_KEY } from '../core/db';
 import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { inr, t } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
 import { ENV_SERVER, syncNow } from '../core/sync';
-import { MODULES, type Claim, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
+import { addClaimLine, decisionsFor, openLines, sendClaim } from '../core/claims';
+import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
 import { PrintBill } from './PrintBill';
 import { ask, askText, confirmBox, notify } from './dialog';
 import { BillEditor } from './BillEditor';
 import { cancelInvoice } from '../core/pipeline';
 import { errorLog } from './Safety';
 
-type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims';
+type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links';
 
 export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
@@ -26,11 +29,13 @@ export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout
   if (page === 'staff') return <>{back}<StaffPage editable={role === 'owner'} /></>;
   if (page === 'bills') return <>{back}<Bills canCancel={boss} /></>;
   if (page === 'claims') return <>{back}<Claims /></>;
+  if (page === 'links') return <>{back}<CompanyLinks editable={role === 'owner'} /></>;
   return (
     <div className="list">
       {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
       {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
+      {boss && <button className="item" onClick={() => setPage('links')}><Link2 /> <span className="grow">Company links</span></button>}
       {role === 'owner' && onPlan && <button className="item" onClick={onPlan}><CreditCard /> <span className="grow">Plan & billing</span></button>}
       {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {
@@ -45,10 +50,17 @@ export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout
         if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
         await db.delete(); localStorage.removeItem('dbrox.session'); location.reload();
       }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
+      {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('company')}><Repeat /> <span className="grow">Demo: open the company side</span></button>}
       {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (Hanubix side — never shown to a distributor)</span></button>}
       <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX · v0.8</div>
     </div>
   );
+}
+
+/** demo only: the same phone opens the other side (company ⇄ distributor); each side keeps its own data */
+export function switchDemoSide(side: 'company' | 'distributor') {
+  try { localStorage.setItem(SIDE_KEY, side); localStorage.removeItem('dbrox.session'); } catch { /* private window */ }
+  location.reload();
 }
 
 function Modules({ editable }: { editable: boolean }) {
@@ -232,10 +244,17 @@ function Bills({ canCancel }: { canCancel: boolean }) {
 }
 
 function Claims() {
-  const [list, setList] = useState<(Claim & { company: string })[]>([]);
+  const [list, setList] = useState<(Claim & { company: string; decision?: ClaimDecision })[]>([]);
+  const [linked, setLinked] = useState<{ id: string; name: string; open: number; amount: number }[]>([]);
   const load = async () => {
-    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
-    setList((await db.claims.toArray()).sort((a, b) => b.month.localeCompare(a.month)).map(c => ({ ...c, company: cos.get(c.companyId) ?? '' })));
+    const all = await db.companies.toArray();
+    const cos = new Map(all.map(c => [c.id, c.name]));
+    const claims = (await db.claims.toArray()).sort((a, b) => b.month.localeCompare(a.month));
+    const dec = await decisionsFor(claims.map(c => c.id));
+    setList(claims.map(c => ({ ...c, company: cos.get(c.companyId) ?? '', decision: dec.get(c.id) })));
+    const ls = [];
+    for (const c of all.filter(x => x.link?.status === 'linked')) { const o = await openLines(c.id, thisMonth()); ls.push({ id: c.id, name: c.name, open: o.length, amount: o.reduce((a, e) => a + e.amount, 0) }); }
+    setLinked(ls);
   };
   useEffect(() => { load(); }, []);
   const set = async (c: Claim, status: Claim['status']) => {
@@ -243,12 +262,26 @@ function Claims() {
     if (status === 'received') received = Number((await askText('Amount received ₹', String(c.amount), 'number')) ?? c.amount);
     const cs = new ChangeSet(); cs.put('claims', { ...c, status, received }, `claim ${status}`); await cs.commit('Claim status'); load();
   };
-  const pending = list.filter(c => c.status !== 'received' && c.status !== 'rejected').reduce((a, c) => a + c.amount, 0);
+  const pending = list.filter(c => c.status !== 'received' && c.status !== 'rejected' && c.decision?.status !== 'rejected').reduce((a, c) => a + (c.decision?.status === 'approved' ? c.decision.amount : c.amount), 0);
+  const tryIt = async (fn: () => Promise<unknown>) => { try { await fn(); await load(); } catch (e) { await notify('Not done', (e as Error).message); } };
   return (
     <div className="card">
       <h3>Claims tracker</h3>
-      <div className="muted" style={{ marginBottom: 8 }}>Companies owe you {inr(pending)}. Say "claim file" in chat to build this month's claim.</div>
-      <button className="btn small primary" style={{ marginBottom: 8 }} onClick={async () => {
+      <div className="muted" style={{ marginBottom: 8 }}>Companies owe you {inr(pending)}. Say "claim file" in chat to build this month's claim file.</div>
+      {linked.map(l => (
+        <div key={l.id} className="item">
+          <Link2 /><div className="grow"><div className="t">{l.name}</div><div className="s">{l.open ? `${l.open} new claim lines this month · ${inr(l.amount)}` : 'Nothing new to claim this month'}</div></div>
+          {l.open > 0 && <button className="btn small primary" onClick={() => tryIt(async () => { if (await confirmBox(`Send ${inr(l.amount)} to ${l.name}?`, 'They check every line and send back a credit note.', 'Send')) { await sendClaim(l.id, thisMonth()); } })}>Send</button>}
+          <button className="btn small" onClick={() => tryIt(async () => {
+            const kind = (await ask('What kind of claim?', { choices: [{ label: 'Rate difference', value: 'rate_diff' }, { label: 'Salesman salary (DSR)', value: 'dsr' }, { label: 'Other', value: 'damage' }] })) as ClaimEntry['kind'] | null; if (!kind) return;
+            const amount = Number(await askText('Amount ₹', '', 'number')); if (!amount) return;
+            const note = await askText('What is it for?'); if (!note) return;
+            const ref = kind === 'rate_diff' ? await askText('Company bill number it is about') : undefined; if (ref === null) return;
+            await addClaimLine({ companyId: l.id, kind, amount, note, refNumber: ref || undefined });
+          })}>+ Line</button>
+        </div>
+      ))}
+      <button className="btn small" style={{ margin: '8px 0' }} onClick={async () => {
         const cos = await db.companies.toArray(); if (!cos.length) return;
         const companyId = (await ask('Which company?', { choices: cos.map(c => ({ label: c.name, value: c.id })) })) as string; if (!companyId) return;
         const month = await askText('Month (YYYY-MM)', thisMonth()); if (!month) return;
@@ -257,14 +290,14 @@ function Claims() {
         const amt = Number(await askText(`Claim amount ₹ (${open.length} entries this month total ${inr(auto)})`, String(auto || ''), 'number')); if (!amt) return;
         const note = await askText('Note (scheme / damage / display / other)'); if (note === null) return;
         const cs = new ChangeSet(); cs.put<Claim>('claims', { companyId, month, amount: amt, status: 'draft', note }, 'claim created'); await cs.commit('Claim created'); load();
-      }}>+ Create claim</button>
+      }}>+ Record a claim made outside Hanubix</button>
       <div className="list">
         {list.map(c => (
           <div key={c.id} className="item">
-            <div className="grow"><div className="t">{c.company} · {c.month}</div><div className="muted">{inr(c.amount)}{c.received != null ? ` · received ${inr(c.received)}` : ''}</div></div>
-            <select value={c.status} onChange={e => set(c, e.target.value as Claim['status'])}>
+            <div className="grow"><div className="t">{c.company} · {c.month}</div><div className="muted">{inr(c.amount)}{c.received != null ? ` · received ${inr(c.received)}` : ''}{c.decision ? (c.decision.status === 'approved' ? ` · approved ${inr(c.decision.amount)} · credit note ${c.decision.creditNoteNo}` : ` · rejected: ${c.decision.note}`) : c.lineIds ? ' · sent, waiting for the company' : ''}</div></div>
+            {!c.lineIds && <select value={c.status} onChange={e => set(c, e.target.value as Claim['status'])}>
               {['draft', 'submitted', 'approved', 'rejected', 'received'].map(s => <option key={s}>{s}</option>)}
-            </select>
+            </select>}
           </div>
         ))}
         {!list.length && <div className="muted">{t('noItems')}</div>}

@@ -21,7 +21,8 @@ export interface Col {
 export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
   | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix'
-  | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo';
+  | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo'
+  | 'fieldOrder'; // company rep: an order sent to the shop's distributor
 
 export interface Proposal {
   id: string;
@@ -83,6 +84,21 @@ export async function validate(p: Proposal): Promise<Validation> {
   const v: Validation = { errors: {}, fieldErrors: {}, warnings: [], summary: '' };
   const products = new Map((await db.products.toArray()).map(x => [x.id, x]));
   switch (p.kind) {
+    case 'fieldOrder': {
+      const { checkFieldOrder } = await import('./field');
+      const shop = await db.shops.get(s(fieldValue(p, 'shopId')));
+      if (!shop) v.fieldErrors.shopId = 'Pick the shop';
+      p.rows.forEach((r, i) => {
+        if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
+        if (!Number.isInteger(n(r.qty)) || n(r.qty) <= 0) err(v, i, 'qty', 'Whole pieces, more than 0');
+      });
+      if (shop && !Object.keys(v.errors).length) {
+        const bad = checkFieldOrder(shop, p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty) })), products);
+        if (bad) v.fieldErrors.shopId = bad;
+        v.summary = `${p.rows.length} items · about ₹${r2(p.rows.reduce((a, r) => a + n(r.qty) * (products.get(s(r.productId))?.rate ?? 0), 0))} before GST · goes to the distributor for billing`;
+      }
+      break;
+    }
     case 'purchase': {
       if (!s(fieldValue(p, 'companyId'))) v.fieldErrors.companyId = 'Pick the company';
       if (!s(fieldValue(p, 'billNo'))) v.fieldErrors.billNo = 'Bill number needed';
@@ -362,6 +378,13 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
   let invoices: Invoice[] | undefined;
   let orderId: string | undefined;
   switch (p.kind) {
+    case 'fieldOrder': {
+      const { placeFieldOrder } = await import('./field');
+      const o = await placeFieldOrder(s(fieldValue(p, 'shopId')), p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty) })));
+      const shop = await db.shops.get(o.shopId);
+      // saved by placeFieldOrder in its own change set (one ✓ = one order)
+      return { message: `Order for ${shop?.name ?? 'the shop'} sent to the distributor for billing.`, batchId: '', orderId: o.id };
+    }
     case 'purchase': {
       const companyId = s(fieldValue(p, 'companyId'));
       const batches = await db.batches.toArray();
@@ -399,8 +422,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       break;
     }
     case 'expense': {
+      const company = (await getSettings()).kind === 'company'; // a field rep's expense waits for the month's claim
       for (const r of p.rows) {
-        cs.put<Expense>('expenses', { by: session().userId, date: toIsoDate(s(r.date)) || today(), category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note), photo: p.meta.photo as string | undefined }, 'expense');
+        cs.put<Expense>('expenses', { by: session().userId, date: toIsoDate(s(r.date)) || today(), category: s(r.category), amount: n(r.amount), vanId: s(r.vanId) || undefined, note: s(r.note), photo: p.meta.photo as string | undefined, ...(company ? { status: 'waiting' as const } : {}) }, 'expense');
       }
       message = `Expense recorded: ₹${r2(p.rows.reduce((a, r) => a + n(r.amount), 0))}.`;
       break;

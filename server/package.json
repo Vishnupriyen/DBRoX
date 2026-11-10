@@ -10,7 +10,10 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/migrate.ts",
     "test": "vitest run",
-    "loadtest": "tsx test/loadtest.ts"
+    "loadtest": "tsx test/loadtest.ts",
+    "prebuild": "node scripts/relay-copy.mjs",
+    "pretest": "node scripts/relay-copy.mjs",
+    "predev": "node scripts/relay-copy.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.4.1",

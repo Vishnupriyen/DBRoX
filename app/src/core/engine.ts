@@ -30,6 +30,7 @@ export interface Reply {
   refused?: boolean;        // a clear no: not this role's screen or action
 }
 export { handle } from './converse';
+import { handleCompany } from './companyEngine';
 
 // Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 export const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
@@ -129,6 +130,9 @@ const ROLE_CAN: Record<Role, string[]> = {
   salesman: ['order', 'payment', 'newshop', 'return', 'outstanding', 'stock', 'help', 'sales'],
   godown: ['purchase', 'claim', 'stock', 'loadsheet', 'expiry', 'help', 'return'],
   delivery: ['payment', 'return', 'help', 'outstanding'],
+  cadmin: ['*'],
+  manager: ['*'],
+  rep: ['order', 'newshop', 'stock', 'help', 'sales', 'expense'],
 };
 
 function need(mod: ModuleKey, modules: Record<ModuleKey, boolean>): Reply | null {
@@ -171,6 +175,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   const mods = (await licenceState(!!ENV_SERVER_URL, settings)).mods; // what the distributor has paid for, never a phone setting
   const role = await myRole();
   const file = files[0];
+  if (settings.kind === 'company') return handleCompany(textIn, role); // a brand's head office and team: their own TESRAX
 
   if (!text && !file) return { text: HELP_TEXT };
   if (has(text, W.help)) return { text: HELP_TEXT };

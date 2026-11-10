@@ -2,7 +2,11 @@
 // Scale rule: every record carries tenantId (the distributor) and an id created on the device,
 // so the server can split data by distributor and phones never wait for a central counter.
 
-export type Role = 'owner' | 'office' | 'salesman' | 'godown' | 'delivery';
+export type Role = 'owner' | 'office' | 'salesman' | 'godown' | 'delivery'
+  // company side (a brand's own team): head office, RSM/ASM/SO (one role, with a level), and field rep
+  | 'cadmin' | 'manager' | 'rep';
+export const COMPANY_ROLES: Role[] = ['cadmin', 'manager', 'rep'];
+export const isCompanyRole = (r: Role) => COMPANY_ROLES.includes(r);
 
 // The eight locked modules (spec 15.1). Switched from the Hanubix console, never shown to the distributor.
 export type ModuleKey = 'sales' | 'bill' | 'inventory' | 'delivery' | 'collection' | 'accountant' | 'gst' | 'payroll';
@@ -45,6 +49,8 @@ export interface Settings extends Base {
   grnPhoto?: boolean;       // second delivery photo (signed bill / GRN); owner can switch off
   upiId?: string;           // shown as QR at collection
   godownLat?: number; godownLng?: number; // check-in distance is measured from here
+  kind?: 'distributor' | 'company';        // a brand's head office uses the same app as a "company"
+  travel?: { bike: number; car: number; daLocal: number; daOut: number; limits: Record<string, number> }; // company: ₹ per km, daily allowance, expense limits
 }
 
 export interface Staff extends Base {
@@ -57,6 +63,13 @@ export interface Staff extends Base {
   salary?: number; batta?: number; // per month / per present day
   kind?: 'db' | 'company_rep'; // company rep sees only his company's products
   companyId?: string;
+  // company side
+  level?: 'RSM' | 'ASM' | 'SO';   // managers only
+  managerId?: string;             // reports to
+  territoryId?: string;
+  dbLinkIds?: string[];           // the distributors this person works
+  hq?: string;                    // home town: outside it the day is "outstation"
+  grade?: string;                 // travel policy grade
 }
 
 export interface Company extends Base {
@@ -64,6 +77,7 @@ export interface Company extends Base {
   code: string; // bill series prefix
   gstin?: string;
   nextBillNo: number;
+  link?: { companyTenant: string; linkId: string; since: string; status: 'linked' | 'left' }; // this company uses Hanubix and sees its own brand here
 }
 
 export interface Product extends Base {
@@ -79,6 +93,7 @@ export interface Product extends Base {
   aliases: string[];
   focus?: boolean;
   active: boolean;
+  companyProductId?: string; // the company's own id for this product (when the company is linked)
 }
 
 export interface Shop extends Base {
@@ -104,6 +119,8 @@ export interface Shop extends Base {
   creditMode?: 'days' | 'limit' | 'bill_to_bill' | 'none';
   diffPref?: 'modified' | 'credit_note'; // how this shop wants delivery differences handled
   active?: boolean; // false = rejected / closed shop; hidden everywhere
+  dbLinkId?: string;     // company side: the distributor this outlet belongs to
+  requestedBy?: string;  // a company rep asked for this shop
 }
 
 export interface Batch extends Base {
@@ -127,6 +144,7 @@ export interface Scheme extends Base {
   to: string;
   source: 'company' | 'own';
   combine: 'add' | 'replace';
+  budget?: number; // company schemes: the most the company will pay out on this scheme
 }
 
 export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number } // batch/MRP chosen by the picker
@@ -136,7 +154,9 @@ export interface Order extends Base {
   offRoute?: boolean;
   visitId?: string;
   salesmanId?: string;
-  source: 'salesman' | 'phone' | 'photo' | 'office' | 'in_person' | 'whatsapp' | 'other';
+  source: 'salesman' | 'phone' | 'photo' | 'office' | 'in_person' | 'whatsapp' | 'other' | 'company';
+  companyId?: string; companyRep?: string; // a company rep's order (arrives through the company link)
+  dbLinkId?: string; repId?: string; repName?: string; // company side: the field order and who took it
   rateRemark?: string; // salesman asked for a lower rate; owner approves
   lines: OrderLine[];
   // pipeline: new → picked (godown) → billed (owner approved) ; cancelled at any point
@@ -246,7 +266,7 @@ export interface Purchase extends Base {
   taxable: number;
   tax: number;
   total: number;
-  source: 'photo' | 'excel' | 'typed';
+  source: 'photo' | 'excel' | 'typed' | 'company'; // 'company' = received against the linked company's own bill
 }
 
 export interface Expense extends Base {
@@ -258,6 +278,7 @@ export interface Expense extends Base {
   vanId?: string;
   note?: string;
   photo?: string;
+  status?: 'waiting' | 'approved' | 'rejected'; // company side: a field rep's expense, approved with the month's claim
 }
 
 export interface BankLine extends Base {
@@ -275,13 +296,14 @@ export interface BankLine extends Base {
 export interface ClaimEntry extends Base {
   companyId: string;
   month: string;
-  kind: 'scheme' | 'damage' | 'expiry' | 'transit';
+  kind: 'scheme' | 'damage' | 'expiry' | 'transit' | 'shortage' | 'rate_diff' | 'dsr';
   productId?: string;
   qty: number;
   amount: number;
   note?: string;
   photo?: string;
   invoiceId?: string;
+  refNumber?: string; irn?: string; // the company bill this line is about (GST: a credit note must point to it)
 }
 
 export interface Claim extends Base {
@@ -291,6 +313,7 @@ export interface Claim extends Base {
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'received';
   received?: number;
   note?: string;
+  lineIds?: string[]; // the claim lines sent (a linked company sees and checks each one)
 }
 
 export interface Trip extends Base {
@@ -347,6 +370,8 @@ export interface Visit extends Base {
   lng?: number;
   farFromShop?: boolean;
   outcome?: 'order' | 'no_order' | 'closed' | 'payment_only';
+  reason?: string;   // why no order (company rep)
+  photo?: string;    // shelf photo (company rep)
 }
 
 export interface Target extends Base {
@@ -354,6 +379,7 @@ export interface Target extends Base {
   month: string;
   kind: 'sales' | 'purchase' | 'shops' | 'lines';
   value: number;
+  staffId?: string; // company side: a field rep's monthly target
 }
 
 export interface Van extends Base {
@@ -375,7 +401,62 @@ export interface AuditEntry extends Base {
   undone?: boolean;
 }
 
+// ---------------------------------------------------------------- company module
+export interface Territory extends Base { name: string; parentId?: string; level: 'state' | 'region' | 'area' | 'territory' }
+export interface DbLink extends Base {
+  name: string;               // the distributor's firm name
+  town?: string;
+  territoryId?: string;
+  inviteCode: string;
+  status: 'invited' | 'linked' | 'left' | 'paused';
+  dbTenantId?: string;
+  linkedAt?: string;
+  normDays?: number;          // stock norm: days of stock this distributor should hold
+  gstin?: string;             // matches the distributor on the company's own invoices
+  kind?: 'distributor' | 'super_stockist' | 'sub_stockist';
+  parentLinkId?: string;      // a sub-stockist buys from this super stockist
+}
+export interface SecondaryLine { productId: string; name: string; qty: number; freeQty: number; rate: number; taxable: number; total: number }
+export interface Secondary extends Base { dbLinkId: string; number: string; date: string; shopId: string; orderId?: string; fieldOrderId?: string; lines: SecondaryLine[]; taxable: number; total: number; deliveryStatus?: string; cancelled: boolean }
+export interface SecondaryReturn extends Base { dbLinkId: string; invoiceId: string; date: string; reason: string; lines: { productId: string; name: string; qty: number; amount: number }[]; total: number }
+export interface DbStock extends Base { dbLinkId: string; productId: string; name: string; qty: number; nearExpiry: number; expired: number; asOf: string }
+export interface PrimaryLine { productId: string; name: string; hsn?: string; qty: number; freeQty?: number; rate: number; gst: number; taxable: number; tax: number; batch?: string; expiry?: string; mrp?: number }
+export interface PrimaryInvoice extends Base {
+  dbLinkId: string; number: string; irn?: string; date: string; lines: PrimaryLine[]; taxable: number; tax: number; total: number;
+  primaryOrderId?: string; source: 'typed' | 'excel'; cancelled?: boolean;
+}
+export interface Inbound extends Base {
+  companyId: string; number: string; irn?: string; date: string; lines: (PrimaryLine & { coProductId: string })[]; taxable: number; tax: number; total: number;
+  primaryOrderId?: string; cancelled?: boolean;
+  status: 'pending' | 'received' | 'disputed';
+  receivedAt?: string; receivedBy?: string; purchaseId?: string;
+  short?: { productId: string; qty: number }[]; damaged?: { productId: string; qty: number }[];
+}
+export interface Grn extends Base { dbLinkId: string; primaryInvoiceId: string; number: string; status: string; receivedAt?: string; short: { productId: string; qty: number }[]; damaged: { productId: string; qty: number }[] }
+export interface PrimaryOrder extends Base { companyId?: string; dbLinkId?: string; date: string; lines: { productId: string; name?: string; qty: number }[]; status: 'sent' | 'invoiced' | 'cancelled'; note?: string }
+export interface DbClaim extends Base {
+  dbLinkId: string; month: string; kind?: string; amount: number; status: string; note?: string;
+  lines: { id: string; kind: string; productId?: string; qty: number; amount: number; note?: string; invoiceId?: string; refNumber?: string; irn?: string; photo?: string }[];
+}
+export interface ClaimDecision extends Base {
+  dbLinkId?: string; companyId?: string; claimId: string;
+  status: 'recommended' | 'approved' | 'rejected'; // an SO recommends; head office approves or rejects (only those reach the distributor)
+  amount: number; creditNoteNo?: string; note?: string; decidedBy: string;
+  lines?: { lineId: string; amount: number; schemeId?: string }[];
+}
+export interface TravelClaim extends Base {
+  staffId: string; month: string; days: number; km: number; kmAmount: number; daDays: number; outDays: number; daAmount: number; expenses: number; total: number;
+  flags: string[]; status: 'waiting' | 'approved' | 'rejected'; decidedBy?: string; note?: string;
+}
+export interface ShopRequest extends Base { dbLinkId: string; name: string; area?: string; beat?: string; lat?: number; lng?: number; photo?: string; repId: string; repName: string }
+export interface WorkDay extends Base {
+  staffId: string; date: string; startAt: string; endAt?: string;
+  track: { at: string; lat: number; lng: number; acc?: number }[];
+  km: number; flags: string[]; outstation: boolean; mode: 'bike' | 'car' | 'bus';
+}
+
 export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
-  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances';
+  | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims';

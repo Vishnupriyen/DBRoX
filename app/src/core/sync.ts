@@ -17,7 +17,7 @@ export async function server(): Promise<string | null> {
   try { return (await getSettings()).serverUrl?.replace(/\/$/, '') || null; } catch { return null; }
 }
 
-export async function signup(body: { firmName: string; ownerName: string; phone: string; pin: string; gstin?: string; address?: string }) {
+export async function signup(body: { firmName: string; ownerName: string; phone: string; pin: string; gstin?: string; address?: string; kind?: 'company' }) {
   const url = await server();
   if (!url) throw new Error('No server');
   const r = await fetch(`${url}/v1/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

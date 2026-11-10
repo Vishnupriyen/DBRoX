@@ -30,5 +30,6 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
+      - run: node scripts/relay-copy.mjs   # the relay's one source is shared/relay.ts
       - run: npx tsc -p tsconfig.json --noEmit
       - run: npm test

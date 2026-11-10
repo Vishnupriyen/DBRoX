@@ -7,7 +7,7 @@ import type { ModuleKey, Role } from '../core/types';
 import { licenceState } from '../core/licence';
 import { ENV_SERVER } from '../core/sync';
 import { MODULE_ICON } from './icons';
-import { Search } from 'lucide-react';
+import { Search, Send } from 'lucide-react';
 import { invoiceBalances } from '../core/ledger';
 import { inr } from '../core/i18n';
 
@@ -18,7 +18,8 @@ export type Page = 'home'
   | 'collect' | 'outstanding' | 'cash' | 'cheques'
   | 'bank' | 'expenses' | 'pnl' | 'cashflow' | 'export' | 'reports' | 'vans'
   | 'gst' | 'today' | 'salary' | 'staff' | 'claims' | 'dayclose' | 'bills'
-  | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more' | 'billing';
+  | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more' | 'billing'
+  | 'inbound' | 'reorder'; // linked companies: their bills to receive, and the order to them
 
 interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: string }
 
@@ -87,7 +88,10 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'verify', icon: ClipboardCheck, en: 'Picked — to verify', count: c.toApprove, tone: 'warn' },
           { page: 'billed', icon: Receipt, en: 'Billed' },
         ];
+        const inbound = (await db.inbound.where('status').equals('pending').count());
+        const linked = (await db.companies.toArray()).some(c => c.link?.status === 'linked');
         sub.inventory = [
+          ...(linked || inbound ? [{ page: 'inbound' as Page, icon: Truck, en: 'Company bills', count: inbound || undefined, tone: 'bad' as const }, { page: 'reorder' as Page, icon: Send, en: 'Order to company' }] : []),
           { page: 'stockin', icon: PackagePlus, en: 'Purchases' },
           { page: 'stock', icon: Boxes, en: 'Stock position', count: c.stockAlerts, tone: 'warn' },
           { page: 'damages', icon: FileWarning, en: 'Damages' },
@@ -143,8 +147,10 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'newshop', icon: UserPlus, en: 'New shop' },
         ];
       } else if (role === 'godown') {
+        const inbound = (await db.inbound.where('status').equals('pending').count());
         t = [
           { page: 'pick', icon: PackageOpen, en: 'Pick orders', count: c.toPick, tone: 'bad' },
+          ...(inbound ? [{ page: 'inbound' as Page, icon: Truck, en: 'Company bills', count: inbound, tone: 'bad' as const }] : []),
           { page: 'load', icon: Truck, en: 'Load vans', count: c.toLoad, tone: 'warn' },
           { page: 'print', icon: Printer, en: 'Print load sheet' },
           { page: 'stockin', icon: PackagePlus, en: 'Stock in' },

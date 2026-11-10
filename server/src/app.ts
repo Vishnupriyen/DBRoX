@@ -6,6 +6,7 @@ import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { scanWithAI, type ScanKind } from './scan.js';
+import { acceptInvite, findInvite, leaveLink, relayChanges, relayOnly, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
 import { readFileSync } from 'node:fs';
@@ -57,7 +58,9 @@ export async function buildApp(pool: pg.Pool) {
 
   // New distributor: firm + owner. Owner logs in with phone + PIN (Google sign-in can be added later).
   app.post('/v1/signup', async req => {
-    const b = req.body as { firmName?: string; ownerName?: string; phone?: string; pin?: string; gstin?: string; address?: string };
+    const b = req.body as { firmName?: string; ownerName?: string; phone?: string; pin?: string; gstin?: string; address?: string; kind?: string };
+    const kind = b.kind === 'company' ? 'company' : 'distributor';
+    const ownerRole = kind === 'company' ? 'cadmin' : 'owner';
     if (!b.firmName || !b.ownerName || !/^[6-9]\d{9}$/.test(b.phone ?? '') || !/^\d{4}$/.test(b.pin ?? '')) throw err(400, 'Firm, owner name, 10-digit mobile and 4-digit PIN needed');
     const exists = await pool.query('SELECT 1 FROM users WHERE phone=$1', [b.phone]);
     if (exists.rowCount) throw err(409, 'This phone number already has a DBRoX login');
@@ -67,18 +70,18 @@ export async function buildApp(pool: pg.Pool) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`INSERT INTO tenants(id, name, status, trial_ends) VALUES ($1,$2,'trial', current_date + 60)`, [tenantId, b.firmName]);
-      await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash) VALUES ($1,$2,$3,$4,$5,$6)', [tenantId, userId, b.phone, b.ownerName, 'owner', hashPin(b.pin!)]);
+      await client.query(`INSERT INTO tenants(id, name, status, trial_ends, kind) VALUES ($1,$2,'trial', current_date + 60, $3)`, [tenantId, b.firmName, kind]);
+      await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash) VALUES ($1,$2,$3,$4,$5,$6)', [tenantId, userId, b.phone, b.ownerName, ownerRole, hashPin(b.pin!)]);
       const settings = {
         id: newId(), tenantId, createdAt: now, updatedAt: now, firmName: b.firmName, gstin: b.gstin ?? '', address: b.address ?? '', stateCode: (b.gstin ?? '33').slice(0, 2), phone: b.phone,
         modules: { sales: true, bill: true, inventory: true, delivery: true, collection: true, accountant: true, gst: true, payroll: true },
-        billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5,
+        billFormat: 'A5', returnApprovalLimit: 2000, discountAlertPct: 5, kind,
       };
-      const staff = { id: userId, tenantId, createdAt: now, updatedAt: now, name: b.ownerName, phone: b.phone, role: 'owner', pin: '', active: true };
+      const staff = { id: userId, tenantId, createdAt: now, updatedAt: now, name: b.ownerName, phone: b.phone, role: ownerRole, pin: '', active: true };
       await client.query('INSERT INTO docs(tenant_id,tbl,id,data,updated_at) VALUES ($1,$2,$3,$4,$5),($1,$6,$7,$8,$5)', [tenantId, 'settings', settings.id, settings, now, 'staff', userId, staff]);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
-    return { tenantId, userId, token: signToken({ t: tenantId, u: userId, r: 'owner', e: 0 }), licence: await licenceFor(tenantId) };
+    return { tenantId, userId, token: signToken({ t: tenantId, u: userId, r: ownerRole, e: 0 }), licence: await licenceFor(tenantId) };
   });
 
   app.post('/v1/login', async (req, reply) => {
@@ -121,6 +124,7 @@ export async function buildApp(pool: pg.Pool) {
     const rejected: string[] = [];
     // read before taking the lock: a lock holder that waits for a second pooled connection can freeze the server
     const st = changes.length ? await stateFor(c.t) : null;
+    const kind = changes.length ? await tenantKind(pool, c.t) : 'distributor';
     // nothing to save ("anything new?"): no transaction and no lock, straight to the pull
     if (changes.length) {
     const client = await pool.connect();
@@ -137,11 +141,12 @@ export async function buildApp(pool: pg.Pool) {
       }
       for (const ch of changes) {
         if (blockNew.has(ch.table) && !existing.has(`${ch.table}|${ch.id}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
+        if (relayOnly(kind, ch.table)) { rejected.push(`${ch.table}|${ch.id}`); continue; } // only the relay writes these (privacy wall)
         if (!canWrite.has(ch.table) || typeof ch.id !== 'string' || !ch.id || !ch.updatedAt || isNaN(Date.parse(ch.updatedAt))) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         const data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
         if (ch.table === 'staff') {
-          if (c.r !== 'owner') { rejected.push(`${ch.table}|${ch.id}`); continue; }
-          await upsertStaffLogin(client, c.t, data);
+          if (c.r !== 'owner' && c.r !== 'cadmin') { rejected.push(`${ch.table}|${ch.id}`); continue; }
+          await upsertStaffLogin(client, c.t, data, kind);
           data.pin = ''; // never store PINs inside documents
         }
         tbls.push(ch.table); ids.push(ch.id); datas.push(JSON.stringify(data)); ups.push(ch.updatedAt);
@@ -158,6 +163,8 @@ export async function buildApp(pool: pg.Pool) {
       }
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    // the other side of each company link gets what may cross (after the save, under its own lock)
+    await relayChanges(pool, c.t, kind, accepted.map(a => { const [table, ...rest] = a.split('|'); return { table, id: rest.join('|') }; }));
     }
 
     const cursor = Number(b.cursor ?? 0);
@@ -175,6 +182,31 @@ export async function buildApp(pool: pg.Pool) {
       // owner-only fields (purchase rate, UPI id …) never reach a staff phone
       changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.tbl]) { d = { ...d }; for (const f of OWNER_ONLY[r.tbl]) delete d[f]; } return { table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: d }; }),
     };
+  });
+
+  // ---------------------------------------------------------------- company links
+  // a distributor types the company's invite code: first a preview (who, and exactly what they will see), then accept
+  app.post('/v1/link/preview', async req => {
+    const c = await auth(req);
+    if (c.r !== 'owner' || (await tenantKind(pool, c.t)) !== 'distributor') throw err(403, 'Only the distributor owner can link a company');
+    const inv = await findInvite(pool, String((req.body as { code?: string }).code ?? ''));
+    if (!inv) throw err(404, 'This code is not valid or was already used. Ask the company for a new one.');
+    return { company: inv.companyName };
+  });
+  app.post('/v1/link/accept', async req => {
+    const c = await auth(req);
+    if (c.r !== 'owner' || (await tenantKind(pool, c.t)) !== 'distributor') throw err(403, 'Only the distributor owner can link a company');
+    const b = req.body as { code?: string; companyIdInDb?: string };
+    const r = await acceptInvite(pool, c.t, String(b.code ?? ''), b.companyIdInDb || undefined);
+    await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, `linked company ${r.company}`]);
+    return r;
+  });
+  app.post('/v1/link/leave', async req => {
+    const c = await auth(req);
+    if (c.r !== 'owner') throw err(403, 'Only the distributor owner can do this');
+    const r = await leaveLink(pool, c.t, String((req.body as { linkId?: string }).linkId ?? ''));
+    await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, 'left company link']);
+    return r;
   });
 
   app.post('/v1/scan', async req => {
@@ -305,10 +337,11 @@ export async function buildApp(pool: pg.Pool) {
   return app;
 }
 
-async function upsertStaffLogin(client: pg.PoolClient, tenantId: string, s: Record<string, unknown>) {
+const ROLES = { distributor: ['owner', 'office', 'salesman', 'godown', 'delivery'], company: ['cadmin', 'manager', 'rep'] };
+async function upsertStaffLogin(client: pg.PoolClient, tenantId: string, s: Record<string, unknown>, kind: 'company' | 'distributor') {
   const phone = String(s.phone ?? '');
   const role = String(s.role ?? '');
-  if (!/^\d{10}$/.test(phone) || !['owner', 'office', 'salesman', 'godown', 'delivery'].includes(role)) return;
+  if (!/^\d{10}$/.test(phone) || !ROLES[kind].includes(role)) return; // a company role never exists inside a distributor, nor the reverse
   const pin = String(s.pin ?? '');
   // the same phone may exist under another distributor (a salesman serving two DBs); each firm has its own login row
   const existing = (await client.query('SELECT tenant_id, id, active FROM users WHERE tenant_id=$1 AND phone=$2', [tenantId, phone])).rows[0];
