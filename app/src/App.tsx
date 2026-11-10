@@ -129,11 +129,10 @@ export default function App() {
       const { App: Native } = await import('@capacitor/app');
       const h = await Native.addListener('backButton', () => {
         const n = nav.current;
-        console.info(`[back] rox=${n.rox} module=${n.module} page=${n.page}`);
         if (n.rox) setRox(false);
         else if (stepBack()) { /* a screen went back one level itself */ }
+        else if (n.page !== 'home') setPage('home'); // a screen first: home shows the module it came from
         else if (n.module) setModule(null);
-        else if (n.page !== 'home') setPage('home');
         else void Native.minimizeApp();
       });
       if (gone) void h.remove(); else off = () => { void h.remove(); };
