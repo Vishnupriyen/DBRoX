@@ -1,3 +1,4 @@
+import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { db, getSettings } from '../core/db';
 import { shopOutstanding } from '../core/ledger';
@@ -21,7 +22,7 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 50, overflow: 'auto', padding: 16 }}>
       <div className="row noprint" style={{ maxWidth: width, margin: '0 auto 8px' }}>
-        <button className="btn primary" onClick={() => window.print()}>🖨 Print / Save PDF</button>
+        <button className="btn primary" onClick={() => void printPage()}>🖨 Print / Save PDF</button>
         <button className="btn" onClick={onClose}>Close</button>
       </div>
       <div className="bill" style={{ maxWidth: width, margin: '0 auto', fontFamily: s.billFormat === 'dotmatrix' ? 'monospace' : undefined }}>

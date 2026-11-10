@@ -1,3 +1,4 @@
+import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
@@ -88,7 +89,7 @@ export function PrintLoad() {
     <div className="stack">
       <div className="row no-print" style={{ gap: 8 }}>
         {trips.length > 1 && <div className="segmented">{trips.map((x, k) => <button key={x.id} className={sel === k ? 'on' : ''} onClick={() => setSel(k)}>{x.van.name}</button>)}</div>}
-        <button className="btn primary" onClick={() => window.print()}><Printer /> {'Print'}</button>
+        <button className="btn primary" onClick={() => void printPage()}><Printer /> {'Print'}</button>
       </div>
       <div className="card" style={{ background: '#fff', color: '#000' }}>
         <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 18 }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{t.date} · {'Driver'}: {t.driver || '—'}</span></div>
