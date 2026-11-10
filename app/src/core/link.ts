@@ -27,7 +27,8 @@ export function dexieStore(s: RoxDB): Store & { all(tbl: string): Promise<Doc[]>
 }
 async function applyTo(s: RoxDB, w: Write) {
   const n = nowIso();
-  await s.table(w.tbl).put({ ...w.doc, tenantId: s.name === DB_NAME.company ? 'demo-company' : 'demo', createdAt: w.doc.createdAt ?? n, updatedAt: n, dirty: 0 });
+  const t = w.keepTime && typeof w.doc.updatedAt === 'string' ? w.doc.updatedAt : n;
+  await s.table(w.tbl).put({ ...w.doc, tenantId: s.name === DB_NAME.company ? 'demo-company' : 'demo', createdAt: w.doc.createdAt ?? n, updatedAt: t, dirty: 0 });
 }
 
 /** demo links: the company's linked dbLinks, each tied to the distributor's company record that carries its id */
@@ -74,14 +75,14 @@ const authed = async (path: string, body: unknown) => {
 };
 
 /** distributor: who is this code from? */
-export async function previewInvite(code: string): Promise<{ company: string }> {
+export async function previewInvite(code: string): Promise<{ company: string; companyTenant?: string }> {
   const c = code.trim().toUpperCase();
   if (!/^[A-Z0-9]{6,8}$/.test(c)) throw new Error('The code has 6 letters and numbers. Check it with the company.');
   if (await server()) return authed('/v1/link/preview', { code: c });
   const l = (await storeOf('company').dbLinks.where('inviteCode').equals(c).toArray()).find(x => x.status === 'invited');
   const s = await storeOf('company').settings.toCollection().first();
   if (!l || !s) throw new Error('This code is not valid or was already used. Ask the company for a new one.');
-  return { company: s.firmName };
+  return { company: s.firmName, companyTenant: 'demo-company' };
 }
 
 /** distributor accepts: the same steps as the server (tie the company record, first exchange) */
@@ -94,14 +95,27 @@ export async function acceptInvite(code: string, companyIdInDb?: string): Promis
   if (!inv) throw new Error('This code is not valid or was already used. Ask the company for a new one.');
   const n = nowIso();
   let company: Company | undefined = companyIdInDb ? await dist.companies.get(companyIdInDb) : undefined;
-  if (company?.link?.status === 'linked') throw new Error('That company is already linked to another account.');
+  // a record ever tied to another company (even after leaving it) never carries this one (same rule as the server)
+  if (company?.link && company.link.companyTenant !== 'demo-company') throw new Error('That company in your list belongs to another company\'s link. Choose "New" instead.');
+  if (company?.link && company.link.status === 'linked') throw new Error('That company is already linked.');
   company = { ...(company ?? { id: `co-${inv.id}`, tenantId: 'demo', createdAt: n, name: firm.replace(/\s*\(Demo\)$/, ''), code: firm.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(), nextBillNo: 1 }), updatedAt: n, link: { companyTenant: 'demo-company', linkId: inv.id, since: n, status: 'linked' } } as Company;
   await dist.companies.put({ ...company, dirty: 0 });
   const distFirm = (await dist.settings.toCollection().first())?.firmName ?? inv.name;
-  await coS.dbLinks.put({ ...inv, status: 'linked', dbTenantId: 'demo', linkedAt: n, name: inv.name || distFirm, updatedAt: n, dirty: 0 });
+  const gstin = (await dist.settings.toCollection().first())?.gstin || undefined;
+  await coS.dbLinks.put({ ...inv, status: 'linked', dbTenantId: 'demo', linkedAt: n, name: inv.name || distFirm, gstin, updatedAt: n, dirty: 0 });
   const link: Link = { id: inv.id, companyTenant: 'demo-company', dbTenant: 'demo', companyIdInDb: company.id, status: 'linked' };
-  await linkInitial(link, dexieStore(dist), dexieStore(coS), async (side, w) => applyTo(side === 'db' ? dist : coS, w), { today: today() });
+  await linkInitial(link, dexieStore(dist), dexieStore(coS), async (side, ws) => { for (const w of ws) await applyTo(side === 'db' ? dist : coS, w); }, { today: today() });
   return { company: firm };
+}
+
+/** run the first exchange again (after a pause, or to repair a cut-off one) */
+export async function resyncLink(linkId: string) {
+  if (await server()) return authed('/v1/link/resync', { linkId });
+  const link = (await demoLinks()).find(l => l.id === linkId);
+  if (!link) throw new Error('This link is not active.');
+  const coS = storeOf('company'), dist = storeOf('distributor');
+  await linkInitial(link, dexieStore(dist), dexieStore(coS), async (side, ws) => { for (const w of ws) await applyTo(side === 'db' ? dist : coS, w); }, { today: today() });
+  return { ok: true };
 }
 
 /** distributor leaves: nothing new crosses from now on */

@@ -23,6 +23,7 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 
 export const MAX_KMPH = 120;     // faster than this between two points = a GPS jump, not travel
 export const GAP_MIN = 45;       // no point for this long while the day is open = flagged (app closed / no signal)
 export const POOR_ACC = 150;     // a reading less accurate than this (metres) is not used
+export const MIN_MOVE = 50;      // metres: smaller moves are GPS drift, not travel
 
 /** km travelled along the recorded path: jumps and poor readings are left out and flagged; long gaps are flagged */
 export function measure(track: WorkDay['track']): { km: number; flags: string[] } {
@@ -35,6 +36,8 @@ export function measure(track: WorkDay['track']): { km: number; flags: string[] 
     const b = pts[i];
     const d = metres(a, b), hrs = (Date.parse(b.at) - Date.parse(a.at)) / 3600e3;
     if (d / 1000 / Math.max(hrs, 1 / 3600) > MAX_KMPH && d > 500) { flags.push(`GPS jump of ${r2(d / 1000)} km at ${hhmm(b.at)} — not counted`); continue; }
+    // drift: two readings can each be off by their own margin of error, so a move smaller than both together is standing still
+    if (d < Math.max(MIN_MOVE, (a.acc ?? 0) + (b.acc ?? 0))) continue;
     if (hrs * 60 > GAP_MIN) flags.push(`No location ${hhmm(a.at)}–${hhmm(b.at)} (app closed or no signal): straight line counted, ${r2(d / 1000)} km`);
     m += d; a = b;
   }
@@ -52,16 +55,23 @@ export async function startDay(pos: Pos | null, mode: WorkDay['mode'] = 'bike') 
   cs.put<WorkDay>('workDays', { staffId: me, date: today(), startAt: at, track: pos ? [{ at, lat: pos.lat, lng: pos.lng, acc: pos.acc }] : [], km: 0, flags: pos ? [] : ['Started without location'], outstation: false, mode }, 'start day');
   await cs.commit('Start day');
 }
-/** a location reading while the day is open: kept if it moved 50 m or 2 minutes passed (keeps the record small) */
+/** a location reading while the day is open: a new point only when the rep really moved (more than the GPS margin of
+ *  error); otherwise only "last seen" moves, every 5 minutes. A record, not an action: no history entry. */
 export async function addPoint(pos: Pos) {
   const d = await myDay();
   if (!d || d.endAt) return false;
+  if ((pos.acc ?? 0) > POOR_ACC) return false;
   const last = d.track[d.track.length - 1];
   const at = nowIso();
-  if (last && metres(last, pos) < 50 && Date.parse(at) - Date.parse(last.at) < 120000) return false;
+  const moved = !last || metres(last, pos) >= Math.max(MIN_MOVE, (pos.acc ?? 0) + (last.acc ?? 0));
+  if (!moved) {
+    if (d.lastAt && Date.parse(at) - Date.parse(d.lastAt) < 300000) return false;
+    const cs = new ChangeSet({ noAudit: true }); cs.put<WorkDay>('workDays', { ...d, lastAt: at }, 'location'); await cs.commit('Location');
+    return false;
+  }
   const track = [...d.track, { at, lat: pos.lat, lng: pos.lng, acc: pos.acc }];
   const { km } = measure(track);
-  const cs = new ChangeSet(); cs.put<WorkDay>('workDays', { ...d, track, km }, 'location'); await cs.commit('Location');
+  const cs = new ChangeSet({ noAudit: true }); cs.put<WorkDay>('workDays', { ...d, track, km, lastAt: at }, 'location'); await cs.commit('Location');
   return true;
 }
 export async function endDay(pos: Pos | null) {
@@ -75,8 +85,8 @@ export async function endDay(pos: Pos | null) {
   const visits = (await db.visits.where('date').equals(d.date).toArray()).filter(v => v.staffId === d.staffId);
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
   const towns = new Set(visits.map(v => (shops.get(v.shopId)?.area ?? '').toLowerCase()).filter(Boolean));
-  const hq = (me?.hq ?? '').toLowerCase();
-  const outstation = !!hq && [...towns].some(t => t !== hq);
+  const { sameTown } = await import('./travel');
+  const outstation = !!me?.hq && [...towns].some(t => !sameTown(t, me.hq!));
   if (!visits.length) flags.push('No shop visited');
   if (track.length < 2) flags.push('Too few location readings to measure km');
   const cs = new ChangeSet(); cs.put<WorkDay>('workDays', { ...d, track, km, flags: [...new Set([...d.flags.filter(f => f === 'Started without location'), ...flags])], outstation, endAt: at }, 'end day'); await cs.commit('End day');
@@ -203,11 +213,12 @@ export async function teamToday(team: Staff[], day = today()): Promise<RepRow[]>
   return team.filter(s => s.role === 'rep').map(s => {
     const w = wd.find(x => x.staffId === s.id);
     const v = vs.filter(x => x.staffId === s.id), o = os.filter(x => x.repId === s.id);
+    const m = w ? measure(w.track) : { km: 0, flags: [] }; // worked out from the readings, never the phone's own km figure
     return {
-      staff: s, started: w?.startAt, ended: w?.endAt, km: w?.km ?? 0, flags: w?.flags ?? [], visits: v.length,
+      staff: s, started: w?.startAt, ended: w?.endAt, km: m.km, flags: w ? [...new Set([...w.flags, ...m.flags])] : [], visits: v.length,
       productive: v.filter(x => x.outcome === 'order').length, far: v.filter(x => x.farFromShop).length,
       orders: o.length, orderValue: r2(o.reduce((a, x) => a + orderValue(x), 0)), monthSales: sales.get(s.id) ?? 0,
-      target: targets.find(t => t.staffId === s.id)?.value ?? 0, lastSeen: w?.track[w.track.length - 1]?.at,
+      target: targets.find(t => t.staffId === s.id)?.value ?? 0, lastSeen: w?.lastAt ?? w?.track[w.track.length - 1]?.at,
     };
   });
 }

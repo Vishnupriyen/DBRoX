@@ -19,14 +19,25 @@ export interface Link {
   companyIdInDb: string;    // the distributor's own "companies" record for this company
   status: 'invited' | 'linked' | 'left' | 'paused';
 }
-export interface Write { tbl: string; doc: Doc }
+export interface Write { tbl: string; doc: Doc; keepTime?: boolean } // keepTime: an update that must not look newer than the record's own edits
 export interface Ctx { today: string }
 
 // tables that only the relay may write on each side (the server refuses them from a phone)
 export const RELAY_ONLY = {
   company: ['secondary', 'secondaryReturns', 'dbStock', 'dbClaims', 'primaryOrders', 'grns', 'shops'],
-  distributor: ['claimDecisions'],
+  // the company's bills to the distributor are the company's; the distributor's receipt of one is its own "receipts" record
+  distributor: ['claimDecisions', 'inbound'],
 } as const;
+/** on a linked product these are the company's (price list); everything else (aliases, focus) is the distributor's */
+export const COMPANY_PRODUCT_FIELDS = ['name', 'code', 'hsn', 'gst', 'mrp', 'rate', 'purchaseRate', 'caseSize', 'active'] as const;
+/** a company scheme a distributor's bills can safely apply */
+export function sensibleScheme(d: Doc) {
+  const v = Number(d.value ?? 0), from = String(d.from ?? ''), to = String(d.to ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) return false;
+  if (d.type === 'pct') return v > 0 && v <= 50;
+  if (d.type === 'free') return Number(d.buyQty) >= 1 && Number(d.freeQty) >= 1 && Number(d.freeQty) <= Number(d.buyQty);
+  return false;
+}
 
 // what a company may see of a distributor's shop (its outlet list), nothing more
 const OUTLET_FIELDS = ['name', 'area', 'beat', 'lat', 'lng', 'type', 'approved', 'active', 'aliases'] as const;
@@ -57,24 +68,25 @@ export async function companyToDb(link: Link, tbl: string, doc: Doc, db: Store, 
   if (tbl === 'products') {
     const cur = await dbProductFor(link, db, doc.id, co);
     const fields = { name: doc.name, code: doc.code, hsn: doc.hsn, gst: doc.gst, mrp: doc.mrp, rate: doc.rate, purchaseRate: doc.purchaseRate, caseSize: doc.caseSize, active: doc.active !== false };
-    if (cur) out.push({ tbl: 'products', doc: { ...cur, ...fields, companyProductId: doc.id } });
+    if (cur) out.push({ tbl: 'products', doc: { ...cur, ...fields, companyProductId: doc.id }, keepTime: true });
     else out.push({ tbl: 'products', doc: { ...keep(doc), ...fields, companyId: link.companyIdInDb, companyProductId: doc.id, aliases: (doc.aliases as string[]) ?? [], focus: !!doc.focus } });
   }
   if (tbl === 'schemes') {
+    if (!sensibleScheme(doc)) return []; // 90% off or backwards dates would break the distributor's bills: never sent
     let productId: string | undefined;
     if (doc.productId) productId = (await dbProductFor(link, db, String(doc.productId), co))?.id;
     if (doc.productId && !productId) return []; // the product reaches the distributor first; the scheme follows on its next change
     out.push({ tbl: 'schemes', doc: { ...keep(doc), companyId: link.companyIdInDb, productId, name: doc.name, type: doc.type, value: doc.value, buyQty: doc.buyQty, freeQty: doc.freeQty, from: doc.from, to: doc.to, source: 'company', combine: doc.combine ?? 'add', budget: doc.budget } });
   }
   if (tbl === 'primaryInvoices' && doc.dbLinkId === link.id) {
-    const cur = await db.get('inbound', doc.id);
-    if (cur && cur.status !== 'pending' && !doc.cancelled) return []; // the distributor already received it: theirs now
+    // the bill is the company's: always its latest version. Whether and how it was received is the distributor's own
+    // "receipts" record, which the company never writes — so an edit or a cancel can never make it "not received".
     const lines: Record<string, unknown>[] = [];
     for (const l of (doc.lines as Doc[]) ?? []) {
       const p = await dbProductFor(link, db, String(l.productId), co);
       lines.push({ ...l, coProductId: l.productId, productId: p?.id ?? '' });
     }
-    out.push({ tbl: 'inbound', doc: { ...keep(doc), companyId: link.companyIdInDb, number: doc.number, irn: doc.irn, date: doc.date, lines, taxable: doc.taxable, tax: doc.tax, total: doc.total, primaryOrderId: doc.primaryOrderId, cancelled: doc.cancelled, status: cur?.status ?? 'pending' } });
+    out.push({ tbl: 'inbound', doc: { ...keep(doc), companyId: link.companyIdInDb, number: doc.number, irn: doc.irn, date: doc.date, lines, taxable: doc.taxable, tax: doc.tax, total: doc.total, primaryOrderId: doc.primaryOrderId, cancelled: doc.cancelled } });
   }
   if (tbl === 'orders' && doc.dbLinkId === link.id) {
     if (await db.get('orders', doc.id)) return []; // the distributor owns the order once it has arrived
@@ -156,17 +168,21 @@ export async function dbToCompany(link: Link, tbl: string, doc: Doc, db: Store, 
     for (const l of (doc.lines as Doc[]) ?? []) { const cp = await coProductOf(link, db, String(l.productId)); if (cp) lines.push({ productId: cp.id, name: cp.name, qty: l.qty }); }
     out.push({ tbl: 'primaryOrders', doc: { ...keep(doc), dbLinkId, date: doc.date, lines, status: doc.status, note: doc.note } });
   }
-  if (tbl === 'inbound') {
-    if (doc.companyId !== link.companyIdInDb || doc.status === 'pending') return [];
-    out.push({ tbl: 'grns', doc: { id: doc.id, createdAt: doc.createdAt, updatedAt: doc.updatedAt, dbLinkId, primaryInvoiceId: doc.id, number: doc.number, status: doc.status, receivedAt: doc.receivedAt, short: doc.short ?? [], damaged: doc.damaged ?? [] } });
+  if (tbl === 'receipts') {
+    if (doc.companyId !== link.companyIdInDb) return [];
+    const bill = await db.get('inbound', String(doc.inboundId ?? doc.id));
+    out.push({ tbl: 'grns', doc: { id: doc.id, createdAt: doc.createdAt, updatedAt: doc.updatedAt, dbLinkId, primaryInvoiceId: String(doc.inboundId ?? doc.id), number: bill?.number ?? doc.number, status: doc.status, receivedAt: doc.receivedAt, short: doc.short ?? [], damaged: doc.damaged ?? [] } });
   }
-  return out;
+  // two distributors never share a company-side record (a clash of ids would show one distributor's data as another's)
+  const safe: Write[] = [];
+  for (const w of out) { const cur = await _co.get(w.tbl, w.doc.id); if (cur && cur.dbLinkId && cur.dbLinkId !== dbLinkId) continue; safe.push(w); }
+  return safe;
 }
 
 // everything that crosses when a distributor first accepts (history: last 90 days of bills)
 export const LINK_TABLES = {
   fromCompany: ['products', 'schemes', 'primaryInvoices'],
-  fromDb: ['shops', 'products', 'invoices', 'creditNotes', 'claims', 'primaryOrders', 'inbound'],
+  fromDb: ['shops', 'products', 'invoices', 'creditNotes', 'claims', 'primaryOrders', 'receipts'],
 } as const;
 const HISTORY_TABLES = new Set(['invoices', 'creditNotes']);
 
@@ -175,16 +191,23 @@ const HISTORY_TABLES = new Set(['invoices', 'creditNotes']);
  *  product that was linked just before it. */
 export async function linkInitial(
   link: Link, db: Store & { all(tbl: string): Promise<Doc[]> }, co: Store & { all(tbl: string): Promise<Doc[]> },
-  apply: (side: 'db' | 'company', w: Write) => Promise<void>, ctx: Ctx,
+  apply: (side: 'db' | 'company', w: Write[]) => Promise<void>, ctx: Ctx,
 ) {
-  for (const tbl of LINK_TABLES.fromCompany)
-    for (const d of await co.all(tbl)) for (const w of await companyToDb(link, tbl, d, db, co, ctx)) await apply('db', w);
+  // table by table, written in one go per table (a scheme finds the product linked just before it); safe to run again
+  for (const tbl of LINK_TABLES.fromCompany) {
+    const out: Write[] = [];
+    for (const d of await co.all(tbl)) out.push(...await companyToDb(link, tbl, d, db, co, ctx));
+    if (out.length) await apply('db', out);
+  }
   const since = addDays(ctx.today, -90);
-  for (const tbl of LINK_TABLES.fromDb)
+  for (const tbl of LINK_TABLES.fromDb) {
+    const out: Write[] = [];
     for (const d of await db.all(tbl)) {
       if (HISTORY_TABLES.has(tbl) && String(d.date ?? '') < since) continue;
-      for (const w of await dbToCompany(link, tbl, d, db, co, ctx)) await apply('company', w);
+      out.push(...await dbToCompany(link, tbl, d, db, co, ctx));
     }
+    if (out.length) await apply('company', out);
+  }
 }
 
 function addDays(day: string, n: number) {

@@ -91,10 +91,14 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
     if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Your access was removed or expired. Please log in again.'); }
     if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);
-    const res: { cursor: number; changes: Change[]; accepted: string[]; more?: boolean; licence?: string } = await r.json();
+    const res: { cursor: number; changes: Change[]; accepted: string[]; rejected?: string[]; more?: boolean; licence?: string } = await r.json();
     await saveLicence(res.licence); // every sync renews the licence
     const accepted = new Set(res.accepted);
     await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
+      // refused by the server (not this role's to write, or already decided): marked clean, so the server's own copy
+      // replaces it on the next pull instead of this phone holding a version nobody else has
+      const refused = new Set(res.rejected ?? []);
+      for (const c of changes) if (refused.has(`${c.table}|${c.id}`)) { const cur = await db.table(c.table).get(c.id); if (cur && cur.updatedAt === c.updatedAt) await db.table(c.table).put({ ...cur, dirty: 0, updatedAt: '1970-01-01T00:00:00.000Z' }); }
       for (const c of changes) {
         if (!accepted.has(`${c.table}|${c.id}`)) continue;
         const cur = await db.table(c.table).get(c.id);

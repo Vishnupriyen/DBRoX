@@ -5,7 +5,8 @@
 // its own schemes and budgets, its goods-receipt notes) BEFORE a person approves. The decision goes back with a
 // credit-note number. GST: every line carries its bill reference; a credit note for a past year's bill must be issued
 // by 30 November of the next year to count for GST — the screen warns before that date (check with your tax advisor).
-import { ChangeSet, db, getSettings, session, thisMonth, today } from './db';
+import { ChangeSet, db, session, thisMonth, today } from './db';
+import { creditNoteNumbers } from './billing';
 import type { Claim, ClaimDecision, ClaimEntry, DbClaim, Scheme, Secondary } from './types';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -61,11 +62,28 @@ async function schemeUsed() {
   return used;
 }
 
+/** what earlier APPROVED claims of this distributor already paid, per bill line and per goods-receipt line */
+async function alreadyPaid(dbLinkId: string, except: string) {
+  const finals = new Map((await db.claimDecisions.toArray()).filter(d => d.status === 'approved' && d.claimId !== except).map(d => [d.claimId, new Set((d.lines ?? []).map(x => x.lineId))]));
+  const scheme = new Map<string, number>(), short = new Map<string, number>();
+  for (const c of await db.dbClaims.toArray()) {
+    if (c.dbLinkId !== dbLinkId || c.id === except) continue;
+    const ok = finals.get(c.id); if (!ok) continue;
+    for (const l of c.lines) if (ok.has(l.id)) {
+      if (l.kind === 'scheme') scheme.set(`${l.invoiceId}|${l.productId}`, (scheme.get(`${l.invoiceId}|${l.productId}`) ?? 0) + l.amount);
+      if (l.kind === 'shortage') short.set(`${l.refNumber}|${l.productId}`, (short.get(`${l.refNumber}|${l.productId}`) ?? 0) + l.qty);
+    }
+  }
+  return { scheme, short };
+}
+
 export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
   const sec = new Map((await db.secondary.toArray()).filter(s => s.dbLinkId === claim.dbLinkId).map(s => [s.id, s]));
   const schemes = await db.schemes.toArray();
+  const ptr = new Map((await db.products.toArray()).map(p => [p.id, p.rate]));
   const grns = (await db.grns.toArray()).filter(g => g.dbLinkId === claim.dbLinkId);
   const prim = new Map((await db.primaryInvoices.toArray()).map(p => [p.number, p]));
+  const paid = await alreadyPaid(claim.dbLinkId, claim.id); // grows as this claim's own lines are checked: a line claimed twice is caught
   const lines: LineCheck[] = [];
   for (const l of claim.lines) {
     const base = { id: l.id, kind: l.kind, amount: l.amount, productId: l.productId };
@@ -77,8 +95,12 @@ export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
       if (!bl) { lines.push({ ...base, ok: false, why: `Bill ${bill.number} has no such product` }); continue; }
       const live = schemes.filter(s => (!s.productId || s.productId === l.productId) && s.from <= bill.date && s.to >= bill.date);
       if (!live.length) { lines.push({ ...base, ok: false, why: `No scheme of ours on this product on ${bill.date}` }); continue; }
-      const best = live.map(s => ({ s, v: schemeValue(s, bl) })).sort((a, b) => b.v - a.v)[0];
-      if (l.amount > best.v + 1) { lines.push({ ...base, ok: false, why: `Claimed ₹${l.amount}; "${best.s.name}" gives ₹${best.v} on this bill`, expected: best.v, schemeId: best.s.id }); continue; }
+      // valued at the lower of the bill's rate and our own price to shop (the distributor sets the bill rate)
+      const at = { qty: bl.qty, rate: Math.min(bl.rate, ptr.get(bl.productId) ?? bl.rate) };
+      const best = live.map(s => ({ s, v: schemeValue(s, at) })).sort((a, b) => b.v - a.v)[0];
+      const key = `${l.invoiceId}|${l.productId}`, before = paid.scheme.get(key) ?? 0;
+      if (before + l.amount > best.v + 1) { lines.push({ ...base, ok: false, why: before ? `This bill line is already claimed (₹${r2(before)} of ₹${best.v})` : `Claimed ₹${l.amount}; "${best.s.name}" gives ₹${best.v} on this bill`, expected: r2(Math.max(0, best.v - before)), schemeId: best.s.id }); continue; }
+      paid.scheme.set(key, before + l.amount);
       lines.push({ ...base, ok: true, why: `Matches "${best.s.name}" on bill ${bill.number}`, schemeId: best.s.id });
       continue;
     }
@@ -88,13 +110,16 @@ export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
       const short = g ? [...g.short, ...g.damaged].filter(x => x.productId === l.productId).reduce((a, x) => a + x.qty, 0) : 0;
       const line = inv?.lines.find(x => x.productId === l.productId);
       if (!inv || !g) { lines.push({ ...base, ok: false, why: 'No goods-receipt record for this bill' }); continue; }
-      if (short < l.qty) { lines.push({ ...base, ok: false, why: `Goods receipt shows ${short} short, claim says ${l.qty}` }); continue; }
+      const key = `${l.refNumber}|${l.productId}`, before = paid.short.get(key) ?? 0;
+      if (before + l.qty > short) { lines.push({ ...base, ok: false, why: before ? `Already claimed ${before} of the ${short} short on this receipt` : `Goods receipt shows ${short} short, claim says ${l.qty}` }); continue; }
+      paid.short.set(key, before + l.qty);
       const value = line ? r2(l.qty * line.rate * (1 + line.gst / 100)) : l.amount;
       lines.push({ ...base, ok: l.amount <= value + 1, why: l.amount <= value + 1 ? `Matches goods receipt of ${inv.number}` : `Claimed ₹${l.amount}; ${l.qty} pcs at our rate is ₹${value}`, expected: value });
       continue;
     }
     if (l.kind === 'damage' || l.kind === 'expiry' || l.kind === 'transit') {
-      lines.push({ ...base, ok: !!l.photo, why: l.photo ? 'Photo attached' : 'No photo of the stock' });
+      // a photo shows the goods, not the amount: a person always looks at these (never ticked for approval by itself)
+      lines.push({ ...base, ok: false, why: l.photo ? `Photo attached — check ${l.qty} pcs for ₹${l.amount}` : 'No photo of the stock' });
       continue;
     }
     lines.push({ ...base, ok: false, why: 'Check with the papers (rate letter / salary sheet)' });
@@ -118,20 +143,17 @@ export async function decideClaim(claim: DbClaim, status: 'recommended' | 'appro
   if (!me) throw new Error('Log in again.');
   if (status !== 'recommended' && me.role !== 'cadmin') throw new Error('Only head office approves or rejects a claim. You can recommend it.');
   if (status === 'rejected' && !note.trim()) throw new Error('Say why it is rejected — the distributor sees this.');
-  const prev = (await db.claimDecisions.toArray()).filter(d => d.claimId === claim.id);
-  if (prev.some(d => d.status === 'approved' || d.status === 'rejected')) throw new Error('This claim is already decided.');
+  // one final record per claim (the server refuses a second from any phone)
+  const finalId = `final:${claim.id}`;
+  if (await db.claimDecisions.get(finalId)) throw new Error('This claim is already decided.');
   const chk = await checkClaim(claim);
   const picked = chk.lines.filter(l => approvedLineIds.includes(l.id));
   const amount = status === 'rejected' ? 0 : r2(picked.reduce((a, l) => a + l.amount, 0));
   if (status === 'approved' && !(amount > 0)) throw new Error('Pick at least one line to approve, or reject the claim.');
-  let creditNoteNo: string | undefined;
-  if (status === 'approved') {
-    const s = await getSettings();
-    const n = (await db.claimDecisions.toArray()).filter(d => d.creditNoteNo).length + 1;
-    creditNoteNo = `${(s.firmName.match(/[A-Za-z]/g) ?? ['C', 'O']).slice(0, 3).join('').toUpperCase()}-CN/${today().slice(2, 4)}/${String(n).padStart(4, '0')}`;
-  }
   const cs = new ChangeSet();
-  cs.put<ClaimDecision>('claimDecisions', { dbLinkId: claim.dbLinkId, claimId: claim.id, status, amount, creditNoteNo, note: note.trim(), decidedBy: me.name, lines: picked.map(l => ({ lineId: l.id, amount: l.amount, schemeId: l.schemeId })) } as ClaimDecision, `claim ${status}`);
+  // credit-note numbers come from the server (one series, never shared by two phones); the demo keeps its own counter
+  const creditNoteNo = status === 'approved' ? (await creditNoteNumbers(cs, 1))[0] : undefined;
+  cs.put<ClaimDecision>('claimDecisions', { id: status === 'recommended' ? `rec:${claim.id}:${me.id}` : finalId, dbLinkId: claim.dbLinkId, claimId: claim.id, status, amount, creditNoteNo, note: note.trim(), decidedBy: me.name, lines: picked.map(l => ({ lineId: l.id, amount: l.amount, schemeId: l.schemeId })) } as ClaimDecision, `claim ${status}`);
   await cs.commit(`Claim ${status}`);
   return { amount, creditNoteNo };
 }

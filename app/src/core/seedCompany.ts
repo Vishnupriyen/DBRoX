@@ -88,7 +88,7 @@ export async function seedCompanyDemo() {
     for (const i of ins) {
       const cs = new ChangeSet();
       for (const l of i.lines) if (l.productId) cs.put('batches', { productId: l.productId, batch: l.batch ?? i.number, expiry: l.expiry ?? daysFrom(180), mrp: l.mrp ?? 0, qty: l.qty + (l.freeQty ?? 0), godown: 'Main' }, 'stock in');
-      cs.put('inbound', { ...i, status: 'received', receivedAt: `${i.date}T11:00:00.000Z`, receivedBy: 'demo', short: [], damaged: [] }, 'received');
+      cs.put('receipts', { id: i.id, inboundId: i.id, companyId: i.companyId, status: 'received', receivedAt: `${i.date}T11:00:00.000Z`, receivedBy: 'demo', purchaseId: '', short: [], damaged: [] }, 'received');
       await cs.commit('Demo company bill received');
     }
     const kav = new Map((await dist.products.toArray()).filter(x => x.companyProductId).map(x => [x.companyProductId!, x]));

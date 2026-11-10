@@ -27,6 +27,8 @@ export async function setLinkStatus(id: string, status: 'paused' | 'linked') {
   const l = await db.dbLinks.get(id);
   if (!l || l.status === 'left' || l.status === 'invited') throw new Error('Only a linked distributor can be paused or resumed.');
   const cs = new ChangeSet(); cs.put('dbLinks', { ...l, status }, status === 'paused' ? 'pause distributor' : 'resume distributor'); await cs.commit(status);
+  // on resume, what changed during the pause is caught up (the server does this itself; the demo does it here)
+  if (status === 'linked') { const { resyncLink } = await import('./link'); const { server } = await import('./sync'); if (!(await server())) await resyncLink(id); }
 }
 export async function setNorm(id: string, normDays: number) {
   if (!(normDays > 0 && normDays <= 120)) throw new Error('Stock norm must be 1–120 days.');
@@ -106,8 +108,10 @@ export async function draftPrimary(rows: PrimaryRow[]): Promise<PrimaryDraft[]> 
     const problems: string[] = [];
     if (existing.has(number)) problems.push(`Invoice ${number} is already sent.`);
     const first = rs[0];
-    const link = links.find(l => norm(l.name) === norm(first.distributor)) ?? links.find(l => norm(first.distributor).includes(norm(l.name)) || norm(l.name).includes(norm(first.distributor)));
-    if (!link) problems.push(`"${first.distributor}" is not a linked distributor.`);
+    // GSTIN first, else the exact name — never a "close" name: a bill sent to the wrong firm shows it another's rates
+    const link = (first.gstin ? links.find(l => l.gstin && l.gstin.toUpperCase() === first.gstin) : undefined)
+      ?? (!first.gstin ? links.find(l => norm(l.name) === norm(first.distributor)) : undefined);
+    if (!link) problems.push(first.gstin ? `GSTIN ${first.gstin} ("${first.distributor}") is not a linked distributor.` : `"${first.distributor}" is not a linked distributor (the name must match exactly, or add a GSTIN column).`);
     const lines: PrimaryLine[] = [];
     for (const r of rs) {
       const p = products.find(x => r.code && x.code && norm(x.code) === norm(r.code)) ?? bestProduct(products, r.item).product;

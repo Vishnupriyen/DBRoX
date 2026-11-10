@@ -88,7 +88,8 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'verify', icon: ClipboardCheck, en: 'Picked — to verify', count: c.toApprove, tone: 'warn' },
           { page: 'billed', icon: Receipt, en: 'Billed' },
         ];
-        const inbound = (await db.inbound.where('status').equals('pending').count());
+        const gotIds = new Set((await db.receipts.toArray()).map(r => r.inboundId));
+        const inbound = (await db.inbound.toArray()).filter(i => !i.cancelled && !gotIds.has(i.id)).length;
         const linked = (await db.companies.toArray()).some(c => c.link?.status === 'linked');
         sub.inventory = [
           ...(linked || inbound ? [{ page: 'inbound' as Page, icon: Truck, en: 'Company bills', count: inbound || undefined, tone: 'bad' as const }, { page: 'reorder' as Page, icon: Send, en: 'Order to company' }] : []),
@@ -147,7 +148,8 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'newshop', icon: UserPlus, en: 'New shop' },
         ];
       } else if (role === 'godown') {
-        const inbound = (await db.inbound.where('status').equals('pending').count());
+        const gotIds = new Set((await db.receipts.toArray()).map(r => r.inboundId));
+        const inbound = (await db.inbound.toArray()).filter(i => !i.cancelled && !gotIds.has(i.id)).length;
         t = [
           { page: 'pick', icon: PackageOpen, en: 'Pick orders', count: c.toPick, tone: 'bad' },
           ...(inbound ? [{ page: 'inbound' as Page, icon: Truck, en: 'Company bills', count: inbound, tone: 'bad' as const }] : []),

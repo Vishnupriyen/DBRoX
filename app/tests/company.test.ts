@@ -44,7 +44,8 @@ describe('company demo', () => {
       const s = (await co.dbStock.toArray()).find(x => x.productId === p.companyProductId)!;
       expect(s.qty + s.expired).toBe(lots);
     }
-    expect((await dist.inbound.toArray()).filter(i => i.status === 'pending').length).toBe(1);
+    const got = new Set((await dist.receipts.toArray()).map(r => r.inboundId));
+    expect((await dist.inbound.toArray()).filter(i => !got.has(i.id)).length).toBe(1); // the latest waits to be received
     expect((await co.grns.count())).toBe(3);
   });
 
@@ -86,7 +87,7 @@ describe('company demo', () => {
       await expect(sendPrimary(await draftPrimary(parsed.slice(0, 2)))).rejects.toThrow(/fix the problems/);
     });
     const arrived = (await dist.inbound.toArray()).find(i => i.number === '90001')!;
-    expect(arrived.status).toBe('pending');
+    expect(await dist.receipts.get(arrived.id)).toBeUndefined(); // waiting to be received
     expect(arrived.lines.every(l => l.productId)).toBe(true);
   });
 

@@ -73,7 +73,7 @@ describe('distributor claims', () => {
     expect((await dist.claimDecisions.toArray()).length).toBe(0); // a recommendation stays inside the company
     const half = okIds.slice(0, Math.ceil(okIds.length / 2));
     const r = await asCo(HO, async () => (await import('../src/core/claims')).decideClaim(claim, 'approved', half, ''));
-    expect(r.creditNoteNo).toMatch(/-CN\//);
+    expect(r.creditNoteNo).toMatch(/^CN\/\d{2}-\d{2}\/\d{5}$/); // the same credit-note series as everywhere (from the server when there is one)
     const atDb = (await dist.claimDecisions.toArray())[0];
     expect(atDb).toMatchObject({ claimId: claim.id, status: 'approved', creditNoteNo: r.creditNoteNo });
     expect(atDb.amount).toBeCloseTo(chk.lines.filter(l => half.includes(l.id)).reduce((a, l) => a + l.amount, 0), 2);
@@ -83,9 +83,15 @@ describe('distributor claims', () => {
   it('a scheme budget caps what can be approved', async () => {
     const { co } = await sides();
     await asCo(HO, async () => { const { db, ChangeSet } = await import('../src/core/db'); const cs = new ChangeSet(); for (const s of await db.schemes.toArray()) cs.put('schemes', { ...s, budget: 1 }); await cs.commit('tiny budgets'); });
-    const claim = (await co.dbClaims.toArray()).find(c => c.lines.length === 2)!;
-    const chk = await asCo(HO, async () => (await import('../src/core/claims')).checkClaim({ ...claim, lines: claim.lines.map(l => l.kind === 'scheme' ? { ...l, amount: 1.5 } : l) }));
-    expect(chk.lines.find(l => l.kind === 'scheme')!.why).toMatch(/budget/);
+    // a bill line nobody has claimed yet, under a live scheme
+    const schemes = await co.schemes.toArray();
+    const paidLines = new Set((await co.claimDecisions.toArray()).flatMap(d => (d.lines ?? []).map(l => l.lineId)));
+    const paidBills = new Set((await co.dbClaims.toArray()).flatMap(c => c.lines.filter(l => paidLines.has(l.id)).map(l => `${l.invoiceId}|${l.productId}`)));
+    const sec = (await co.secondary.toArray()).find(s => s.lines.some(l => !paidBills.has(`${s.id}|${l.productId}`) && schemes.some(x => x.productId === l.productId && x.from <= s.date && x.to >= s.date)))!;
+    const l = sec.lines.find(x => !paidBills.has(`${sec.id}|${x.productId}`) && schemes.some(y => y.productId === x.productId))!;
+    const claim = { id: 'cb', tenantId: '', createdAt: '', updatedAt: '', dbLinkId: sec.dbLinkId, month: sec.date.slice(0, 7), amount: 1.5, status: 'submitted', lines: [{ id: 'q', kind: 'scheme', productId: l.productId, qty: l.qty, amount: 1.5, invoiceId: sec.id }] };
+    const chk = await asCo(HO, async () => (await import('../src/core/claims')).checkClaim(claim as never));
+    expect(chk.lines[0].why).toMatch(/budget/);
   });
 });
 

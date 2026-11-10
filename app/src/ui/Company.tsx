@@ -207,6 +207,7 @@ function DistributorDetail({ id, role, onBack }: { id: string; role: Role; onBac
           <button className="btn" onClick={async () => { const v = await askText('Stock norm (days)', String(link.normDays ?? 15), 'number'); if (v && await act(() => setNorm(id, Number(v)))) void load(); }}>{'Change stock norm'}</button>
           {link.status === 'linked' && <button className="btn" onClick={async () => { if (await confirmBox('Pause this distributor?', 'Nothing new comes in until you resume. What you already have stays.', 'Pause') && await act(() => setLinkStatus(id, 'paused'))) void load(); }}><Pause size={16} /> {'Pause'}</button>}
           {link.status === 'paused' && <button className="btn" onClick={async () => { if (await act(() => setLinkStatus(id, 'linked'))) void load(); }}><Play size={16} /> {'Resume'}</button>}
+          {link.status === 'linked' && <button className="btn" onClick={async () => { if (await act(async () => (await import('../core/link')).resyncLink(id))) { await notify('Re-synced', 'Everything is sent again, both ways.'); void load(); } }}>{'Re-sync'}</button>}
         </div>
       )}
     </div>

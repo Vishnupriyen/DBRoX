@@ -98,10 +98,13 @@ describe('company → distributor', () => {
     const { db, co, link } = world();
     expect(await companyToDb(link, 'primaryInvoices', { id: 'pi1', dbLinkId: 'L2', lines: [] }, db, co, ctx)).toEqual([]);
   });
-  it('a received company bill is never overwritten by a later company edit', async () => {
+  it('a company bill never carries the distributor\'s receipt: the relay never writes a receipt or a status', async () => {
     const { db, co, link } = world();
-    db.put('inbound', { id: 'pi1', status: 'received' });
-    expect(await companyToDb(link, 'primaryInvoices', { id: 'pi1', dbLinkId: 'L1', lines: [{ productId: 'P1', qty: 99 }] }, db, co, ctx)).toEqual([]);
+    db.put('receipts', { id: 'pi1', inboundId: 'pi1', status: 'received' });
+    const out = await companyToDb(link, 'primaryInvoices', { id: 'pi1', dbLinkId: 'L1', number: 'X/1', lines: [{ productId: 'P1', qty: 99 }], cancelled: true }, db, co, ctx);
+    expect(out.map(w => w.tbl)).toEqual(['inbound']);
+    expect(out[0].doc.status).toBeUndefined();
+    expect(out[0].doc.cancelled).toBe(true);
   });
   it('a field order arrives as a new order once, priced at the distributor\'s rate, and is never overwritten', async () => {
     const { db, co, link } = world();

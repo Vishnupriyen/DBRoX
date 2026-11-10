@@ -6,7 +6,7 @@ import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { scanWithAI, type ScanKind } from './scan.js';
-import { acceptInvite, findInvite, leaveLink, relayChanges, relayOnly, tenantKind } from './link.js';
+import { acceptInvite, companyRule, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
 import { readFileSync } from 'node:fs';
@@ -102,9 +102,10 @@ export async function buildApp(pool: pg.Pool) {
   // Numbers are issued here, never on the phone: one running series per distributor, no duplicates across phones.
   app.post('/v1/number', async req => {
     const c = await auth(req);
-    if (c.r !== 'owner' && c.r !== 'office') throw err(403, 'Only the owner or office can make bills');
     const b = req.body as { kind?: 'bill' | 'cn' | 'receipt'; count?: number };
-    const kind = b.kind ?? 'bill'; const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
+    const kind = b.kind ?? 'bill';
+    // company head office: credit-note numbers for claim settlements only
+    if (!(c.r === 'owner' || c.r === 'office' || (c.r === 'cadmin' && kind === 'cn'))) throw err(403, 'Only the owner or office can make bills'); const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
     const st = await stateFor(c.t);
     if (st?.status === 'locked' && kind === 'bill') throw err(402, LOCKED_MSG);
     if (st && kind === 'bill' && !st.mods.has('bill')) throw err(403, 'Billing is not in your plan.');
@@ -143,7 +144,16 @@ export async function buildApp(pool: pg.Pool) {
         if (blockNew.has(ch.table) && !existing.has(`${ch.table}|${ch.id}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         if (relayOnly(kind, ch.table)) { rejected.push(`${ch.table}|${ch.id}`); continue; } // only the relay writes these (privacy wall)
         if (!canWrite.has(ch.table) || typeof ch.id !== 'string' || !ch.id || !ch.updatedAt || isNaN(Date.parse(ch.updatedAt))) { rejected.push(`${ch.table}|${ch.id}`); continue; }
-        const data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
+        let data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
+        // the server's own checks on company records and linked products (approvals and prices are never the phone's word)
+        if (kind === 'company' && ['claimDecisions', 'travelClaims', 'expenses', 'leaves', 'workDays'].includes(ch.table)) {
+          const ex = (await client.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [c.t, ch.table, ch.id])).rows[0]?.data;
+          if (companyRule(c.r, c.u, ch.table, { ...data, updatedAt: ch.updatedAt } as never, ex, ch.updatedAt)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
+        }
+        if (kind === 'distributor' && ch.table === 'products') {
+          const ex = (await client.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [c.t, ch.table, ch.id])).rows[0]?.data;
+          data = keepCompanyFields(data as never, ex);
+        }
         if (ch.table === 'staff') {
           if (c.r !== 'owner' && c.r !== 'cadmin') { rejected.push(`${ch.table}|${ch.id}`); continue; }
           await upsertStaffLogin(client, c.t, data, kind);
@@ -186,18 +196,41 @@ export async function buildApp(pool: pg.Pool) {
 
   // ---------------------------------------------------------------- company links
   // a distributor types the company's invite code: first a preview (who, and exactly what they will see), then accept
+  // invite codes can't be guessed: 10 wrong codes → 30 minutes' wait (per distributor)
+  const codeFails = new Map<string, { n: number; until: number }>();
+  const codeGuard = (t: string) => { const f = codeFails.get(t); if (f && f.until > Date.now()) throw err(429, 'Too many wrong codes. Try again in 30 minutes.'); };
+  const codeWrong = (t: string) => { const f = codeFails.get(t) ?? { n: 0, until: 0 }; f.n++; if (f.n >= 10) { f.until = Date.now() + 30 * 60000; f.n = 0; } codeFails.set(t, f); };
   app.post('/v1/link/preview', async req => {
     const c = await auth(req);
     if (c.r !== 'owner' || (await tenantKind(pool, c.t)) !== 'distributor') throw err(403, 'Only the distributor owner can link a company');
+    codeGuard(c.t);
     const inv = await findInvite(pool, String((req.body as { code?: string }).code ?? ''));
-    if (!inv) throw err(404, 'This code is not valid or was already used. Ask the company for a new one.');
-    return { company: inv.companyName };
+    if (!inv) { codeWrong(c.t); throw err(404, 'This code is not valid or was already used. Ask the company for a new one.'); }
+    return { company: inv.companyName, companyTenant: inv.companyTenant };
+  });
+  app.post('/v1/link/resync', async req => {
+    const c = await auth(req);
+    const linkId = String((req.body as { linkId?: string }).linkId ?? '');
+    const r = (await pool.query('SELECT company_tenant, db_tenant FROM links WHERE id=$1', [linkId])).rows[0];
+    if (!r || !((r.db_tenant === c.t && c.r === 'owner') || (r.company_tenant === c.t && c.r === 'cadmin'))) throw err(403, 'Not your link');
+    await resyncLink(pool, linkId);
+    return { ok: true };
+  });
+  // a company bill is received on one phone only (the first to ask, online)
+  app.post('/v1/receipt/claim', async req => {
+    const c = await auth(req);
+    if (!['owner', 'office', 'godown'].includes(c.r)) throw err(403, 'Not allowed');
+    const id = String((req.body as { inboundId?: string }).inboundId ?? '');
+    const r = await pool.query('INSERT INTO receipt_claims(tenant_id, inbound_id, user_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [c.t, id, c.u]);
+    if (!r.rowCount) throw err(409, 'This bill is already being received on another phone.');
+    return { ok: true };
   });
   app.post('/v1/link/accept', async req => {
     const c = await auth(req);
     if (c.r !== 'owner' || (await tenantKind(pool, c.t)) !== 'distributor') throw err(403, 'Only the distributor owner can link a company');
     const b = req.body as { code?: string; companyIdInDb?: string };
-    const r = await acceptInvite(pool, c.t, String(b.code ?? ''), b.companyIdInDb || undefined);
+    codeGuard(c.t);
+    const r = await acceptInvite(pool, c.t, String(b.code ?? ''), b.companyIdInDb || undefined).catch(e => { if ((e as { statusCode?: number }).statusCode === 404) codeWrong(c.t); throw e; });
     await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, `linked company ${r.company}`]);
     return r;
   });

@@ -114,7 +114,7 @@ describe('company link', () => {
     expect(dc.lines).toEqual([expect.objectContaining({ id: 'e1', productId: 'P1', refNumber: 'KCP/1', irn: 'IRN1' })]);
     await sync(co.token, [ch('claimDecisions', { id: 'k1', dbLinkId: 'L1', claimId: 'c1', status: 'recommended', amount: 199.5, decidedBy: 'SO' })]);
     expect((await docsOf(dist.tenantId)).some(d => d.tbl === 'claimDecisions')).toBe(false);
-    await sync(co.token, [ch('claimDecisions', { id: 'k2', dbLinkId: 'L1', claimId: 'c1', status: 'approved', amount: 199.5, creditNoteNo: 'KAV-CN/26/0001', decidedBy: 'HO' })]);
+    await sync(co.token, [ch('claimDecisions', { id: 'final:c1', dbLinkId: 'L1', claimId: 'c1', status: 'approved', amount: 199.5, creditNoteNo: 'KAV-CN/26/0001', decidedBy: 'HO' })]);
     expect((await docsOf(dist.tenantId)).find(d => d.tbl === 'claimDecisions')?.data).toMatchObject({ claimId: 'c1', status: 'approved', creditNoteNo: 'KAV-CN/26/0001' });
   });
 

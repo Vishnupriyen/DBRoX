@@ -4,11 +4,12 @@ import { Check, X, AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { db, session, thisMonth, today } from '../core/db';
 import { inr as inrExact } from '../core/i18n';
 import { CLAIM_KINDS, checkClaim, decideClaim, type ClaimCheck } from '../core/claims';
-import { addExpense, decideTravel, monthClaim, submitMonth, type MonthClaim } from '../core/travel';
+import { addExpense, decideTravel, monthClaim, submitMonth, travelToDecide, type MonthClaim } from '../core/travel';
 import { myTeam } from '../core/company';
 import { PhotoButton } from './PhotoButton';
 import { askText, confirmBox, notify } from './dialog';
 import type { ClaimDecision, DbClaim, DbLink, Expense, Product, Role, TravelClaim } from '../core/types';
+void myTeam;
 
 const inr = (n: number) => inrExact(Math.round(n));
 const act = async (fn: () => Promise<unknown>) => { try { await fn(); return true; } catch (e) { await notify('Not saved', (e as Error).message); return false; } };
@@ -131,22 +132,20 @@ export function MyExpenses() {
 
 // ---------------------------------------------------------------- manager: travel claims of the team
 export function TravelApprovals() {
-  const [rows, setRows] = useState<(TravelClaim & { who: string })[] | null>(null);
-  const load = async () => {
-    const team = new Map((await myTeam(session().userId)).filter(s => s.id !== session().userId).map(s => [s.id, s.name]));
-    setRows((await db.travelClaims.where('status').equals('waiting').toArray()).filter(c => team.has(c.staffId)).map(c => ({ ...c, who: team.get(c.staffId)! })));
-  };
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof travelToDecide>> | null>(null);
+  const load = async () => setRows(await travelToDecide());
   useEffect(() => { void load(); }, []);
   if (!rows) return null;
   return (
     <>
-      {rows.map(c => (
+      {rows.map(({ claim: c, who, actual: a, mismatch }) => (
         <div key={c.id} className="card">
-          <div className="row" style={{ justifyContent: 'space-between' }}><b>{`${c.who} · ${c.month}`}</b><span className="num">{inr(c.total)}</span></div>
-          <div className="muted">{`${c.km} km ${inr(c.kmAmount)} · DA ${c.daDays} days ${inr(c.daAmount)} · expenses ${inr(c.expenses)}`}</div>
-          {c.flags.length ? c.flags.map(f => <div key={f} className="s" style={{ color: 'var(--warn)' }}>{f}</div>) : <div className="s">{'Nothing odd in the record.'}</div>}
+          <div className="row" style={{ justifyContent: 'space-between' }}><b>{`${who.name} · ${c.month}`}</b><span className="num">{inr(a.total)}</span></div>
+          <div className="muted">{`${a.km} km ${inr(a.kmAmount)} · DA ${a.daDays} days ${inr(a.daAmount)} · expenses ${inr(a.expenses)}`}</div>
+          {mismatch && <div className="s" style={{ color: 'var(--bad)' }}>{`The phone sent ${inr(c.total)}; the record says ${inr(a.total)}. Approving pays what the record says.`}</div>}
+          {a.flags.length ? a.flags.map(f => <div key={f} className="s" style={{ color: 'var(--warn)' }}>{f}</div>) : <div className="s">{'Nothing odd in the record.'}</div>}
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn small primary" onClick={async () => { if (await act(() => decideTravel(c.id, true, ''))) void load(); }}>{'Approve'}</button>
+            <button className="btn small primary" onClick={async () => { if (await act(() => decideTravel(c.id, true, ''))) void load(); }}>{`Approve ${inr(a.total)}`}</button>
             <button className="btn small ghost" onClick={async () => { const why = await askText('Why? (the rep sees this)'); if (why !== null && await act(() => decideTravel(c.id, false, why))) void load(); }}>{'Reject'}</button>
           </div>
         </div>

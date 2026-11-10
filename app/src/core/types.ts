@@ -425,12 +425,16 @@ export interface PrimaryInvoice extends Base {
   dbLinkId: string; number: string; irn?: string; date: string; lines: PrimaryLine[]; taxable: number; tax: number; total: number;
   primaryOrderId?: string; source: 'typed' | 'excel'; cancelled?: boolean;
 }
+/** a linked company's bill to this distributor: the COMPANY's record (only the relay writes it) */
 export interface Inbound extends Base {
   companyId: string; number: string; irn?: string; date: string; lines: (PrimaryLine & { coProductId: string })[]; taxable: number; tax: number; total: number;
   primaryOrderId?: string; cancelled?: boolean;
-  status: 'pending' | 'received' | 'disputed';
-  receivedAt?: string; receivedBy?: string; purchaseId?: string;
-  short?: { productId: string; qty: number }[]; damaged?: { productId: string; qty: number }[];
+}
+/** the distributor's own record of receiving a company bill (id = the bill's id); the company only ever reads it */
+export interface Receipt extends Base {
+  inboundId: string; companyId: string; status: 'received' | 'disputed';
+  receivedAt: string; receivedBy: string; purchaseId: string;
+  short: { productId: string; qty: number }[]; damaged: { productId: string; qty: number }[]; // company product ids
 }
 export interface Grn extends Base { dbLinkId: string; primaryInvoiceId: string; number: string; status: string; receivedAt?: string; short: { productId: string; qty: number }[]; damaged: { productId: string; qty: number }[] }
 export interface PrimaryOrder extends Base { companyId?: string; dbLinkId?: string; date: string; lines: { productId: string; name?: string; qty: number }[]; status: 'sent' | 'invoiced' | 'cancelled'; note?: string }
@@ -453,10 +457,11 @@ export interface WorkDay extends Base {
   staffId: string; date: string; startAt: string; endAt?: string;
   track: { at: string; lat: number; lng: number; acc?: number }[];
   km: number; flags: string[]; outstation: boolean; mode: 'bike' | 'car' | 'bus';
+  lastAt?: string; // the latest location reading, even when it was not far enough to be a new point
 }
 
 export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts';

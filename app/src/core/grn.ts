@@ -6,7 +6,8 @@
 // recorded as billed (GST input), and each difference becomes a claim line that points to the company bill and its IRN.
 import { ChangeSet, daysFrom, db, getSettings, nowIso, session, today } from './db';
 import { bestProduct, norm, parseItemLines, toPieces } from './match';
-import type { ClaimEntry, Inbound, PrimaryOrder, Product, Purchase } from './types';
+import type { ClaimEntry, Inbound, PrimaryOrder, Product, Purchase, Receipt } from './types';
+import { server } from './sync';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -54,11 +55,14 @@ export async function readDifferences(text: string, inb: Inbound): Promise<{ sho
   return { short, damaged, unclear };
 }
 
+/** this phone's record of receiving a company bill (none = still to receive) */
+export async function receiptOf(inboundId: string) { return db.receipts.get(inboundId); }
+
 /** receive the company's bill: stock in (what came, in good condition), purchase as billed, differences as claim lines */
 export async function receiveInbound(id: string, short: Diff[], damaged: Diff[]) {
   const inb = await db.inbound.get(id);
   if (!inb) throw new Error('Bill not found.');
-  if (inb.status !== 'pending') throw new Error('This bill is already received.');
+  if (await db.receipts.get(id)) throw new Error('This bill is already received.');
   if (inb.cancelled) throw new Error('The company cancelled this bill.');
   if (inb.lines.some(l => !l.productId)) throw new Error('A product on this bill is not in your list yet. Sync once and open the bill again.');
   const sum = (list: Diff[], pid: string) => list.filter(d => d.productId === pid).reduce((a, d) => a + d.qty, 0);
@@ -68,6 +72,13 @@ export async function receiveInbound(id: string, short: Diff[], damaged: Diff[])
     if (!l) throw new Error('A difference is for a product that is not on this bill.');
   }
   for (const l of inb.lines) if (sum(short, l.productId) + sum(damaged, l.productId) > l.qty + (l.freeQty ?? 0)) throw new Error(`${l.name}: more short or damaged than the bill has.`);
+  // two phones offline must not both put the goods into stock: the server lets one phone receive it
+  const url = await server();
+  if (url) {
+    if (!navigator.onLine) throw new Error('Receiving a company bill needs internet for a moment (so two phones never receive it twice).');
+    const r = await fetch(`${url}/v1/receipt/claim`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ inboundId: id }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not reach the server. Try again with internet.');
+  }
   const me = session().userId;
   const month = today().slice(0, 7);
   const cs = new ChangeSet();
@@ -86,8 +97,8 @@ export async function receiveInbound(id: string, short: Diff[], damaged: Diff[])
     cs.put<ClaimEntry>('claimEntries', { companyId: inb.companyId, month, kind: 'shortage', productId: d.productId, qty: d.qty, amount: r2(d.qty * l.rate * (1 + l.gst / 100)), note: `${why} · ${l.name}`, refNumber: inb.number, irn: inb.irn } as ClaimEntry, 'receipt difference → claim');
   }
   const diff = short.length + damaged.length > 0;
-  cs.put<Inbound>('inbound', { ...inb, status: diff ? 'disputed' : 'received', receivedAt: nowIso(), receivedBy: me, purchaseId: purchase.id,
-    short: short.map(d => ({ productId: coId(d.productId), qty: d.qty })), damaged: damaged.map(d => ({ productId: coId(d.productId), qty: d.qty })) }, 'company bill received');
+  cs.put<Receipt>('receipts', { id: inb.id, inboundId: inb.id, companyId: inb.companyId, status: diff ? 'disputed' : 'received', receivedAt: nowIso(), receivedBy: me, purchaseId: purchase.id,
+    short: short.map(d => ({ productId: coId(d.productId), qty: d.qty })), damaged: damaged.map(d => ({ productId: coId(d.productId), qty: d.qty })) } as Receipt, 'company bill received');
   await cs.commit(`Received ${inb.number}`);
   return { diff };
 }
@@ -101,7 +112,8 @@ export async function suggestOrder(companyId: string, coverDays = 15, leadDays =
   const sold = new Map<string, number>();
   for (const i of await db.invoices.where('companyId').equals(companyId).toArray()) if (!i.cancelled && i.date >= since) for (const l of i.lines) sold.set(l.productId, (sold.get(l.productId) ?? 0) + l.qty + l.freeQty);
   const transit = new Map<string, number>();
-  for (const i of await db.inbound.where('companyId').equals(companyId).toArray()) if (i.status === 'pending' && !i.cancelled) for (const l of i.lines) transit.set(l.productId, (transit.get(l.productId) ?? 0) + l.qty + (l.freeQty ?? 0));
+  const got = new Set((await db.receipts.toArray()).map(r => r.inboundId));
+  for (const i of await db.inbound.where('companyId').equals(companyId).toArray()) if (!got.has(i.id) && !i.cancelled) for (const l of i.lines) transit.set(l.productId, (transit.get(l.productId) ?? 0) + l.qty + (l.freeQty ?? 0));
   const out: SuggestRow[] = [];
   for (const p of products) {
     const stock = (await db.batches.where('productId').equals(p.id).toArray()).filter(b => b.expiry >= t).reduce((a, b) => a + b.qty, 0);
@@ -134,7 +146,9 @@ export async function invoiceFromOrder(orderId: string, number: string) {
   if (inv.some(i => i.primaryOrderId === orderId && !i.cancelled)) throw new Error('This order is already invoiced.');
   if (inv.some(i => i.number === number.trim())) throw new Error(`Invoice ${number} already exists.`);
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-  const lines = o.lines.filter(l => products.get(l.productId)).map(l => { const p = products.get(l.productId)!; const taxable = r2(l.qty * p.purchaseRate); return { productId: p.id, name: p.name, hsn: p.hsn, qty: l.qty, freeQty: 0, rate: p.purchaseRate, gst: p.gst, taxable, tax: r2(taxable * p.gst / 100), mrp: p.mrp }; });
+  const missing = o.lines.filter(l => !products.get(l.productId));
+  if (missing.length) throw new Error(`${missing.map(l => l.name ?? 'A product').join(', ')} is not in your product list — add it, then invoice (the order is never shortened silently).`);
+  const lines = o.lines.map(l => { const p = products.get(l.productId)!; const taxable = r2(l.qty * p.purchaseRate); return { productId: p.id, name: p.name, hsn: p.hsn, qty: l.qty, freeQty: 0, rate: p.purchaseRate, gst: p.gst, taxable, tax: r2(taxable * p.gst / 100), mrp: p.mrp }; });
   const taxable = r2(lines.reduce((a, l) => a + l.taxable, 0)), tax = r2(lines.reduce((a, l) => a + l.tax, 0));
   const cs = new ChangeSet();
   cs.put('primaryInvoices', { dbLinkId: o.dbLinkId, number: number.trim(), date: today(), lines, taxable, tax, total: Math.round(taxable + tax), primaryOrderId: o.id, source: 'typed' }, 'invoice from order');

@@ -6,7 +6,7 @@ import { sideNow, undoBatch } from '../core/db';
 // sides different, so no undo is offered (change or cancel them instead). Location readings and visits are records, not actions.
 const CROSSES = new Set(['products', 'schemes', 'primaryInvoices', 'orders', 'shopRequests', 'claimDecisions', 'dbLinks', 'workDays']);
 // distributor side: a goods receipt, a claim sent or an order to a linked company has already reached the company
-const DB_CROSSES = new Set(['inbound', 'primaryOrders']);
+const DB_CROSSES = new Set(['receipts', 'primaryOrders']);
 import { t } from '../core/i18n';
 import { notify } from './dialog';
 

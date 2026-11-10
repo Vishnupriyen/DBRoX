@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, QrCode, Check, Send } from 'lucide-react';
 import { db } from '../core/db';
 import { inr } from '../core/i18n';
-import { compareQr, readDifferences, readEinvoiceQr, receiveInbound, sendPrimaryOrder, suggestOrder, type Diff, type SuggestRow } from '../core/grn';
+import { compareQr, readDifferences, readEinvoiceQr, receiveInbound, receiptOf, sendPrimaryOrder, suggestOrder, type Diff, type SuggestRow } from '../core/grn';
 import { getSettings } from '../core/db';
 import { PhotoButton } from './PhotoButton';
 import { confirmBox, notify } from './dialog';
-import type { Company, Inbound, PrimaryOrder, Product } from '../core/types';
+import type { Company, Inbound, PrimaryOrder, Product, Receipt } from '../core/types';
 
 const day = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 const act = async (fn: () => Promise<unknown>) => { try { await fn(); return true; } catch (e) { await notify('Not done', (e as Error).message); return false; } };
@@ -23,9 +23,13 @@ async function qrFromPhoto(dataUrl: string): Promise<string | null> {
 }
 
 export function CompanyBills() {
-  const [list, setList] = useState<(Inbound & { company: string })[] | null>(null);
+  const [list, setList] = useState<(Inbound & { company: string; got?: Receipt })[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const load = async () => { const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name])); setList((await db.inbound.toArray()).sort((a, b) => Number(a.status !== 'pending') - Number(b.status !== 'pending') || b.date.localeCompare(a.date)).map(i => ({ ...i, company: cos.get(i.companyId) ?? '' }))); };
+  const load = async () => {
+    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
+    const got = new Map((await db.receipts.toArray()).map(r => [r.inboundId, r]));
+    setList((await db.inbound.toArray()).map(i => ({ ...i, company: cos.get(i.companyId) ?? '', got: got.get(i.id) })).sort((a, b) => Number(!!a.got) - Number(!!b.got) || b.date.localeCompare(a.date)));
+  };
   useEffect(() => { void load(); }, []);
   if (open) return <ReceiveBill id={open} onBack={() => { setOpen(null); void load(); }} />;
   if (!list) return <div className="card muted">{'Loading…'}</div>;
@@ -34,7 +38,7 @@ export function CompanyBills() {
       <div className="muted">{'Bills from companies that use Hanubix arrive here with every line filled in. Check the goods, type anything short or damaged, and receive.'}</div>
       <div className="list">{list.map(i => (
         <button key={i.id} className="item tap" onClick={() => setOpen(i.id)}>
-          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{`${i.company} · ${i.number}`}</div><div className="s">{[day(i.date), `${i.lines.length} lines`, i.status === 'pending' ? 'To receive' : i.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
+          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{`${i.company} · ${i.number}`}</div><div className="s">{[day(i.date), `${i.lines.length} lines`, i.cancelled ? (i.got ? 'Cancelled by the company after you received it — talk to them' : 'Cancelled by the company') : !i.got ? 'To receive' : i.got.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
           <div className="num">{inr(i.total)}</div><ChevronRight size={18} />
         </button>
       ))}</div>
@@ -45,14 +49,15 @@ export function CompanyBills() {
 
 function ReceiveBill({ id, onBack }: { id: string; onBack: () => void }) {
   const [inb, setInb] = useState<Inbound | null>(null);
+  const [got, setGot] = useState<Receipt | undefined>();
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [qr, setQr] = useState<{ ok: boolean; text: string } | null>(null);
   const [said, setSaid] = useState('');
   const [diff, setDiff] = useState<{ short: Diff[]; damaged: Diff[]; unclear: string[] }>({ short: [], damaged: [], unclear: [] });
   const [busy, setBusy] = useState(false);
-  useEffect(() => { (async () => { const i = (await db.inbound.get(id)) ?? null; setInb(i); if (i) setProducts(new Map((await db.products.bulkGet(i.lines.map(l => l.productId))).filter((p): p is Product => !!p).map(p => [p.id, p]))); })(); }, [id]);
+  useEffect(() => { (async () => { const i = (await db.inbound.get(id)) ?? null; setInb(i); setGot(await receiptOf(id)); if (i) setProducts(new Map((await db.products.bulkGet(i.lines.map(l => l.productId))).filter((p): p is Product => !!p).map(p => [p.id, p]))); })(); }, [id]);
   if (!inb) return <div className="card muted">{'Loading…'}</div>;
-  const pending = inb.status === 'pending';
+  const pending = !got && !inb.cancelled;
   const name = (pid: string) => products.get(pid)?.name ?? inb.lines.find(l => l.productId === pid)?.name ?? '';
   return (
     <div className="stack">
@@ -85,7 +90,7 @@ function ReceiveBill({ id, onBack }: { id: string; onBack: () => void }) {
             setBusy(true); try { if (await act(() => receiveInbound(inb.id, diff.short, diff.damaged))) onBack(); } finally { setBusy(false); }
           }}><Check size={18} /> {'Receive'}</button>
         </>
-      ) : <div className="card">{inb.status === 'disputed' ? 'Received with differences — they are in Claims for this company.' : 'Received in full.'}</div>}
+      ) : <div className="card">{!got ? 'The company cancelled this bill.' : got.status === 'disputed' ? 'Received with differences — they are in Claims for this company.' : 'Received in full.'}</div>}
     </div>
   );
 }

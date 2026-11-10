@@ -41,7 +41,8 @@
     "claimDecisions",
     "shopRequests",
     "workDays",
-    "travelClaims"
+    "travelClaims",
+    "receipts"
   ],
   "read": {
     "owner": "*",
@@ -83,7 +84,8 @@
       "checkIns",
       "leaves",
       "advances",
-      "inbound"
+      "inbound",
+      "receipts"
     ],
     "delivery": [
       "settings",
@@ -182,8 +184,8 @@
       "checkIns",
       "leaves",
       "advances",
-      "inbound",
-      "primaryOrders"
+      "primaryOrders",
+      "receipts"
     ],
     "salesman": [
       "orders",
@@ -208,7 +210,7 @@
       "leaves",
       "advances",
       "audit",
-      "inbound"
+      "receipts"
     ],
     "delivery": [
       "invoices",

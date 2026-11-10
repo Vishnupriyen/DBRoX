@@ -13,6 +13,7 @@ beforeAll(async () => {
 }, 90000);
 
 const sides = async () => { const { storeOf } = await import('../src/core/link'); return { co: storeOf('company'), dist: storeOf('distributor') }; };
+const pendingBill = async () => { const { dist } = await sides(); const got = new Set((await dist.receipts.toArray()).map(r => r.inboundId)); return (await dist.inbound.toArray()).find(i => !got.has(i.id) && !i.cancelled)!; };
 const asDb = async <X,>(fn: () => Promise<X>) => {
   const { onSide, setSession } = await import('../src/core/db'); const { dist } = await sides();
   return onSide(dist, async () => { setSession('demo', (await dist.staff.toArray()).find(s => s.role === 'owner')!.id); return fn(); });
@@ -27,7 +28,7 @@ describe('the QR confirms the bill (it never supplies the lines)', () => {
   it('reads the signed QR header and spots a different bill', async () => {
     const { readEinvoiceQr, compareQr } = await import('../src/core/grn');
     const { dist } = await sides();
-    const inb = (await dist.inbound.toArray()).find(i => i.status === 'pending')!;
+    const inb = await pendingBill();
     const same = readEinvoiceQr(jwt({ DocNo: inb.number, TotInvVal: inb.total, ItemCnt: inb.lines.length, BuyerGstin: '33X' }))!;
     expect(same.DocNo).toBe(inb.number);
     expect(compareQr(inb, same, '33X')).toEqual([]);
@@ -40,7 +41,7 @@ describe('the QR confirms the bill (it never supplies the lines)', () => {
 describe('receiving a company bill', () => {
   it('typed differences are read against this bill\'s products only', async () => {
     const { dist } = await sides();
-    const inb = (await dist.inbound.toArray()).find(i => i.status === 'pending')!;
+    const inb = await pendingBill();
     const r = await asDb(async () => (await import('../src/core/grn')).readDifferences('coconut oil 1 case short, 6 sambar damaged, surf 2 short', inb));
     const name = async (id: string) => (await dist.products.get(id))!.name;
     expect(await Promise.all(r.short.map(async d => [await name(d.productId), d.qty]))).toEqual([['Kaveri Coconut Oil 500ml', 24]]);
@@ -49,7 +50,7 @@ describe('receiving a company bill', () => {
   });
   it('refuses more short than billed, and part pieces', async () => {
     const { dist } = await sides();
-    const inb = (await dist.inbound.toArray()).find(i => i.status === 'pending')!;
+    const inb = await pendingBill();
     const l = inb.lines[0];
     const { receiveInbound } = await import('../src/core/grn');
     await expect(asDb(() => receiveInbound(inb.id, [{ productId: l.productId, qty: l.qty + 1 }], []))).rejects.toThrow(/more short/);
@@ -57,7 +58,7 @@ describe('receiving a company bill', () => {
   });
   it('good stock goes in, the purchase is the bill, differences become claim lines with the bill number and IRN', async () => {
     const { dist, co } = await sides();
-    const inb = (await dist.inbound.toArray()).find(i => i.status === 'pending')!;
+    const inb = await pendingBill();
     await dist.inbound.put({ ...inb, irn: 'IRN-TEST-0001' });
     const oil = inb.lines.find(l => l.name.includes('Coconut'))!;
     const before = (await dist.batches.where('productId').equals(oil.productId).toArray()).reduce((a, b) => a + b.qty, 0);
@@ -108,7 +109,8 @@ describe('the order to the company', () => {
     await asCo(() => invoiceFromOrder(o1.id, 'KCP/26-27/5001'));
     await expect(asCo(() => invoiceFromOrder(o1.id, 'KCP/26-27/5002'))).rejects.toThrow(/already invoiced/);
     const arrived = (await dist.inbound.toArray()).find(i => i.primaryOrderId === o1.id)!;
-    expect(arrived).toMatchObject({ number: 'KCP/26-27/5001', status: 'pending' });
+    expect(arrived).toMatchObject({ number: 'KCP/26-27/5001' });
+    expect(await dist.receipts.get(arrived.id)).toBeUndefined();
     expect(arrived.lines.every(l => l.productId)).toBe(true);
   });
 });

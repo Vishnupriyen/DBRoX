@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
-  Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim,
+  Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -48,6 +48,7 @@ class RoxDB extends Dexie {
   shopRequests!: Table<ShopRequest, string>;
   workDays!: Table<WorkDay, string>;
   travelClaims!: Table<TravelClaim, string>;
+  receipts!: Table<Receipt, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
   constructor(name = 'dbrox') {
@@ -108,6 +109,7 @@ class RoxDB extends Dexie {
       workDays: `${common}, staffId, date`,
     });
     this.version(6).stores({ travelClaims: `${common}, staffId, month, status` });
+    this.version(7).stores({ receipts: `${common}, companyId, status`, inbound: `${common}, companyId, date` });
   }
 }
 export { RoxDB };
@@ -224,6 +226,9 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
 // audit entry per record, so the whole approval can be undone later.
 export class ChangeSet {
   readonly batchId = newId();
+  /** noAudit: a record, not an action (a location reading): no history entry, so nothing to undo and no bloat */
+  private opts: { noAudit?: boolean };
+  constructor(opts: { noAudit?: boolean } = {}) { this.opts = opts; }
   private writes: { table: TableName; rec: Base; action: string }[] = [];
   put<T extends Base = Base>(table: TableName, rec: object, action = 'save'): T {
     const s = stamp(rec as Partial<Base>) as unknown as T;
@@ -239,6 +244,7 @@ export class ChangeSet {
       for (const w of this.writes) {
         const before = await db.table(w.table).get(w.rec.id);
         await db.table(w.table).put(w.rec);
+        if (this.opts.noAudit) continue;
         await db.audit.put(stamp<AuditEntry>({
           at: nowIso(), by: currentUser, action: `${label}: ${w.action}`,
           table: w.table, recordId: w.rec.id, before, after: w.rec, batchId: this.batchId,
