@@ -35,7 +35,10 @@ const now = () => new Date().toISOString();
 const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const ch = (table: string, data: Record<string, unknown>) => ({ table, id: String(data.id), updatedAt: now(), data });
 // the relay runs in the background: wait for it to finish handing everything over, and time it
-const drained = async () => { const s = performance.now(); for (;;) { const n = Number((await pool.query('SELECT count(*)::int n FROM relay_queue').catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n); if (!n) break; await new Promise(r => setTimeout(r, 250)); } return +((performance.now() - s) / 1000).toFixed(1); };
+// finished = nothing waiting AND nothing being written, and (when given) the other side really has it all
+const { relayBacklog } = await import('../src/link.js');
+const drained = async (arrived?: () => Promise<boolean>) => { const s = performance.now(); for (;;) { if (!(await relayBacklog(pool)) && (!arrived || await arrived())) break; await new Promise(r => setTimeout(r, 200)); } return +((performance.now() - s) / 1000).toFixed(1); };
+const countQ = async (sql: string, args: unknown[] = []) => Number((await pool.query(sql, args)).rows[0].n);
 const R: Record<string, unknown> = { companies: COMPANIES, distributors: DBS, brandsPerDistributor: PER_DB, giantLinkedTo: GIANT, productsPerBrand: PRODUCTS, billsPerDistributor: BILLS };
 
 // ---- 1. sign up brands and distributors
@@ -83,20 +86,20 @@ t = performance.now();
 await run(dayJobs, 40);
 const daySecs = (performance.now() - t) / 1000;
 const bills = DBS * BILLS;
-const dayRelay = await drained();
+const dayRelay = await drained(async () => (await countQ(`SELECT count(*)::int n FROM docs WHERE tbl='secondary'`)) >= bills);
 R.day = { bills, syncs: dayJobs.length, seconds: +daySecs.toFixed(1), billsPerSecond: Math.round(bills / daySecs), p50ms: pct(dayTimes, .5), p95ms: pct(dayTimes, .95), p99ms: pct(dayTimes, .99), failures: dayFails, relayFinishedAfterSeconds: dayRelay, relayBillsPerSecond: Math.round(bills / (daySecs + dayRelay)) };
 log('DAY', R.day);
 
 // ---- 5. the giant brand changes prices: one product, then its whole price list (one sync from head office)
 const giant = cos[0];
 t = performance.now(); await post('/v1/sync', { cursor: 0, changes: [ch('products', { ...prod(0, 0), rate: 42 })] }, giant.token);
-R.priceOne = { distributors: GIANT, syncMs: Math.round(performance.now() - t), reachedAllAfterSeconds: +((performance.now() - t) / 1000 + await drained()).toFixed(1) };
+R.priceOne = { distributors: GIANT, syncMs: Math.round(performance.now() - t), reachedAllAfterSeconds: +((performance.now() - t) / 1000 + await drained(async () => (await countQ(`SELECT count(*)::int n FROM docs WHERE tbl='products' AND data->>'companyProductId' = 'B0P0' AND (data->>'rate')::numeric = 42`)) >= GIANT)).toFixed(1) };
 log('PRICE ONE', R.priceOne);
 t = performance.now();
 let priceAllErr = '';
 try { await post('/v1/sync', { cursor: 0, changes: Array.from({ length: PRODUCTS }, (_, p) => ch('products', { ...prod(0, p), rate: 43 })) }, giant.token); } catch (e) { priceAllErr = (e as Error).message; }
 const priceSync = +((performance.now() - t) / 1000).toFixed(1);
-R.priceAll = { products: PRODUCTS, distributors: GIANT, writes: PRODUCTS * GIANT, syncSeconds: priceSync, reachedAllAfterSeconds: +(priceSync + await drained()).toFixed(1), error: priceAllErr || undefined };
+R.priceAll = { products: PRODUCTS, distributors: GIANT, writes: PRODUCTS * GIANT, syncSeconds: priceSync, reachedAllAfterSeconds: +(priceSync + await drained(async () => (await countQ(`SELECT count(*)::int n FROM docs WHERE tbl='products' AND data->>'companyProductId' LIKE 'B0P%' AND (data->>'rate')::numeric = 43`)) >= PRODUCTS * GIANT)).toFixed(1), error: priceAllErr || undefined };
 log('PRICE ALL', R.priceAll);
 
 // ---- 6. what a head-office phone of the giant brand downloads on first login

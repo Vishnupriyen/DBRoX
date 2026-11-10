@@ -9,6 +9,7 @@ import { join } from 'node:path';
 let pgServer: EmbeddedPostgres; let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let link: typeof import('../src/link.js');
+let reports: typeof import('../src/reports.js');
 const port = 54335;
 beforeAll(async () => {
   process.env.RELAY_INLINE = '0'; // the real thing: the relay runs in the background
@@ -18,9 +19,9 @@ beforeAll(async () => {
   pool.on('error', () => {}); // the database is stopped at the end while idle connections are still open
   const { migrate } = await import('../src/db.js'); await migrate(pool);
   const { buildApp } = await import('../src/app.js'); app = await buildApp(pool);
-  link = await import('../src/link.js');
+  link = await import('../src/link.js'); reports = await import('../src/reports.js');
 }, 120000);
-afterAll(async () => { await link?.drainRelay(pool); await app?.close(); await pool?.end(); await pgServer?.stop(); });
+afterAll(async () => { await link?.drainRelay(pool); await reports?.coverIdle(); await app?.close(); await pool?.end(); await pgServer?.stop(); });
 const post = async (url: string, body: unknown, token?: string) => { const r = await app.inject({ method: 'POST', url, payload: body as object, headers: token ? { authorization: `Bearer ${token}` } : {} }); return { status: r.statusCode, body: r.json() }; };
 let tick = 0; const at = () => new Date(Date.now() + (++tick) * 1000).toISOString();
 const ch = (table: string, data: Record<string, unknown>) => ({ table, id: String(data.id), updatedAt: at(), data });
@@ -87,10 +88,16 @@ describe('scale design', () => {
 
   it('stock and shop reports', async () => {
     await sync(D[0].token, [ch('batches', { id: 'lot1', productId: 'dp1', qty: 60, expiry: '2027-06-01' })]);
-    await link.drainRelay(pool);
+    await link.drainRelay(pool); await reports.coverIdle(); // the figures are remade in the background right after the relay
     const st = (await post('/v1/company/report', { kind: 'stock', status: '' }, CO.token)).body.data as { rows: { dbLinkId: string; qty: number; perDay: number; days: number | null }[] };
     const r0 = st.rows.find(x => x.dbLinkId === 'L0')!;
     expect(r0.qty).toBe(60); expect(r0.perDay).toBe(1.2); expect(r0.days).toBe(50); // 36 pieces in 30 days (the cancelled bill does not count)
+    // a stock change after head office has looked shows once the background remake is done (only the changed product is remade)
+    await sync(D[0].token, [ch('batches', { id: 'lot1', productId: 'dp1', qty: 6, expiry: '2027-06-01' })]);
+    await link.drainRelay(pool); await reports.coverIdle();
+    expect(Number((await pool.query(`SELECT count(*) n FROM cover_dirty`)).rows[0].n)).toBe(0);
+    const st2 = (await post('/v1/company/report', { kind: 'stock', status: 'low' }, CO.token)).body.data as { rows: { dbLinkId: string; qty: number; days: number | null }[]; counts: { low: number } };
+    expect(st2.rows.find(x => x.dbLinkId === 'L0')).toMatchObject({ qty: 6, days: 5 });
     const o = (await post('/v1/company/report', { kind: 'outlets', q: 'shop' }, CO.token)).body.data as { total: number; bought: number; shops: { id: string; phone?: string }[] };
     expect(o.total).toBe(2); expect(o.bought).toBe(2);
     expect(o.shops.every(s => s.phone === undefined)).toBe(true);

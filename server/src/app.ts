@@ -8,6 +8,7 @@ import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verif
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
 import { relayIdle } from './link.js';
+import { coverIdle } from './reports.js';
 import { acceptInvite, companyRule, drainRelay, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
@@ -205,7 +206,7 @@ export async function buildApp(pool: pg.Pool) {
   });
 
   // a stopping server finishes the relay batch in hand first (nothing half-sent)
-  app.addHook('onClose', async () => { await relayIdle(); });
+  app.addHook('onClose', async () => { await relayIdle(); await coverIdle(); });
 
   // ---------------------------------------------------------------- company reports (answered here, never by downloading every bill)
   const kindCache = new Map<string, 'company' | 'distributor'>();
@@ -372,6 +373,12 @@ export async function buildApp(pool: pg.Pool) {
   app.post('/v1/cron/relay', async req => {
     if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
     return { relayed: await drainRelay(pool) };
+  });
+  // every few minutes: head office's stock figures for every brand (changed products; everything once a day)
+  app.post('/v1/cron/cover', async req => {
+    if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
+    const { refreshAllCover } = await import('./reports.js');
+    return { brands: await refreshAllCover(pool) };
   });
 
   app.post('/v1/cron/daily', async req => {

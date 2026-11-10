@@ -3,6 +3,7 @@
 import type pg from 'pg';
 import { COMPANY_PRODUCT_FIELDS, companyToDb, dbToCompany, linkInitial, RELAY_ONLY, type Doc, type Link, type Store, type Write } from './gen/relay.js';
 import { istToday } from './licence.js';
+import { kickCover } from './reports.js';
 
 type Q = pg.Pool | pg.PoolClient;
 
@@ -17,59 +18,96 @@ export function storeFor(q: Q, tenant: string): Store & { all(tbl: string): Prom
 }
 
 type Line = { productId?: string; qty?: number; freeQty?: number; taxable?: number; amount?: number };
-/** a bill's contribution to the company's totals (+1 to add it, -1 to take an old version out) */
-async function roll(client: pg.PoolClient, tenant: string, tbl: string, d: Doc | undefined, sign: 1 | -1) {
+type Acc = { daily: Map<string, { q: number; v: number }>; month: Map<string, { v: number; r: number; b: number }>; shop: Map<string, number> };
+/** a bill's contribution to the company's totals (+1 to add it, -1 to take an old version out), summed for a batch */
+function roll(acc: Acc, tbl: string, d: Doc | undefined, sign: 1 | -1) {
   if (!d || (tbl !== 'secondary' && tbl !== 'secondaryReturns')) return;
   if (tbl === 'secondary' && d.cancelled) return;
   const day = String(d.date ?? '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
   const link = String(d.dbLinkId ?? ''), month = day.slice(0, 7), ret = tbl === 'secondaryReturns';
-  const lines = (d.lines as Line[] | undefined) ?? [];
-  const by = new Map<string, { q: number; v: number }>();
-  for (const l of lines) { const k = String(l.productId ?? ''); const x = by.get(k) ?? { q: 0, v: 0 }; x.q += (ret ? -1 : 1) * Number(l.qty ?? 0) + (ret ? 0 : Number(l.freeQty ?? 0)); x.v += (ret ? -Number(l.amount ?? 0) : Number(l.taxable ?? 0)); by.set(k, x); }
-  if (by.size) await client.query(`INSERT INTO roll_daily(tenant_id, link_id, day, product_id, qty, value)
-    SELECT $1, $2, $3::date, p, q * $7, v * $7 FROM unnest($4::text[], $5::numeric[], $6::numeric[]) AS x(p, q, v)
-    ON CONFLICT (tenant_id, link_id, day, product_id) DO UPDATE SET qty = roll_daily.qty + EXCLUDED.qty, value = roll_daily.value + EXCLUDED.value`,
-    [tenant, link, day, [...by.keys()], [...by.values()].map(x => x.q), [...by.values()].map(x => x.v), sign]);
+  for (const l of (d.lines as Line[] | undefined) ?? []) {
+    const k = `${link}|${day}|${String(l.productId ?? '')}`; const x = acc.daily.get(k) ?? { q: 0, v: 0 };
+    x.q += sign * ((ret ? -1 : 1) * Number(l.qty ?? 0) + (ret ? 0 : Number(l.freeQty ?? 0)));
+    x.v += sign * (ret ? -Number(l.amount ?? 0) : Number(l.taxable ?? 0)); acc.daily.set(k, x);
+  }
   const total = ret ? Number(d.total ?? 0) : Number(d.taxable ?? 0);
-  await client.query(`INSERT INTO roll_link_month(tenant_id, link_id, month, value, returns, bills) VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (tenant_id, link_id, month) DO UPDATE SET value = roll_link_month.value + EXCLUDED.value, returns = roll_link_month.returns + EXCLUDED.returns, bills = roll_link_month.bills + EXCLUDED.bills`,
-    [tenant, link, month, ret ? 0 : sign * total, ret ? sign * total : 0, ret ? 0 : sign]);
-  if (!ret && d.shopId) await client.query(`INSERT INTO roll_shop_month(tenant_id, link_id, month, shop_id, value) VALUES ($1,$2,$3,$4,$5)
-    ON CONFLICT (tenant_id, link_id, month, shop_id) DO UPDATE SET value = roll_shop_month.value + EXCLUDED.value`, [tenant, link, month, String(d.shopId), sign * total]);
+  const mk = `${link}|${month}`; const m = acc.month.get(mk) ?? { v: 0, r: 0, b: 0 };
+  if (ret) m.r += sign * total; else { m.v += sign * total; m.b += sign; } acc.month.set(mk, m);
+  if (!ret && d.shopId) { const sk = `${link}|${month}|${String(d.shopId)}`; acc.shop.set(sk, (acc.shop.get(sk) ?? 0) + sign * total); }
 }
 
-/** write relay output into a tenant, under that tenant's writer lock so its phones never skip a version */
+/** write relay output into a tenant, under that tenant's writer lock so its phones never skip a version. One query per
+ *  kind per batch (not several per bill): the stress test showed the per-bill version was the slowest step. */
 export async function writeInto(pool: pg.Pool, tenant: string, writes: Write[]) {
   if (!writes.length) return;
+  const changed = new Set<string>(); // distributor|product whose stock figures move
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [tenant]);
     const now = new Date().toISOString();
+    // stock at distributors lives in its own compact table (never a stored record per product)
+    const stock = new Map<string, Doc>(); for (const w of writes) if (w.tbl === 'dbStock') stock.set(`${w.doc.dbLinkId}|${w.doc.productId}`, w.doc);
+    if (stock.size) {
+      const v = [...stock.values()];
+      await client.query(`INSERT INTO link_stock(tenant_id, link_id, product_id, name, qty, near_expiry, expired, as_of)
+        SELECT $1, l, p, n, q, ne, ex, a::date FROM unnest($2::text[], $3::text[], $4::text[], $5::numeric[], $6::numeric[], $7::numeric[], $8::text[]) AS x(l, p, n, q, ne, ex, a)
+        ON CONFLICT (tenant_id, link_id, product_id) DO UPDATE SET name=EXCLUDED.name, qty=EXCLUDED.qty, near_expiry=EXCLUDED.near_expiry, expired=EXCLUDED.expired, as_of=EXCLUDED.as_of`,
+        [tenant, v.map(d => String(d.dbLinkId)), v.map(d => String(d.productId)), v.map(d => (d.name as string) ?? null), v.map(d => Number(d.qty ?? 0)), v.map(d => Number(d.nearExpiry ?? 0)), v.map(d => Number(d.expired ?? 0)), v.map(d => (d.asOf as string) ?? null)]);
+    }
+    for (const d of stock.values()) changed.add(`${d.dbLinkId}|${d.productId}`);
+    // records: the last version of each in this batch
+    const last = new Map<string, { tbl: string; data: Doc; t: string }>();
     for (const w of writes) {
+      if (w.tbl === 'dbStock') continue;
       // keepTime: the record keeps its own time, so a newer edit on the distributor's phone still wins (version still moves)
       const t = w.keepTime && typeof w.doc.updatedAt === 'string' ? w.doc.updatedAt : now;
-      const data = { ...w.doc, tenantId: tenant, updatedAt: t, createdAt: w.doc.createdAt ?? now };
+      const data = { ...w.doc, tenantId: tenant, updatedAt: t, createdAt: w.doc.createdAt ?? now } as Doc;
       delete (data as Record<string, unknown>).dirty;
-      // stock at distributors lives in its own compact table (never a stored record per product)
-      if (w.tbl === 'dbStock') {
-        await client.query(`INSERT INTO link_stock(tenant_id, link_id, product_id, name, qty, near_expiry, expired, as_of) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-          ON CONFLICT (tenant_id, link_id, product_id) DO UPDATE SET name=EXCLUDED.name, qty=EXCLUDED.qty, near_expiry=EXCLUDED.near_expiry, expired=EXCLUDED.expired, as_of=EXCLUDED.as_of`,
-          [tenant, w.doc.dbLinkId, w.doc.productId, w.doc.name ?? null, Number(w.doc.qty ?? 0), Number(w.doc.nearExpiry ?? 0), Number(w.doc.expired ?? 0), w.doc.asOf ?? null]);
-        continue;
-      }
-      // the company's report totals: the old version of a bill out, the new one in (same transaction, same lock)
-      if (w.tbl === 'secondary' || w.tbl === 'secondaryReturns') {
-        const old = (await client.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [tenant, w.tbl, w.doc.id])).rows[0]?.data;
-        await roll(client, tenant, w.tbl, old, -1); await roll(client, tenant, w.tbl, data, 1);
-      }
-      await client.query(
-        `INSERT INTO docs(tenant_id,tbl,id,data,updated_at) VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (tenant_id,tbl,id) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at, version=nextval('docs_version_seq')`,
-        [tenant, w.tbl, w.doc.id, data, t]);
+      last.set(`${w.tbl}|${w.doc.id}`, { tbl: w.tbl, data, t });
     }
+    const recs = [...last.values()];
+    // the company's report totals: old versions out, new in (same transaction, same lock as the records)
+    const bills = recs.filter(r => r.tbl === 'secondary' || r.tbl === 'secondaryReturns');
+    if (bills.length) {
+      const olds = new Map((await client.query(`SELECT tbl, id, data FROM docs WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)`,
+        [tenant, [...new Set(bills.map(b => b.tbl))], bills.map(b => b.data.id)])).rows.map(r => [`${r.tbl}|${r.id}`, r.data as Doc]));
+      const acc: Acc = { daily: new Map(), month: new Map(), shop: new Map() };
+      for (const b of bills) { roll(acc, b.tbl, olds.get(`${b.tbl}|${b.data.id}`), -1); roll(acc, b.tbl, b.data, 1); }
+      const sp = (k: string) => k.split('|');
+      const D = [...acc.daily].filter(([, x]) => x.q || x.v), M = [...acc.month].filter(([, x]) => x.v || x.r || x.b), S = [...acc.shop].filter(([, v]) => v);
+      for (const [k] of D) { const [l, , p] = sp(k); changed.add(`${l}|${p}`); }
+      if (D.length) await client.query(`INSERT INTO roll_daily(tenant_id, link_id, day, product_id, qty, value)
+        SELECT $1, l, d::date, p, q, v FROM unnest($2::text[], $3::text[], $4::text[], $5::numeric[], $6::numeric[]) AS x(l, d, p, q, v)
+        ON CONFLICT (tenant_id, link_id, day, product_id) DO UPDATE SET qty = roll_daily.qty + EXCLUDED.qty, value = roll_daily.value + EXCLUDED.value`,
+        [tenant, D.map(([k]) => sp(k)[0]), D.map(([k]) => sp(k)[1]), D.map(([k]) => sp(k)[2]), D.map(([, x]) => x.q), D.map(([, x]) => x.v)]);
+      if (M.length) await client.query(`INSERT INTO roll_link_month(tenant_id, link_id, month, value, returns, bills)
+        SELECT $1, l, m, v, r, b FROM unnest($2::text[], $3::text[], $4::numeric[], $5::numeric[], $6::int[]) AS x(l, m, v, r, b)
+        ON CONFLICT (tenant_id, link_id, month) DO UPDATE SET value = roll_link_month.value + EXCLUDED.value, returns = roll_link_month.returns + EXCLUDED.returns, bills = roll_link_month.bills + EXCLUDED.bills`,
+        [tenant, M.map(([k]) => sp(k)[0]), M.map(([k]) => sp(k)[1]), M.map(([, x]) => x.v), M.map(([, x]) => x.r), M.map(([, x]) => x.b)]);
+      // per product and month, all distributors together (the products report never adds up daily rows)
+      const PM = new Map<string, { q: number; v: number }>();
+      for (const [k, x] of D) { const [, day, p] = sp(k); const pk = `${day.slice(0, 7)}|${p}`; const y = PM.get(pk) ?? { q: 0, v: 0 }; y.q += x.q; y.v += x.v; PM.set(pk, y); }
+      const P = [...PM];
+      if (P.length) await client.query(`INSERT INTO roll_product_month(tenant_id, month, product_id, qty, value)
+        SELECT $1, m, p, q, v FROM unnest($2::text[], $3::text[], $4::numeric[], $5::numeric[]) AS x(m, p, q, v)
+        ON CONFLICT (tenant_id, month, product_id) DO UPDATE SET qty = roll_product_month.qty + EXCLUDED.qty, value = roll_product_month.value + EXCLUDED.value`,
+        [tenant, P.map(([k]) => sp(k)[0]), P.map(([k]) => sp(k)[1]), P.map(([, x]) => x.q), P.map(([, x]) => x.v)]);
+      if (S.length) await client.query(`INSERT INTO roll_shop_month(tenant_id, link_id, month, shop_id, value)
+        SELECT $1, l, m, s, v FROM unnest($2::text[], $3::text[], $4::text[], $5::numeric[]) AS x(l, m, s, v)
+        ON CONFLICT (tenant_id, link_id, month, shop_id) DO UPDATE SET value = roll_shop_month.value + EXCLUDED.value`,
+        [tenant, S.map(([k]) => sp(k)[0]), S.map(([k]) => sp(k)[1]), S.map(([k]) => sp(k).slice(2).join('|')), S.map(([, v]) => v)]);
+    }
+    if (recs.length) await client.query(
+      `INSERT INTO docs(tenant_id,tbl,id,data,updated_at)
+       SELECT $1, t, i, d::jsonb, u::timestamptz FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(t, i, d, u)
+       ON CONFLICT (tenant_id,tbl,id) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at, version=nextval('docs_version_seq')`,
+      [tenant, recs.map(r => r.tbl), recs.map(r => r.data.id), recs.map(r => JSON.stringify(r.data)), recs.map(r => r.t)]);
+    if (changed.size) await client.query(`INSERT INTO cover_dirty(tenant_id, link_id, product_id) SELECT $1, l, p FROM unnest($2::text[], $3::text[]) AS x(l, p) ON CONFLICT DO NOTHING`,
+      [tenant, [...changed].map(k => k.split('|')[0]), [...changed].map(k => k.split('|')[1])]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  if (changed.size) await kickCover(pool, tenant);
 }
 
 const rowToLink = (r: { id: string; company_tenant: string; db_tenant: string; company_id_in_db: string; status: Link['status'] }): Link =>
@@ -129,12 +167,18 @@ export async function relayChanges(pool: pg.Pool, tenant: string, kind: 'company
 }
 
 let draining: Promise<number> | null = null;
-/** start the background worker if it is not running (it stops when the queue is empty) */
+let inFlight = 0;
+/** start the background workers if they are not running (they stop when the queue is empty). Several workers (and
+ *  several server instances) can run at once: each takes its own rows; a target's lock keeps the totals exact. */
 export function kickRelay(pool: pg.Pool) {
   if (draining) return;
-  draining = (async () => { let n = 0; try { for (;;) { const k = await drainOnce(pool); n += k; if (!k) break; } } finally { draining = null; } return n; })();
+  const workers = Math.max(1, Number(process.env.RELAY_WORKERS ?? 2));
+  const one = async () => { let n = 0; for (;;) { const k = await drainOnce(pool); n += k; if (!k) break; } return n; };
+  draining = (async () => { try { return (await Promise.all(Array.from({ length: workers }, one))).reduce((a, b) => a + b, 0); } finally { draining = null; } })();
   draining.catch(() => {});
 }
+/** changes noted but not yet handed over (waiting in the queue, or being written right now) */
+export async function relayBacklog(pool: pg.Pool) { return Number((await pool.query('SELECT count(*)::int n FROM relay_queue')).rows[0].n) + inFlight; }
 /** wait for a running background relay to finish (server shutdown) */
 export async function relayIdle() { if (draining) await draining.catch(() => 0); }
 /** empty the queue now (tests, the every-minute safety call, and RELAY_INLINE) */
@@ -150,6 +194,11 @@ async function drainOnce(pool: pg.Pool, size = 2000): Promise<number> {
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   if (!rows.length) return 0;
+  inFlight += rows.length;
+  try { await relayRows(pool, rows); } finally { inFlight -= rows.length; }
+  return rows.length;
+}
+async function relayRows(pool: pg.Pool, rows: { id: string; tenant_id: string; kind: 'company' | 'distributor'; tbl: string; doc_id: string; tries: number }[]) {
   rows.sort((a, b) => Number(a.id) - Number(b.id));
   const byTenant = new Map<string, typeof rows>();
   for (const r of rows) byTenant.set(r.tenant_id, [...(byTenant.get(r.tenant_id) ?? []), r]);
@@ -181,7 +230,6 @@ async function drainOnce(pool: pg.Pool, size = 2000): Promise<number> {
       console.error('relay', tenant, (e as Error).message);
     }
   }
-  return rows.length;
 }
 
 const genCode = () => { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 6; i++) s += A[Math.floor(Math.random() * A.length)]; return s; };
