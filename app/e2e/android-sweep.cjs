@@ -14,7 +14,7 @@ const SHOTS = process.env.SHOTS !== '0';
   const p = await webview.page();
   const errs = []; const report = []; let screens = 0;
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
-  p.on('console', m => { if (m.type() === 'error' && !/fonts|Failed to load resource/.test(m.text())) errs.push('CONSOLE ' + m.text().slice(0, 160)); });
+  p.on('console', m => { if (/\[back\]/.test(m.text())) console.log('PAGE', m.text()); if (m.type() === 'error' && !/fonts|Failed to load resource/.test(m.text())) errs.push('CONSOLE ' + m.text().slice(0, 160)); });
   const shot = async (name) => {
     if (!SHOTS) return;
     const b = await p.screenshot({ type: 'jpeg', quality: 45, scale: 'css' }).catch(() => null);
@@ -59,8 +59,20 @@ const SHOTS = process.env.SHOTS !== '0';
     await p.click('.fab'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1500); await check('Engine help');
     // the phone's back button closes the engine instead of leaving the app
-    await device.shell('input keyevent KEYCODE_BACK'); await p.waitForTimeout(800);
-    const stillOpen = await p.$('.engine'); if (stillOpen) report.push({ who: tag, page: 'back button', issues: ['BACK did not close the engine'] });
+    await p.evaluate(() => (document.activeElement)?.blur?.()); await p.waitForTimeout(300); // keyboard away, as a person would see it
+    await device.shell('input keyevent KEYCODE_BACK'); await p.waitForTimeout(1000);
+    const st = await p.evaluate(() => ({ engine: !!document.querySelector('.engine'), vis: document.visibilityState })).catch(e => ({ err: e.message }));
+    const focus = (await device.shell('dumpsys window | grep mCurrentFocus')).toString().trim();
+    if (st.engine || st.err) report.push({ who: tag, page: 'back button', issues: [`BACK did not close the engine ${JSON.stringify(st)} ${focus}`] });
+    // and from a screen: back goes home, never out of the app
+    if (!st.err) {
+      await p.click('nav >> text=More').catch(() => {}); await p.waitForTimeout(500);
+      await device.shell('input keyevent KEYCODE_BACK'); await p.waitForTimeout(1000);
+      const home = await p.$('.home').catch(() => null);
+      const f2 = (await device.shell('dumpsys window | grep mCurrentFocus')).toString();
+      if (!home || !/hanubix/.test(f2)) report.push({ who: tag, page: 'back button', issues: [`BACK from More did not go home (${f2.trim()})`] });
+      if (!/hanubix/.test(f2)) { await device.shell('monkey -p com.hanubix.app -c android.intent.category.LAUNCHER 1'); await p.waitForTimeout(2000); }
+    }
   }
   const n = report.reduce((a, r) => a + r.issues.length, 0);
   console.log(`ANDROID SWEEP (${LABEL}): ${screens} screens checked, ${n} issue(s)`);

@@ -51,7 +51,7 @@ export function Delivery() {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
+          <div><div className="v">{stops.length ? <>{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></> : '—'}</div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
           {trip && trip.status === 'out' && <span className="badge gold"><Navigation size={12} /> live</span>}
         </div>
       </div>
@@ -69,7 +69,7 @@ export function Delivery() {
           );
         })}
         {!loaded && <div className="card muted">{'Loading…'}</div>}
-      {loaded && !stops.length && <div className="card muted">{t('noItems')}</div>}
+      {loaded && !stops.length && <div className="card"><div className="t">{'No deliveries for you yet'}</div><div className="muted" style={{ marginTop: 4 }}>{'When the office plans today\'s trip and puts you on a van, your shops appear here in route order. Collections you take are under Collect.'}</div></div>}
       </div>
       {trip?.status === 'out' && <button className="btn big block" onClick={() => setEnding(true)}><Flag /> {'End trip'}{left.length ? ` (${left.length} ${'not delivered'})` : ''}</button>}
     </div>

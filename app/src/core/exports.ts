@@ -1,3 +1,4 @@
+import { inr, showMonth, plural } from './i18n';
 // TESRAX Accounts + TESRAX Claim Prep outputs. Pure code: exact, repeatable, explainable.
 import { ChangeSet, db, getSettings, localDay } from './db';
 import { r2 } from './ledger';
@@ -63,7 +64,7 @@ export async function tallyXml(month: string): Promise<{ xml: string; counts: Re
 export async function exportTally(month: string): Promise<Reply> {
   const { xml, counts } = await tallyXml(month);
   return {
-    text: `Tally file for ${month}: ${counts.sales} sales, ${counts.creditNotes} credit notes, ${counts.receipts} receipts, ${counts.expenses} expenses. In Tally: Import → Vouchers → pick this file. New party ledgers are created under Sundry Debtors.`,
+    text: `Tally file for ${showMonth(month)}: ${counts.sales} sales, ${counts.creditNotes} credit notes, ${counts.receipts} receipts, ${counts.expenses} expenses. In Tally: Import → Vouchers → pick this file. New party ledgers are created under Sundry Debtors.`,
     table: { name: `Tally ${month}`, columns: ['Type', 'Count'], rows: Object.entries(counts) },
     actions: [{ label: 'Download Tally XML', run: () => downloadText(`Hanubix-Tally-${month}.xml`, xml, 'application/xml') }],
   };
@@ -107,7 +108,7 @@ export async function exportGstr1(month: string): Promise<Reply> {
   ];
   const tot = r2(invs.reduce((a, i) => a + i.taxable, 0));
   return {
-    text: `GSTR-1 for ${month}: ${b2b.length} B2B lines, ${b2cs.size} B2C summary lines, ${hsn.size} HSN lines, taxable ₹${tot.toLocaleString('en-IN')}. Give this to your CA or load it in the GST offline tool.`,
+    text: `GSTR-1 for ${showMonth(month)}: ${b2b.length} B2B lines, ${b2cs.size} B2C summary lines, ${hsn.size} HSN lines, taxable ${inr(tot)}. Give this to your CA or load it in the GST offline tool.`,
     table: { name: `GSTR1 ${month}`, columns: sheets[3].header, rows: sheets[3].rows },
     actions: [{ label: 'Download GSTR-1 Excel', run: () => downloadWorkbook(`Hanubix-GSTR1-${month}`, sheets) }],
   };
@@ -154,7 +155,7 @@ export async function exportEinvoice(month: string): Promise<Reply> {
     shortNames.length ? `Shop name or area too short (min 3 letters): ${[...new Set(shortNames)].join(', ')}.` : '',
   ].filter(Boolean).join('\n⚠ ');
   return {
-    text: `${docs.length} B2B bill(s) for ${month} in the government e-invoice format. Upload this file in the free bulk tool on the e-invoice portal, then download the IRN file.` + (warn ? `\n⚠ ${warn}` : ''),
+    text: `${plural(docs.length, 'B2B bill')} for ${showMonth(month)} in the government e-invoice format. Upload this file in the free bulk tool on the e-invoice portal, then download the IRN file.` + (warn ? `\n⚠ ${warn}` : ''),
     tone: warn ? 'warn' : 'ok',
     table: { name: `E-invoice ${month}`, columns: ['Bill', 'Date', 'Buyer', 'Value ₹'], rows: invs.map(i => [i.number, i.date, shops.get(i.shopId)?.name ?? '', i.total]) },
     actions: [{ label: 'Download e-invoice JSON', run: () => downloadText(`Hanubix-einvoice-${month}.json`, JSON.stringify(docs, null, 2)) }],
@@ -189,7 +190,7 @@ export async function exportClaims(month: string): Promise<Reply> {
   }
   if (cs.size) await cs.commit('Claim drafts');
   return {
-    text: rows.length ? `Claims for ${month}: ₹${r2(rows.reduce((a, r) => a + Number(r[3]), 0)).toLocaleString('en-IN')} across ${rows.length} compan${rows.length > 1 ? 'ies' : 'y'}. Every line has its bill as proof.` : `No claim lines for ${month}.`,
+    text: rows.length ? `Claims for ${showMonth(month)}: ${inr(r2(rows.reduce((a, r) => a + Number(r[3]), 0)))} across ${rows.length} compan${rows.length > 1 ? 'ies' : 'y'}. Every line has its bill as proof.` : `No claim lines for ${showMonth(month)}.`,
     table: { name: `Claims ${month}`, columns: ['Company', 'Scheme ₹', 'Damage/expiry ₹', 'Total ₹'], rows },
     actions: sheets.length ? [{ label: 'Download claim file', run: () => downloadWorkbook(`Hanubix-Claims-${month}`, [{ name: 'Summary', header: ['Company', 'Scheme ₹', 'Damage/expiry ₹', 'Total ₹'], rows }, ...sheets]) }] : [],
   };

@@ -1,3 +1,4 @@
+import { inr, showDate } from './i18n';
 // Company field team: travel allowance (km × rate), daily allowance (home town or outstation) and expenses, built into
 // one monthly claim. Every flag the record raises is shown to the manager; nothing is hidden or "fixed" silently.
 import { ChangeSet, db, getSettings, session, thisMonth } from './db';
@@ -30,18 +31,18 @@ export async function monthClaim(staffId: string, month = thisMonth()): Promise<
     const rate = d.mode === 'car' ? pol.car : d.mode === 'bike' ? pol.bike : 0;
     const dk = measure(d.track).km; // from the readings, never the km figure a phone wrote
     km += dk; kmAmount += dk * rate;
-    if (!v) flags.push(`${d.date}: day started but no shop visited — no daily allowance`);
+    if (!v) flags.push(`${showDate(d.date)}: day started but no shop visited — no daily allowance`);
     else { daDays++; if (d.outstation) outDays++; }
-    if (!d.endAt) flags.push(`${d.date}: day not ended`);
-    for (const f of d.flags) if (f !== 'No shop visited') flags.push(`${d.date}: ${f}`);
+    if (!d.endAt) flags.push(`${showDate(d.date)}: day not ended`);
+    for (const f of d.flags) if (f !== 'No shop visited') flags.push(`${showDate(d.date)}: ${f}`);
   }
   const seen = new Map<string, string>();
   for (const e of exps) {
     const lim = pol.limits[e.category];
-    if (lim && e.amount > lim) flags.push(`${e.date}: ${e.category} ₹${e.amount} is over the ₹${lim} limit`);
-    if (onLeave(e.date)) flags.push(`${e.date}: ${e.category} ₹${e.amount} on a leave day`);
-    if (!e.photo && e.amount > 100) flags.push(`${e.date}: ${e.category} ₹${e.amount} has no bill photo`);
-    const h = hash(e.photo); if (h) { if (seen.has(h)) flags.push(`${e.date}: same bill photo as ${seen.get(h)}`); else seen.set(h, `${e.date} ${e.category}`); }
+    if (lim && e.amount > lim) flags.push(`${showDate(e.date)}: ${e.category} ${inr(e.amount)} is over the ${inr(lim)} limit`);
+    if (onLeave(e.date)) flags.push(`${showDate(e.date)}: ${e.category} ${inr(e.amount)} on a leave day`);
+    if (!e.photo && e.amount > 100) flags.push(`${showDate(e.date)}: ${e.category} ${inr(e.amount)} has no bill photo`);
+    const h = hash(e.photo); if (h) { if (seen.has(h)) flags.push(`${showDate(e.date)}: same bill photo as ${seen.get(h)}`); else seen.set(h, `${e.date} ${e.category}`); }
   }
   const daAmount = (daDays - outDays) * pol.daLocal + outDays * pol.daOut;
   const expenses = r2(exps.reduce((a, e) => a + e.amount, 0));

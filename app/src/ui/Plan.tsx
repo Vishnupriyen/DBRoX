@@ -3,7 +3,7 @@ import { Check, Truck, Navigation, Clock } from 'lucide-react';
 import { ask } from './dialog';
 import { db, today } from '../core/db';
 import { confirmPlan, suggestPlan, type PlanSuggestion } from '../core/pipeline';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import type { Invoice, Trip, Van } from '../core/types';
 
 
@@ -60,7 +60,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{billsToday}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{bills} {'bills'}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
+          <div><div className="v">{billsToday}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{plural(bills, 'bill')}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
           <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? 'TESRAX plan' : 'My route'} · {'change'}</button>
         </div>
       </div>
@@ -69,7 +69,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
         <div key={p.van.id || 'tomorrow'} className="card stack" style={{ gap: 8, borderStyle: p.van.id ? 'solid' : 'dashed' }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <b style={{ fontSize: 17 }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
-            <span className={`badge ${p.van.id ? 'navy' : 'warn'}`}>{p.shops.length} {'stops'} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}{p.van.id && km(p) ? ` · ${km(p)}` : ''}</span>
+            <span className={`badge ${p.van.id ? 'navy' : 'warn'}`}>{plural(p.shops.length, 'stop')} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}{p.van.id && km(p) ? ` · ${km(p)}` : ''}</span>
           </div>
           <div className="route">
             {p.shops.map((s, si) => (
@@ -98,7 +98,7 @@ function TodayTrips() {
   return (
     <div className="card">
       <div className="sechead"><h3>{"Today's trips"}</h3></div>
-      {trips.map(t => <div key={t.id} className="row" style={{ justifyContent: 'space-between', minHeight: 40 }}><b>{t.van}</b><span><span className="badge">{t.n} {'stops'}</span> <span className={`badge ${t.status === 'out' ? 'ok' : t.status === 'done' ? '' : 'warn'}`}>{t.status === 'out' ? <Navigation size={12} /> : <Clock size={12} />} {st[t.status]}</span></span></div>)}
+      {trips.map(t => <div key={t.id} className="row" style={{ justifyContent: 'space-between', minHeight: 40 }}><b>{t.van}</b><span><span className="badge">{plural(t.n, 'stop')}</span> <span className={`badge ${t.status === 'out' ? 'ok' : t.status === 'done' ? '' : 'warn'}`}>{t.status === 'out' ? <Navigation size={12} /> : <Clock size={12} />} {st[t.status]}</span></span></div>)}
     </div>
   );
 }

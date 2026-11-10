@@ -170,7 +170,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
       if ((role === 'owner' || role === 'office') && !standalone(mods)) {
         const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
         const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
-        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashStaff, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });
+        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });
       } else setMorning(null);
     })();
   }, [role, open]);
@@ -191,7 +191,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           <div className="grow">
             <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
             <div className="s">{morning.orders ? `${morning.orders} order${morning.orders > 1 ? 's' : ''} waiting for your OK.` : morning.toDeliver ? `${morning.toDeliver} bill${morning.toDeliver > 1 ? 's' : ''} to plan for delivery.` : 'Nothing is waiting on you right now.'}</div>
-            <div className="kv"><div><b>{morning.orders}</b><span>{'orders'}</span></div><div><b>{morning.toDeliver}</b><span>{'to deliver'}</span></div><div><b>{inr(morning.overdue)}</b><span>{'overdue'}</span></div><div><b>{morning.cash}</b><span>{'cash w/ staff'}</span></div></div>
+            <div className="kv"><div><b>{morning.orders}</b><span>{'orders'}</span></div><div><b>{morning.toDeliver}</b><span>{'to deliver'}</span></div><div><b>{inr(morning.overdue)}</b><span>{'overdue'}</span></div><div><b>{inr(morning.cash)}</b><span>{'with staff'}</span></div></div>
             {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{'Start here'} →</button>}
           </div>
         </div>

@@ -48,7 +48,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     setBusy(true);
     try {
       const res = await commit(p);
-      setClosed(res.message);
+      setClosed('Approved'); // the result itself follows as TESRAX's next message (said once, with Undo)
       onDone(res);
     } catch (e) {
       setClosed(null);

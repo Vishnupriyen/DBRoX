@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Phone, AlertTriangle, Landmark, MessageSquareText, Download, FileCheck2, ChevronRight, Wallet } from 'lucide-react';
-import { ChangeSet, db, localDay, today, activeShops, ymd } from '../core/db';
-import { inr } from '../core/i18n';
+import { ChangeSet, db, today, activeShops, ymd } from '../core/db';
+import { profitAndLoss } from '../core/pnl';
+import { inr, showDate, showMonth, plural } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
 import { downloadWorkbook } from '../core/readers';
@@ -26,7 +27,7 @@ export function Outstanding() {
   if (!list) return <div className="card muted">{'Loading…'}</div>; // never "₹0 in the market" before the numbers are in
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{inr(rows.reduce((a, r) => a + r.total, 0))}</div><div className="l">{'in the market'} · {rows.length} {'shops'}</div></div>
+      <div className="kpi navy"><div className="v">{inr(rows.reduce((a, r) => a + r.total, 0))}</div><div className="l">{'in the market'} · {plural(rows.length, 'shop')}</div></div>
       <div className="kpis"><div className="kpi"><div className="v">{inr(tot('b0'))}</div><div className="l">0–7 {'days'}</div></div><div className="kpi"><div className="v">{inr(tot('b8'))}</div><div className="l">8–15</div></div><div className="kpi"><div className="v" style={{ color: 'var(--warn)' }}>{inr(tot('b16'))}</div><div className="l">16–30</div></div><div className="kpi"><div className="v" style={{ color: 'var(--bad)' }}>{inr(tot('b31'))}</div><div className="l">30+</div></div></div>
       <div className="list">{rows.map(r => <button key={r.id} className="item tap" onClick={() => setOpen(r.id)}><div className={`avatar ${r.days > 30 ? 'bad' : r.days > 15 ? 'gold' : ''}`}>{r.name[0]}</div><div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.name}</div><div className="s">{r.area} · {'oldest'} {r.days}d{r.limit && r.total > r.limit ? ' · ' : ''}{r.limit > 0 && r.total > r.limit && <span className="badge bad">{'over limit'}</span>}</div></div><span className="amt num">{inr(r.total)}</span>{r.phone && <a className="btn small" href={`tel:${r.phone}`} onClick={e => e.stopPropagation()} aria-label="Call"><Phone size={16} /></a>}</button>)}</div>
       <div className="muted">{'Tap a shop for its full statement.'}</div>
@@ -49,7 +50,7 @@ export function Cheques() {
       <div className="list">
         {rows.map(p => <div key={p.id} className="item" style={{ flexWrap: 'wrap' }}>
           <div className={`avatar ${p.status === 'bounced' ? 'bad' : !p.ref && !p.confirmPhoto ? 'gold' : 'ok'}`}>{p.mode === 'upi' ? 'U' : 'C'}</div>
-          <div className="grow"><div className="t"><button className="link" style={{ fontSize: 15, fontWeight: 700, padding: 0 }} onClick={() => setOpen(p.shopId)}>{p.shop}</button> · {inr(p.amount)}</div><div className="s">{p.date} {p.createdAt.slice(11, 16)} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{'no reference'}</span>} · {'bills'} {p.bills || '—'} · {'by'} {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{'bounced'}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {'same amount twice'}</span>}</div></div>
+          <div className="grow"><div className="t"><button className="link" style={{ fontSize: 15, fontWeight: 700, padding: 0 }} onClick={() => setOpen(p.shopId)}>{p.shop}</button> · {inr(p.amount)}</div><div className="s">{showDate(p.date)} {p.createdAt.slice(11, 16)} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{'no reference'}</span>} · {'bills'} {p.bills || '—'} · {'by'} {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{'bounced'}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {'same amount twice'}</span>}</div></div>
           {!p.ref && <button className="btn small" onClick={() => setRef(p)}>{'Add ref'}</button>}
           {p.mode === 'cheque' && p.status !== 'bounced' && <button className="btn small" onClick={() => bounce(p)}><X size={14} /> {'Bounced'}</button>}
           {p.confirmPhoto && <img src={p.confirmPhoto} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />}
@@ -86,7 +87,7 @@ export function Expenses({ onRox }: { onRox?: () => void }) {
   return (
     <div className="stack">
       <button className="btn primary big block" onClick={onRox}><MessageSquareText /> {'Tell TESRAX: "diesel 1500", "toll 80", "rent 12000"'}</button>
-      <div className="kpi navy"><div className="v">{inr(rows.reduce((a, e) => a + e.amount, 0))}</div><div className="l">{'this month'} · {[...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${inr(v)}`).join(' · ')}</div></div>
+      <div className="kpi navy"><div className="v">{inr(rows.reduce((a, e) => a + e.amount, 0))}</div><div className="l">{'this month'}{byCat.size ? ' · ' : ''}{[...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${inr(v)}`).join(' · ')}</div></div>
       {pending.length > 0 && <div className="alert"><Wallet /><div className="grow"><b>{pending.length} {'to approve'}</b> · {inr(pending.reduce((a, e) => a + e.amount, 0))}</div><button className="btn small primary" onClick={approveAll}><Check /> {'Approve all'}</button></div>}
       <div className="list">{rows.map(e => <div key={e.id} className="item"><div className={`avatar ${e.approved || e.category === 'advance' ? 'ok' : 'gold'}`}><Wallet size={18} /></div><div className="grow"><div className="t">{e.category}{e.van ? ` · ${e.van}` : ''}</div><div className="s">{e.date} · {e.note?.slice(0, 50)}</div></div><span className="amt num">{inr(e.amount)}</span>{!e.approved && e.category !== 'advance' && <button className="btn small" onClick={async () => { const cs = new ChangeSet(); cs.put('expenses', { ...e, approved: true }, 'approved'); await cs.commit('Expense approved'); setTick(x => x + 1); }}><Check size={14} /></button>}</div>)}</div>
     </div>
@@ -99,36 +100,7 @@ export function PnL() {
   const [d, setD] = useState<{ income: Head[]; expense: Head[]; cash: number; bank: number; staff: number } | null>(null);
   const [period, setPeriod] = useState<'today' | 'month'>('month');
   const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { (async () => {
-    const from = period === 'today' ? today() : month();
-    const inRange = (dt: string) => period === 'today' ? dt === from : dt.startsWith(from);
-    const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && inRange(i.date));
-    const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
-    const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
-    const cns = (await db.creditNotes.toArray()).filter(c => inRange(c.date));
-    const income: Head[] = [];
-    // Sales by company (before tax)
-    for (const [cid, name] of cos) { const ci = invs.filter(i => i.companyId === cid); if (!ci.length) continue; income.push({ key: 'sales-' + cid, label: `${'Sales'} · ${name}`, amount: r2(ci.reduce((a, i) => a + i.taxable, 0)), items: ci.map(i => ({ d: i.date, t: `${i.number} · ${shops.get(i.shopId) ?? ''}`, v: i.taxable })) }); }
-    const other = invs.filter(i => !cos.has(i.companyId)); if (other.length) income.push({ key: 'sales-x', label: 'Sales · other', amount: r2(other.reduce((a, i) => a + i.taxable, 0)), items: other.map(i => ({ d: i.date, t: i.number, v: i.taxable })) });
-    if (cns.length) income.push({ key: 'cn', label: 'Returns / credit notes', amount: -r2(cns.reduce((a, c) => a + c.total, 0)), items: cns.map(c => ({ d: c.date, t: `${c.number} · ${shops.get(c.shopId) ?? ''} · ${c.reason}`, v: -c.total })) });
-    const claimsAll = (await db.claimEntries.toArray()).filter(c => inRange(localDay(c.createdAt)));
-    const schemes = await db.schemes.toArray();
-    const isOwn = (c: typeof claimsAll[0]) => c.kind === 'scheme' && schemes.some(s => s.source === 'own' && (s.productId === c.productId || !s.productId) && s.companyId === c.companyId);
-    const coClaims = claimsAll.filter(c => c.kind === 'scheme' && !isOwn(c)); const ownDisc = claimsAll.filter(isOwn);
-    if (coClaims.length) income.push({ key: 'claims', label: 'Company scheme claims', amount: r2(coClaims.reduce((a, c) => a + c.amount, 0)), items: coClaims.map(c => ({ d: localDay(c.createdAt), t: `${cos.get(c.companyId) ?? ''} · ${products.get(c.productId ?? '')?.name ?? c.kind}`, v: c.amount })) });
-    const exps = (await db.expenses.toArray()).filter(e => inRange(e.date) && e.category !== 'advance');
-    const incExp = exps.filter(e => e.category === 'income'); if (incExp.length) income.push({ key: 'other-income', label: 'Other income', amount: r2(incExp.reduce((a, e) => a + e.amount, 0)), items: incExp.map(e => ({ d: e.date, t: e.note ?? '', v: e.amount })) });
-    const expense: Head[] = [];
-    const cogsItems = invs.map(i => ({ d: i.date, t: i.number, v: r2(i.lines.reduce((b, l) => b + (l.qty + l.freeQty) * (products.get(l.productId)?.purchaseRate ?? 0), 0)) }));
-    expense.push({ key: 'cogs', label: 'Cost of goods sold (FIFO)', amount: r2(cogsItems.reduce((a, x) => a + x.v, 0)), items: cogsItems });
-    if (ownDisc.length) expense.push({ key: 'own', label: 'Own discounts given', amount: r2(ownDisc.reduce((a, c) => a + c.amount, 0)), items: ownDisc.map(c => ({ d: localDay(c.createdAt), t: products.get(c.productId ?? '')?.name ?? '', v: c.amount })) });
-    const byCat = new Map<string, typeof exps>(); for (const e of exps) { if (e.category === 'income') continue; byCat.set(e.category, [...(byCat.get(e.category) ?? []), e]); }
-    for (const [k, list] of [...byCat.entries()].sort((a, b) => b[1].reduce((x, e) => x + e.amount, 0) - a[1].reduce((x, e) => x + e.amount, 0))) expense.push({ key: 'exp-' + k, label: k[0].toUpperCase() + k.slice(1), amount: r2(list.reduce((a, e) => a + e.amount, 0)), items: list.map(e => ({ d: e.date, t: e.note || k, v: e.amount })) });
-    const pays = (await db.payments.toArray()).filter(p => p.status === 'ok');
-    const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
-    setD({ income, expense, cash: r2(pays.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(pays.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)) });
-  })(); }, [period]);
+  useEffect(() => { void profitAndLoss(period).then(setD); }, [period]);
   if (!d) return null;
   const incT = r2(d.income.reduce((a, h) => a + h.amount, 0)); const expT = r2(d.expense.reduce((a, h) => a + h.amount, 0)); const profit = r2(incT - expT);
   const HeadRow = ({ h, neg }: { h: Head; neg?: boolean }) => (
@@ -170,13 +142,13 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
     const bal = (await invoiceBalances()).filter(b => b.balance > 0.5);
     const byShop = new Map<string, { amount: number; overdue: number; n: number }>();
     for (const b of bal) { const v = byShop.get(b.invoice.shopId) ?? { amount: 0, overdue: 0, n: 0 }; v.amount += b.balance; v.n++; if (b.overdueDays > 0) v.overdue += b.balance; byShop.set(b.invoice.shopId, v); }
-    const recv: Line[] = [...byShop.entries()].map(([id, v]) => ({ id, name: shops.get(id) ?? id, amount: r2(v.amount), sub: `${v.n} ${'bills'}${v.overdue ? ` · ${'overdue'} ${inr(r2(v.overdue))}` : ''}` })).sort((a, b) => b.amount - a.amount);
+    const recv: Line[] = [...byShop.entries()].map(([id, v]) => ({ id, name: shops.get(id) ?? id, amount: r2(v.amount), sub: `${plural(v.n, 'bill')}${v.overdue ? ` · ${'overdue'} ${inr(r2(v.overdue))}` : ''}` })).sort((a, b) => b.amount - a.amount);
     const purchases = (await db.purchases.toArray()).filter(p => p.total - (p.paid ?? 0) > 0.5);
     const byCo = new Map<string, { amount: number; n: number; oldest: string }>();
     for (const p of purchases) { const v = byCo.get(p.companyId) ?? { amount: 0, n: 0, oldest: p.date }; v.amount += p.total - (p.paid ?? 0); v.n++; if (p.date < v.oldest) v.oldest = p.date; byCo.set(p.companyId, v); }
     const payCo: Line[] = [...byCo.entries()].map(([id, v]) => ({ id, name: cos.get(id) ?? id, amount: r2(v.amount), sub: `${v.n} ${'company bills'} · ${'oldest'} ${v.oldest.slice(5)}` })).sort((a, b) => b.amount - a.amount);
     const pays = (await db.payments.toArray());
-    const cheques: Line[] = pays.filter(p => p.mode === 'cheque' && p.status !== 'cancelled' && !p.bankLineId).map(p => ({ id: p.shopId, name: shops.get(p.shopId) ?? '', amount: p.amount, sub: `${p.ref ?? ''} · ${p.date}${p.status === 'bounced' ? ' · ' + 'BOUNCED' : ''}` }));
+    const cheques: Line[] = pays.filter(p => p.mode === 'cheque' && p.status !== 'cancelled' && !p.bankLineId).map(p => ({ id: p.shopId, name: shops.get(p.shopId) ?? '', amount: p.amount, sub: `${p.ref ?? ''} · ${showDate(p.date)}${p.status === 'bounced' ? ' · ' + 'BOUNCED' : ''}` }));
     const ok = pays.filter(p => p.status === 'ok');
     const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
     const exps = await db.expenses.toArray();
@@ -190,7 +162,7 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
   const Sec = ({ title, total, lines, tone, onTap }: { title: string; total: number; lines: Line[]; tone?: string; onTap?: (l: Line) => void }) => (
     <div className="card">
       <div className="row" style={{ justifyContent: 'space-between' }}><div className="eyebrow">{title}</div><b className="num" style={{ color: tone }}>{inr(total)}</b></div>
-      <div className="list">{lines.slice(0, 12).map((l, i) => <button key={i} className="item tap" onClick={() => onTap?.(l)} disabled={!onTap}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{l.name}</div><div className="s">{l.sub}</div></div><span className="amt num">{inr(l.amount)}</span></button>)}{!lines.length && <div className="muted">—</div>}{lines.length > 12 && <div className="muted">+{lines.length - 12} more</div>}</div>
+      <div className="list">{lines.slice(0, 12).map((l, i) => <button key={i} className="item tap" onClick={() => onTap?.(l)} disabled={!onTap}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{l.name}</div><div className="s">{l.sub}</div></div><span className="amt num">{inr(l.amount)}</span></button>)}{lines.length > 12 && <div className="muted">+{lines.length - 12} more</div>}</div>
     </div>
   );
   return (
@@ -225,7 +197,7 @@ export function ExportPage() {
   };
   return (
     <div className="stack">
-      <button className="btn big block" onClick={() => run(() => exportTally(m))}><Download /> {'Tally XML'} · {m}</button>
+      <button className="btn big block" onClick={() => run(() => exportTally(m))}><Download /> {'Tally XML'} · {showMonth(m)}</button>
       <button className="btn big block" onClick={ledgers}><Download /> {'Excel ledgers (sales, receipts, expenses)'}</button>
       <button className="btn big block" onClick={() => run(() => exportClaims(m))}><Download /> {'Claim file'}</button>
       <div className="muted">{'Your auditor gets these monthly. GST files are under the GST icon.'}</div>
@@ -242,13 +214,13 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     const products = await db.products.toArray(); const shops = await activeShops();
     const flags: { text: string; page?: string; tone?: 'bad' }[] = [];
     const noHsn = products.filter(p => p.active && !(p.hsn && (p.hsn.length === 6 || p.hsn.length === 8)));
-    if (noHsn.length) flags.push({ text: `${noHsn.length} product(s) have no valid HSN: ${noHsn.slice(0, 3).map(p => p.name).join(', ')} — fix before filing`, tone: 'bad' });
+    if (noHsn.length) flags.push({ text: `${plural(noHsn.length, 'product')} have no valid HSN: ${noHsn.slice(0, 3).map(p => p.name).join(', ')} — fix before filing`, tone: 'bad' });
     const revised = invs.filter(i => i.original);
-    if (revised.length) flags.push({ text: `${revised.length} bill(s) revised after delivery — included as delivered quantities, originals kept inside`, page: 'status' });
+    if (revised.length) flags.push({ text: `${plural(revised.length, 'bill')} revised after delivery — included as delivered quantities, originals kept inside`, page: 'status' });
     const badGst = shops.filter(s => s.gstin && s.gstin.length !== 15);
-    if (badGst.length) flags.push({ text: `${badGst.length} shop(s) have a wrong GSTIN — billed as B2C until fixed`, page: 'outstanding' });
+    if (badGst.length) flags.push({ text: `${plural(badGst.length, 'shop')} have a wrong GSTIN — billed as B2C until fixed`, page: 'outstanding' });
     const purchases = (await db.purchases.toArray()).filter(p => p.date.startsWith(m));
-    if (purchases.length) flags.push({ text: `${purchases.length} company bill(s) this month — drop your GSTR-2B Excel in TESRAX ("match 2B") before claiming input credit` });
+    if (purchases.length) flags.push({ text: `${plural(purchases.length, 'company bill')} this month — drop your GSTR-2B Excel in TESRAX ("match 2B") before claiming input credit` });
     const turnover = (await db.invoices.toArray()).filter(i => !i.cancelled).reduce((a, i) => a + i.total, 0);
     if (turnover > 50000000) flags.push({ text: 'Turnover crossed ₹5 crore — e-invoicing is mandatory', tone: 'bad' });
     const next = new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 11); const daysLeft = Math.ceil((next.getTime() - Date.now()) / 86400000);
@@ -259,8 +231,8 @@ export function Gst({ go }: { go?: (p: string) => void }) {
   return (
     <div className="stack">
       <div className="card" style={{ background: 'var(--navy)', color: 'var(--on-navy)' }}>
-        <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{'This month'} · {m}</div>
-        <div style={{ fontSize: 17, lineHeight: 1.5 }}>{`Sales ₹${d.sales.toLocaleString('en-IN')} on ${d.bills} bills · tax to pay ₹${d.tax.toLocaleString('en-IN')} · ${d.flags.length ? `${d.flags.length} thing(s) to fix` : 'nothing to fix'} · file GSTR-1 by ${d.due.slice(8)}/${d.due.slice(5, 7)} (${d.daysLeft} days).`}</div>
+        <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{showMonth(m)}</div>
+        <div style={{ fontSize: 17, lineHeight: 1.5 }}>{`Sales ${inr(d.sales)} on ${plural(d.bills, 'bill')} · tax to pay ${inr(d.tax)} · ${d.flags.length ? `${d.flags.length} ${d.flags.length === 1 ? 'thing' : 'things'} to fix` : 'nothing to fix'} · file GSTR-1 by ${showDate(d.due)} (${d.daysLeft} days).`}</div>
       </div>
       {d.flags.map((f, i) => <button key={i} className={`flag ${f.tone ?? ''}`} onClick={() => f.page && go?.(f.page)} style={{ textAlign: 'left' }}><AlertTriangle style={{ color: f.tone === 'bad' ? 'var(--bad)' : 'var(--warn)', flex: 'none' }} /><span className="grow">{f.text}</span>{f.page && <ChevronRight />}</button>)}
       {!d.flags.length && <div className="alert ok"><Check /><div>{'Everything is in order for filing.'}</div></div>}

@@ -1,3 +1,4 @@
+import { inr, showDate, plural } from './i18n';
 // TESRAX changes things after the fact: an order, a bill, a payment, an expense, a stock count, a shop's details,
 // a product's rate, or the last thing saved. Each one is a table the person checks and approves with ✓. Nothing
 // changes before that, and every change is saved through the same laws (guard) and can be undone.
@@ -84,7 +85,7 @@ export async function modifyIntent(c: ModCtx): Promise<Reply | null> {
   }
 
   // bills
-  if (cancel && has(t, BILL) && !c.isExpense && !has(t, ['payment']) && (c.shop || /\d{2,}/.test(t))) return billCancel(c);
+  if (cancel && has(t, BILL) && !c.isExpense && !has(t, ['payment']) && (c.shop || /\d{2,}/.test(t) || /\b(last|latest|previous|recent)\b/.test(t))) return billCancel(c); // "cancel last bill": the newest one, shown for ✓ first
 
   // payments
   const bounce = has(t, BOUNCE) && !c.isOrder;
@@ -124,10 +125,10 @@ async function undoLast(_role: Role): Promise<Reply> {
 }
 function describe(table: string, rec: unknown): string {
   const r = (rec ?? {}) as Record<string, unknown>;
-  if (table === 'payments') return `₹${r.amount} ${r.mode ?? ''}`;
-  if (table === 'expenses') return `₹${r.amount} ${r.category ?? ''}`;
-  if (table === 'invoices') return `${r.number ?? ''} ₹${r.total ?? ''}`;
-  if (table === 'orders') return `${(r.lines as unknown[] | undefined)?.length ?? 0} item(s), ${r.status ?? ''}`;
+  if (table === 'payments') return `${inr(r.amount)} ${r.mode ?? ''}`;
+  if (table === 'expenses') return `${inr(r.amount)} ${r.category ?? ''}`;
+  if (table === 'invoices') return `${r.number ?? ''} ${inr(r.total ?? '')}`;
+  if (table === 'orders') return `${plural((r.lines as unknown[] | undefined)?.length ?? 0, 'item')}, ${r.status ?? ''}`;
   if (table === 'batches') return `lot ${r.batch ?? ''}: ${r.qty ?? ''} pcs`;
   return String(r.name ?? r.number ?? r.category ?? '');
 }
@@ -228,13 +229,13 @@ async function orderChange(c: ModCtx, explicit: boolean): Promise<Reply | null> 
   const statusText = order.status === 'approved' ? 'approved, at the godown' : 'waiting for approval';
   const header = [
     { key: 'shopId', label: 'Shop', type: 'select' as const, options: await shopOptions(), value: shop.id, readonly: true },
-    { key: 'status', label: 'Order', value: `${order.date} · ${statusText}`, readonly: true },
+    { key: 'status', label: 'Order', value: `${showDate(order.date)} · ${statusText}`, readonly: true },
   ];
   if (cancelAll) {
     const rows: Row[] = [];
     for (const l of order.lines) { const p = products.get(l.productId); if (p) rows.push({ productId: p.id, qty: l.qty, amount: (await orderRow(p, l.qty, '', schemes, l.rate)).amount }); }
     return {
-      text: `Cancel ${shop.name}'s order of ${order.date} (${order.lines.length} item${order.lines.length > 1 ? 's' : ''})? Tap ✓ to cancel it.`,
+      text: `Cancel ${shop.name}'s order of ${showDate(order.date)} (${order.lines.length} item${order.lines.length > 1 ? 's' : ''})? Tap ✓ to cancel it.`,
       proposal: {
         id: newId(), kind: 'orderCancel', title: 'Cancel order',
         fields: [...header, { key: 'reason', label: 'Reason', value: 'Shop cancelled' }],
@@ -301,7 +302,7 @@ async function billCancel(c: ModCtx): Promise<Reply> {
   const shop = (await db.shops.get(inv.shopId))!;
   const products = new Map(c.products.map(p => [p.id, p]));
   return {
-    text: `Cancel bill ${inv.number} for ${shop.name} (₹${inv.total}, ${inv.date})? The stock goes back to the godown. Give a reason and tap ✓.`,
+    text: `Cancel bill ${inv.number} for ${shop.name} (${inr(inv.total)}, ${showDate(inv.date)})? The stock goes back to the godown. Give a reason and tap ✓.`,
     proposal: {
       id: newId(), kind: 'billCancel', title: 'Cancel bill',
       fields: [
@@ -334,7 +335,7 @@ async function paymentCancel(c: ModCtx, bounce: boolean): Promise<Reply> {
     .filter(p => !amt.length || amt.some(a => Math.abs(p.amount - a) < 0.01))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const p = pays[0];
-  if (!p) return { text: `I couldn't find a payment to cancel${amt.length ? ` of ₹${amt[0]}` : ''}${c.shop ? ` for ${c.shop.name}` : ''}${bounce ? ' (cheque or UPI)' : ''} in the last ${bounce ? 45 : 7} days.`, tone: 'warn' };
+  if (!p) return { text: `I couldn't find a payment to cancel${amt.length ? ` of ${inr(amt[0])}` : ''}${c.shop ? ` for ${c.shop.name}` : ''}${bounce ? ' (cheque or UPI)' : ''} in the last ${bounce ? 45 : 7} days.`, tone: 'warn' };
   if (!office(c.role) && (p.collectedBy !== me || p.settled)) return { text: "Can't cancel this payment: it is already with the office. Ask the owner.", tone: 'warn' };
   if (p.bankLineId) return { text: "Can't cancel this payment here: it is matched to the bank statement. Unmatch it in Accounts → Bank first.", tone: 'warn' };
   const shop = (await db.shops.get(p.shopId))!;
@@ -343,7 +344,7 @@ async function paymentCancel(c: ModCtx, bounce: boolean): Promise<Reply> {
   if (p.advance > 0.5) rows.push({ bill: 'Advance', amount: p.advance });
   if (!rows.length) rows.push({ bill: '—', amount: p.amount });
   return {
-    text: `Cancel the ₹${p.amount} ${p.mode} payment from ${shop.name} on ${p.date}? These bills will be open again. Tap ✓.`,
+    text: `Cancel the ${inr(p.amount)} ${p.mode} payment from ${shop.name} on ${showDate(p.date)}? These bills will be open again. Tap ✓.`,
     proposal: {
       id: newId(), kind: 'paymentCancel', title: bounce ? 'Cheque bounced' : 'Cancel payment',
       fields: [
@@ -374,11 +375,11 @@ async function expenseFix(c: ModCtx, cancel: boolean): Promise<Reply> {
     .filter(e => e.amount > 0 && e.date >= daysFrom(-7) && (cat === 'Other' || e.category === cat) && (old == null || Math.abs(e.amount - old) < 0.01) && (office(c.role) || e.by === me))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const e = list[0];
-  if (!e) return { text: `I couldn't find ${cat === 'Other' ? 'an' : `a ${cat.toLowerCase()}`} expense${old != null ? ` of ₹${old}` : ''}${office(c.role) ? '' : ' entered by you'} in the last 7 days.`, tone: 'warn' };
+  if (!e) return { text: `I couldn't find ${cat === 'Other' ? 'an' : `a ${cat.toLowerCase()}`} expense${old != null ? ` of ${inr(old)}` : ''}${office(c.role) ? '' : ' entered by you'} in the last 7 days.`, tone: 'warn' };
   const next = del ? e.amount : fix?.next ?? e.amount;
   const cats = ['Fuel', 'Toll', 'Van repair', 'Van hire', 'Batta', 'Salary', 'Rent', 'Electricity', 'Tea & food', 'Loading & labour', 'Phone & internet', 'Other'];
   return {
-    text: del ? `Delete the ₹${e.amount} ${e.category} expense of ${e.date}? Tap ✓.` : `Correcting the ${e.category} expense of ${e.date}: ₹${e.amount} → ₹${next}. Check and tap ✓.`,
+    text: del ? `Delete the ${inr(e.amount)} ${e.category} expense of ${showDate(e.date)}? Tap ✓.` : `Correcting the ${e.category} expense of ${showDate(e.date)}: ${inr(e.amount)} → ${inr(next)}. Check and tap ✓.`,
     proposal: {
       id: newId(), kind: 'expenseFix', title: del ? 'Delete expense' : 'Correct expense',
       fields: [

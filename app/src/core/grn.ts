@@ -1,3 +1,4 @@
+import { inr, plural } from './i18n';
 // Step 4 — digital goods receipt (distributor side) and the order to the company.
 // The company's bill arrives with its lines already in (from the company's own data: Hanubix or its SAP/Tally upload).
 // The QR on a GST e-invoice holds only the header (seller, buyer, bill no, date, value, number of lines, main HSN, IRN),
@@ -29,8 +30,8 @@ export function compareQr(inb: Inbound, qr: EinvQr, myGstin: string): string[] {
   const out: string[] = [];
   if (qr.DocNo && norm(qr.DocNo) !== norm(inb.number)) out.push(`QR bill number ${qr.DocNo}, this bill ${inb.number}`);
   if (qr.Irn && inb.irn && qr.Irn !== inb.irn) out.push('IRN on the QR is different');
-  if (qr.TotInvVal != null && Math.abs(qr.TotInvVal - inb.total) > 1) out.push(`QR value ₹${qr.TotInvVal}, this bill ₹${inb.total}`);
-  if (qr.ItemCnt != null && qr.ItemCnt !== inb.lines.length) out.push(`QR says ${qr.ItemCnt} lines, this bill has ${inb.lines.length}`);
+  if (qr.TotInvVal != null && Math.abs(qr.TotInvVal - inb.total) > 1) out.push(`QR value ${inr(qr.TotInvVal)}, this bill ${inr(inb.total)}`);
+  if (qr.ItemCnt != null && qr.ItemCnt !== inb.lines.length) out.push(`QR says ${plural(qr.ItemCnt, 'line')}, this bill has ${inb.lines.length}`);
   if (qr.BuyerGstin && myGstin && qr.BuyerGstin !== myGstin) out.push('The bill is made out to another GSTIN');
   return out;
 }

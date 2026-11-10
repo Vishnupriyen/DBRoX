@@ -111,6 +111,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
             {m.files?.map(f => <div key={f} className="att"><Paperclip size={12} style={{ verticalAlign: -2 }} /> {f}</div>)}
             {m.reply?.proposal && (m.replaced ? <div className="muted" style={{ marginTop: 6 }}>{m.replaced}</div> : <div style={{ marginTop: 10 }}><ApproveTable proposal={m.reply.proposal} onDone={onDone(m.id)} /></div>)}
             {m.reply?.table && <div style={{ marginTop: 10 }}><ReadTable table={m.reply.table} /></div>}
+            {m.reply?.link && onGo ? <div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={() => onGo(m.reply!.link!.page)}>{m.reply.link.label} →</button></div> : null}
             {m.reply?.actions?.length ? <div className="row" style={{ marginTop: 8 }}>{m.reply.actions.map(a => <button key={a.label} className="btn primary small" onClick={() => a.run()}>{a.label}</button>)}</div> : null}
             {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div> : null}
             {m.batchId && !m.undone && <div style={{ marginTop: 6 }}><button className="btn small ghost" onClick={() => undo(m)}><Undo2 /> {t('undo')}</button></div>}

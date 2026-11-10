@@ -1,3 +1,4 @@
+import { inr } from '../core/i18n';
 import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { db, getSettings } from '../core/db';
@@ -62,8 +63,8 @@ export function PrintBill({ invoice, onClose }: { invoice: Invoice; onClose: () 
           <div style={{ flex: 1 }}>
             <div>Amount in words: <b>{rupeesInWords(invoice.total)}</b></div>
             {invoice.schemeSaving > 0 && <div>Scheme savings: <b>₹{invoice.schemeSaving.toFixed(2)}</b></div>}
-            <div>Previous balance: ₹{oldBal.toLocaleString('en-IN')}</div>
-            <div>Total due: <b>₹{(oldBal + invoice.total).toLocaleString('en-IN')}</b></div>
+            <div>Previous balance: {inr(oldBal)}</div>
+            <div>Total due: <b>{inr((oldBal + invoice.total))}</b></div>
           </div>
           <table style={{ width: 220 }}>
             <tbody>

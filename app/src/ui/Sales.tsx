@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, MapPin, Phone, Store, AlertTriangle, Target as TargetIcon } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, showMonth, inrR } from '../core/i18n';
 import { norm } from '../core/match';
 import { validGstin, r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
@@ -104,12 +104,12 @@ export function Targets() {
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><TargetIcon size={18} style={{ verticalAlign: -3 }} /> {'Targets'} · {month}</h3><button className="link" onClick={add}>{'+ set target'}</button></div>
+      <div className="sechead"><h3><TargetIcon size={18} style={{ verticalAlign: -3 }} /> {'Targets'} · {showMonth(month)}</h3><button className="link" onClick={add}>{'+ set target'}</button></div>
       {rows.map(r => { const pct = Math.min(100, Math.round(r.done / r.t.value * 100)); return (
         <div key={r.t.id} className="card">
           <div className="row" style={{ justifyContent: 'space-between' }}><b>{r.company}</b><span className="num">{inr(r.done)} / {inr(r.t.value)}</span></div>
           <div style={{ height: 10, background: 'var(--paper-2)', borderRadius: 999, overflow: 'hidden', margin: '6px 0' }}><div style={{ width: `${pct}%`, height: '100%', background: pct < 70 ? 'var(--bad)' : 'var(--ok)' }} /></div>
-          <div className="muted">{pct}% · {'needed per day'} {inr(r.perDay)}</div>
+          <div className="muted">{pct}% · {'needed per day'} {inrR(r.perDay)}</div>
         </div>); })}
       {!rows.length && <div className="card muted">{'No targets set for this month.'}</div>}
     </div>

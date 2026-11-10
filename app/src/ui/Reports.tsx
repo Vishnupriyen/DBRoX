@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Download, TrendingUp, TrendingDown, Percent, PackageX, Store, Building2, Users, MapPin, Undo2, Gift, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { db, thisMonth, daysFrom } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { downloadWorkbook } from '../core/readers';
 
@@ -78,7 +78,7 @@ export function Reports() {
         <button className="btn small" onClick={exportAll}><Download size={16} /> {'All to Excel'}</button>
       </div>
       <div className="list">
-        {reports.map(r => <button key={r.key} className="item tap" onClick={() => setOpen(r.key)}><div className="avatar"><r.icon size={18} /></div><div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.en}</div><div className="s">{r.rows.length} {'rows'}</div></div></button>)}
+        {reports.map(r => <button key={r.key} className="item tap" onClick={() => setOpen(r.key)}><div className="avatar"><r.icon size={18} /></div><div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.en}</div><div className="s">{plural(r.rows.length, 'row')}</div></div></button>)}
       </div>
       <div className="muted"><Zap size={14} style={{ verticalAlign: -2 }} /> {'Or just ask TESRAX: "fast movers", "shop-wise sales", "dead stock".'}</div>
     </div>

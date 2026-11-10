@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, MapPin, Clock, LogIn, UserX, IndianRupee, Download } from 'lucide-react';
 import { ChangeSet, db, nowIso, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, showMonth, plural } from '../core/i18n';
 import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
 import { askText, confirmBox } from './dialog';
@@ -135,9 +135,21 @@ export function Salary() {
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{m}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
-      <table className="tbl"><thead><tr><th>{'Name'}</th><th>{'Days'}</th><th>{'Fixed'}</th><th>{'Batta'}</th><th>{'Adv'}</th><th>{'Short'}</th><th>{'Net'}</th><th></th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.s.id}><td>{r.s.name.split(' ')[0]}</td><td className="num">{r.present}{r.unpaidLeave ? <span className="muted"> −{r.unpaidLeave}</span> : null}</td><td className="num">{r.fixed || <span className="muted">{'set'}</span>}</td><td className="num">{r.batta}</td><td className="num" style={{ color: r.advance ? 'var(--bad)' : undefined }}>{r.advance || '—'}</td><td className="num" style={{ color: r.shortfall ? 'var(--bad)' : undefined }}>{r.shortfall || '—'}</td><td className="num"><b>{inr(r.net)}</b>{r.carry > 0 ? <div className="muted" style={{ fontSize: 11 }}>{inr(r.carry)} {'next month'}</div> : null}</td><td>{r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Paid'}</button>}</td></tr>)}</tbody></table>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Present days', 'Unpaid leave', 'Fixed', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.present, r.unpaidLeave, r.fixed, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
+      {/* one card per person: fits any phone; the full sheet is the Excel */}
+      <div className="list">{rows.map(r => (
+        <div key={r.s.id} className="item">
+          <div className="grow">
+            <div className="t">{r.s.name.split(' (')[0]}</div>
+            <div className="s">{[plural(r.present, 'day'), r.unpaidLeave ? `${r.unpaidLeave} unpaid leave` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
+            {r.carry > 0 && <div className="s">{inr(r.carry)} {'carries to next month'}</div>}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div className="num" style={{ fontWeight: 700, fontSize: 17 }}>{inr(r.net)}</div>
+            {r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Mark paid'}</button>}
+          </div>
+        </div>))}
+      </div>
       <div className="muted">{'Set each person\'s salary and batta in Staff. 2 paid leave days a month; beyond that is deducted. Advances come back in the instalments set, then cash shortfalls — never more than the salary; anything left carries to next month.'}</div>
     </div>
   );

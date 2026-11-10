@@ -1,3 +1,4 @@
+import { inr } from './i18n';
 import { nextNumbers } from './sync';
 import { ChangeSet, db, getSettings, today } from './db';
 import { isB2B, r2, shopOutstanding } from './ledger';
@@ -80,15 +81,15 @@ export async function checkOrder(shop: Shop, lines: OrderLine[]): Promise<OrderC
     total += l.qty * l.rate * (1 + p.gst / 100);
     const { short } = pickBatches(batches, p.id, l.qty);
     if (short > 0) issues.push(`Stock short: ${p.name} needs ${short} more pcs`);
-    if (l.rate < p.rate * (1 - settings.discountAlertPct / 100)) issues.push(`Low rate for ${p.name}: ₹${l.rate} vs ₹${p.rate}`);
+    if (l.rate < p.rate * (1 - settings.discountAlertPct / 100)) issues.push(`Low rate for ${p.name}: ${inr(l.rate)} vs ${inr(p.rate)}`);
   }
   if (!shop.approved) issues.push('New shop not yet approved by owner');
   const out = await shopOutstanding(shop.id);
-  if (shop.cashOnly && out.total > 0.5) issues.push(`Cash-only shop has ₹${out.total} pending`);
+  if (shop.cashOnly && out.total > 0.5) issues.push(`Cash-only shop has ${inr(out.total)} pending`);
   if (shop.creditLimit > 0 && out.total + total > shop.creditLimit) {
-    issues.push(`Credit limit ₹${shop.creditLimit} crossed (pending ₹${r2(out.total)} + this ₹${r2(total)})`);
+    issues.push(`Credit limit ${inr(shop.creditLimit)} crossed (pending ${inr(r2(out.total))} + this ${inr(r2(total))})`);
   }
-  if (out.maxOverdueDays > 0) issues.push(`Overdue ${out.maxOverdueDays} days (₹${out.overdue})`);
+  if (out.maxOverdueDays > 0) issues.push(`Overdue ${out.maxOverdueDays} days (${inr(out.overdue)})`);
   return { issues, total: r2(total) };
 }
 

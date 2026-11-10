@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Play, Square, MapPin, ShoppingCart, Camera, Ban, Check, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import { db, session, thisMonth, today } from '../core/db';
-import { inr as inrExact } from '../core/i18n';
+import { inr as inrExact, plural } from '../core/i18n';
 import {
   applyLeave, dayName, decideLeave, endDay, fieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
   repSales, requestShop, setTarget, startDay, teamToday, todaysBeat, visitShop, DAY_NAMES, type RepRow,
@@ -152,7 +152,7 @@ export function MyOrders() {
   return (
     <div className="stack">
       <div className="list">{rows.map(({ o, shop, st }) => (
-        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[new Date(`${o.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), `${o.lines.length} items`, st.status === 'billed' ? 'Billed by distributor' : 'Sent to distributor'].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
+        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[new Date(`${o.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), `${plural(o.lines.length, 'item')}`, st.status === 'billed' ? 'Billed by distributor' : 'Sent to distributor'].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
       ))}</div>
       {!rows.length && <div className="card muted">{'No orders this month yet.'}</div>}
     </div>
@@ -231,7 +231,7 @@ export function TeamToday() {
         <div key={r.staff.id} className="item">
           <div className="grow">
             <div className="t">{r.staff.name}</div>
-            <div className="s">{r.started ? [`started ${time(r.started)}`, r.ended ? `ended ${time(r.ended)}` : `last seen ${time(r.lastSeen)}`, `${r.km} km`, `${r.visits} visits (${r.productive} with order)`, r.far ? `${r.far} far from shop` : ''].filter(Boolean).join(' · ') : 'Not started'}</div>
+            <div className="s">{r.started ? [`started ${time(r.started)}`, r.ended ? `ended ${time(r.ended)}` : `last seen ${time(r.lastSeen)}`, `${r.km} km`, `${plural(r.visits, 'visit')} (${r.productive} with order)`, r.far ? `${r.far} far from shop` : ''].filter(Boolean).join(' · ') : 'Not started'}</div>
             {r.flags.map(f => <div key={f} className="s" style={{ color: 'var(--warn)' }}>{f}</div>)}
           </div>
           <div className="num">{inr(r.orderValue)}</div>

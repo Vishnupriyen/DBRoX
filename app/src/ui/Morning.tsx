@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Banknote, Boxes, CalendarClock, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
 import { ChangeSet, db, today, undoBatch, daysFrom } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
-import { inr } from '../core/i18n';
+import { inr, plural, inrR } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
 import type { AuditEntry, Order } from '../core/types';
 
@@ -31,7 +31,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
   return (
     <div className="stack">
       {show('rest') && <div className="kpis">
-        <div className="kpi navy"><div className="v">{inr(d.y.sales)}</div><div className="l">{"Yesterday's sales"} · {d.y.bills} {'bills'}</div>{d.y.prevSales > 0 && <div className={`d ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% vs day before</div>}</div>
+        <div className="kpi navy"><div className="v">{inr(d.y.sales)}</div><div className="l">{"Yesterday's sales"} · {plural(d.y.bills, 'bill')}</div>{d.y.prevSales > 0 && <div className={`d ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% vs day before</div>}</div>
         <div className="kpi navy"><div className="v">{inr(d.y.profit)}</div><div className="l">{'Gross profit'} · {d.y.margin}%</div><div className="d" style={{ color: 'var(--on-navy-2)' }}>{'after schemes & discounts'}</div></div>
         <div className="kpi"><div className="v">{inr(d.collect.dueToday)}</div><div className="l">{'To collect today'}</div></div>
         <div className="kpi"><div className="v" style={{ color: d.collect.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(d.collect.overdue)}</div><div className="l">{'Overdue in market'}</div></div>
@@ -87,7 +87,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
                 <div key={tg.company + tg.kind}>
                   <div className="row" style={{ justifyContent: 'space-between' }}><span><b>{tg.company}</b> · {tg.kind}</span><span className="num">{inr(tg.done)} / {inr(tg.target)}</span></div>
                   <div style={{ height: 10, background: 'var(--paper-2)', borderRadius: 999, overflow: 'hidden', margin: '4px 0' }}><div style={{ width: `${pct}%`, height: '100%', background: tg.behind ? 'var(--bad)' : 'var(--ok)' }} /></div>
-                  <div className="muted">{pct}% {'done'} · {'needed per day'} {inr(tg.perDay)}{tg.behind && <span className="badge bad" style={{ marginLeft: 6 }}>{'falling behind'}</span>}</div>
+                  <div className="muted">{pct}% {'done'} · {'needed per day'} {inrR(tg.perDay)}{tg.behind && <span className="badge bad" style={{ marginLeft: 6 }}>{'falling behind'}</span>}</div>
                 </div>
               );
             })}

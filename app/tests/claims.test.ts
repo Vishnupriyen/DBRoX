@@ -108,7 +108,7 @@ describe('travel and expenses', () => {
       expect(m.kmAmount).toBeCloseTo(m.km * DEFAULT_POLICY.bike, 1);
       expect(m.daDays).toBe(1);
       expect(m.expenses).toBe(1620);
-      expect(m.flags.some(f => /over the ₹1200 limit/.test(f))).toBe(true);
+      expect(m.flags.some(f => /over the ₹1,200 limit/.test(f))).toBe(true);
       expect(m.flags.some(f => /same bill photo/.test(f))).toBe(true);
       expect(m.flags.some(f => /not ended/.test(f))).toBe(true);
     });

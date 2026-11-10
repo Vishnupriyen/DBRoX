@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight, QrCode, Check, Send } from 'lucide-react';
 import { db } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 import { compareQr, readDifferences, readEinvoiceQr, receiveInbound, receiptOf, sendPrimaryOrder, suggestOrder, type Diff, type SuggestRow } from '../core/grn';
 import { getSettings } from '../core/db';
 import { PhotoButton } from './PhotoButton';
@@ -38,7 +38,7 @@ export function CompanyBills() {
       <div className="muted">{'Bills from companies that use Hanubix arrive here with every line filled in. Check the goods, type anything short or damaged, and receive.'}</div>
       <div className="list">{list.map(i => (
         <button key={i.id} className="item tap" onClick={() => setOpen(i.id)}>
-          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{`${i.company} · ${i.number}`}</div><div className="s">{[day(i.date), `${i.lines.length} lines`, i.cancelled ? (i.got ? 'Cancelled by the company after you received it — talk to them' : 'Cancelled by the company') : !i.got ? 'To receive' : i.got.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
+          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{`${i.company} · ${i.number}`}</div><div className="s">{[day(i.date), `${plural(i.lines.length, 'line')}`, i.cancelled ? (i.got ? 'Cancelled by the company after you received it — talk to them' : 'Cancelled by the company') : !i.got ? 'To receive' : i.got.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
           <div className="num">{inr(i.total)}</div><ChevronRight size={18} />
         </button>
       ))}</div>
@@ -121,8 +121,8 @@ export function OrderToCompany() {
           <tbody>{rows.map(r => <tr key={r.productId}><td>{r.name}{r.inTransit ? <div className="s">{`${r.inTransit} coming`}</div> : null}</td><td className="num">{r.perDay}</td><td className="num">{r.stock}</td>
             <td><input aria-label={`Cases of ${r.name}`} inputMode="numeric" style={{ width: 56 }} value={cases[r.productId] ?? 0} onChange={e => setCases({ ...cases, [r.productId]: Number(e.target.value.replace(/\D/g, '')) || 0 })} /></td></tr>)}</tbody></table></div>
       </div>
-      <button className="btn primary big block" disabled={busy || !lines.length} onClick={async () => { setBusy(true); try { if (await act(() => sendPrimaryOrder(co, lines))) { await notify('Order sent', 'The company sees it and sends the invoice here.'); await loadOrders(co); } } finally { setBusy(false); } }}><Send size={18} /> {lines.length ? `Send order · ${lines.length} products` : 'Nothing to order'}</button>
-      {orders.length > 0 && <div className="list">{orders.map(o => <div key={o.id} className="item"><div className="grow"><div className="t">{day(o.date)}</div><div className="s">{`${o.lines.length} products · ${o.invoiced ? 'Invoiced by the company' : 'Sent'}`}</div></div></div>)}</div>}
+      <button className="btn primary big block" disabled={busy || !lines.length} onClick={async () => { setBusy(true); try { if (await act(() => sendPrimaryOrder(co, lines))) { await notify('Order sent', 'The company sees it and sends the invoice here.'); await loadOrders(co); } } finally { setBusy(false); } }}><Send size={18} /> {lines.length ? `Send order · ${plural(lines.length, 'product')}` : 'Nothing to order'}</button>
+      {orders.length > 0 && <div className="list">{orders.map(o => <div key={o.id} className="item"><div className="grow"><div className="t">{day(o.date)}</div><div className="s">{`${plural(o.lines.length, 'product')} · ${o.invoiced ? 'Invoiced by the company' : 'Sent'}`}</div></div></div>)}</div>}
     </div>
   );
 }

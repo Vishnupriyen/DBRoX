@@ -47,6 +47,7 @@ export function code(r: Reply): string {
     }
   }
   if (r.go) return `go:${r.go}`;
+  if (r.link) return `go:${r.link.page}`; // answered in words with the screen one tap away: the person still gets there
   if (r.table) {
     const n = r.table.name.toLowerCase();
     if (/^tally/.test(n)) return 'export:tally';
@@ -71,7 +72,7 @@ export function code(r: Reply): string {
   if (/claim/.test(act)) return 'export:claims';
   if (t === HELP_TEXT || t.endsWith(HELP_TEXT) && !/didn.t understand/i.test(t)) return 'help';
   if (r.tone === 'ok' && /leave/i.test(t)) return 'leave';
-  if (r.tone === 'ok' && /advance/i.test(t)) return `advance:${(t.match(/₹(\d+)/) ?? [])[1]}`;
+  if (r.tone === 'ok' && /advance/i.test(t)) return `advance:${((t.match(/₹([\d,]+)/) ?? [])[1] ?? '').replace(/,/g, '')}`; // amounts are shown the Indian way (₹1,000)
   if (r.tone === 'warn') return 'ask';
   return `other:${t.slice(0, 50)}`;
 }

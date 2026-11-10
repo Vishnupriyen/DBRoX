@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Banknote, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr } from '../core/i18n';
+import { inr, showDate, plural } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { ShopStatement } from './ShopStatement';
 import type { Advance, Payment } from '../core/types';
@@ -29,8 +29,8 @@ export function CashWithStaff() {
   const total = groups.reduce((a, g) => a + g.total, 0);
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{inr(total)}</div><div className="l">{'cash with staff right now'} · {groups.length} {'people'}</div></div>
-      {shortfalls.length > 0 && <div className="alert bad"><AlertTriangle /><div><b>{'Pending from earlier day closes'}:</b> {shortfalls.map(a => `${a.name.split(' ')[0]} ${inr(a.amount - (a.recovered ?? 0))} (${a.date})`).join(' · ')} — {'recovered from salary'}</div></div>}
+      <div className="kpi navy"><div className="v">{inr(total)}</div><div className="l">{'cash with staff right now'} · {plural(groups.length, 'person', 'people')}</div></div>
+      {shortfalls.length > 0 && <div className="alert bad"><AlertTriangle /><div><b>{'Pending from earlier day closes'}:</b> {shortfalls.map(a => `${a.name.split(' ')[0]} ${inr(a.amount - (a.recovered ?? 0))} (${showDate(a.date)})`).join(' · ')} — {'recovered from salary'}</div></div>}
       {groups.map(g => (
         <div key={g.staffId} className="card stack" style={{ gap: 6 }}>
           <button className="row" style={{ flexWrap: 'nowrap', background: 'none', border: 0, padding: 0, textAlign: 'left', width: '100%' }} onClick={() => setOpenStaff(openStaff === g.staffId ? null : g.staffId)}>
