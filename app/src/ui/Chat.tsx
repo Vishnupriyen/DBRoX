@@ -18,6 +18,9 @@ const SUGGEST: Record<Role, string[]> = {
   salesman: ['Murugan Stores 1 case Surf, 24 Good Day', 'Selvam Kirana paid 500 cash', 'leave Monday', 'advance 1000', 'help'],
   godown: ['pick orders', 'load sheet', 'near expiry', 'stock of surf', '5 Good Day damaged', 'help'],
   delivery: ['my trip', 'diesel 1500', 'Kumar Mart outstanding', 'help'],
+  cadmin: ['sales this month', 'stock at distributors', 'pending claims', 'who did not visit today', 'help'],
+  manager: ['who did not visit today', 'pending claims', 'team sales this month', 'help'],
+  rep: ['start day', 'Murugan Stores 2 case Kaveri Gold', 'lunch 120, bus 45', 'my sales this month', 'help'],
 };
 
 let seq = 1;

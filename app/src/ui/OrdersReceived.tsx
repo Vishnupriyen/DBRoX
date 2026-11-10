@@ -20,11 +20,15 @@ export function OrdersReceived() {
     (async () => {
       const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
       const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
+      const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
+      // a company rep's order (through the company link) names the company and the rep
+      const who = (o: Order) => o.source === 'company' ? `${cos.get(o.companyId ?? '') ?? 'Company'} rep ${o.companyRep ?? ''}`.trim() : staff.get(o.salesmanId ?? '') ?? o.source;
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'new' || o.status === 'needs_ok').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const dues = await allOutstanding(); // one pass over the bills for every shop, not one per order
       const hist = (s: Shop): Hist => { const d = dues.get(s.id); return { bills: d?.bills ?? 0, amount: d?.amount ?? 0, oldestDays: d?.oldestDays ?? 0, limit: s.creditLimit, days: s.creditDays }; };
-      setOrders(os.map(o => { const shop = shops.get(o.shopId)!; return { ...o, shop, hist: hist(shop), salesman: staff.get(o.salesmanId ?? '') ?? o.source }; }));
+      // an order for a shop not here yet (a company rep's just-requested shop) waits until the shop arrives
+      setOrders(os.filter(o => shops.has(o.shopId)).map(o => { const shop = shops.get(o.shopId)!; return { ...o, shop, hist: hist(shop), salesman: who(o) }; }));
     })();
   }, [tick]);
 
@@ -43,7 +47,7 @@ export function OrdersReceived() {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {o.salesman} · {o.source === 'salesman' ? '' : o.source}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {o.salesman}{o.source === 'salesman' || o.source === 'company' ? '' : ` · ${o.source}`}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {/* shop history strip — the one line that decides credit */}
@@ -52,7 +56,7 @@ export function OrdersReceived() {
               {o.hist.limit > 0 && <> · {'limit'} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> / {o.hist.days}d</>}
             </div>
             {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{'Rate request'}:</b> {o.rateRemark}</div></div>}
-            {o.source !== 'salesman' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{'How did this order come?'}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{'pick'}</option><option value="phone">{'Phone'}</option><option value="in_person">{'In person'}</option><option value="whatsapp">WhatsApp</option><option value="other">{'Other'}</option></select></div>}
+            {o.source !== 'salesman' && o.source !== 'company' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{'How did this order come?'}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{'pick'}</option><option value="phone">{'Phone'}</option><option value="in_person">{'In person'}</option><option value="whatsapp">WhatsApp</option><option value="other">{'Other'}</option></select></div>}
             {o.issues.length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.map((x, i) => <div key={i}>{x}</div>)}</div></div>}
             <div className="list">
               {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">@{l.rate}</span></div>; })}

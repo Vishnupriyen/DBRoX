@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Home as HomeIcon, Menu, Delete, ArrowRight, ArrowLeft, X } from 'lucide-react';
-import { dayBefore, db, setSession, today } from './core/db';
+import { dayBefore, db, setSession, sideNow, today } from './core/db';
+import { wireDemoRelay } from './core/link';
+import { seedCompanyDemo } from './core/seedCompany';
+import { CompanyHome, CompanyPage, CO_TITLE, type CoPage } from './ui/Company';
+import { switchDemoSide } from './ui/More';
+import { CompanyBills, OrderToCompany } from './ui/CompanyBills';
+import { isCompanyRole } from './core/types';
+import { addPoint } from './core/field';
 import { seedDemo } from './core/seed';
 import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
 import { t } from './core/i18n';
@@ -11,7 +18,7 @@ import { ErrorBoundary } from './ui/Safety';
 import { Billing } from './ui/Billing';
 import { refreshLicence, type LicenceState } from './core/licence';
 import { sound } from './core/sound';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, RefreshCw, LogOut, Repeat } from 'lucide-react';
 import { UndoToast } from './ui/UndoToast';
 import { OrdersReceived } from './ui/OrdersReceived';
 import { NewShop, NewShops, Targets } from './ui/Sales';
@@ -47,7 +54,7 @@ const TITLE: Partial<Record<Page, string>> = {
   collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
   bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
   gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
-  'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing',
+  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -57,7 +64,7 @@ export default function App() {
   const [me, setMe] = useState<Staff | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [firm, setFirm] = useState('');
-  const [page, setPage] = useState<Page>('home');
+  const [page, setPage] = useState<Page | CoPage>('home');
   const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
   const [soundOn, setSoundOn] = useState(sound.isOn());
@@ -71,17 +78,24 @@ export default function App() {
     return () => { window.removeEventListener('hanubix:licence', on); clearInterval(id); };
   }, [me]);
 
+  // company field rep: while the day is open and the app is on screen, location readings build the km record
+  useEffect(() => {
+    if (me?.role !== 'rep' || !navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(p => { void addPoint({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }).catch(() => {}); }, () => {}, { enableHighAccuracy: true, maximumAge: 30000, timeout: 60000 });
+    return () => navigator.geolocation.clearWatch(id);
+  }, [me]);
+
   const loadMe = async (userId: string) => {
     const s = await db.staff.get(userId);
     const st = await db.settings.toCollection().first();
     setSettings(st ?? null); setFirm(st?.firmName ?? '');
-    if (s) { setMe(s); setCheckedIn(s.role === 'owner' || !!(await db.checkIns.where('date').equals(today()).toArray()).find(c => c.staffId === s.id)); }
+    if (s) { setMe(s); setCheckedIn(s.role === 'owner' || isCompanyRole(s.role) || !!(await db.checkIns.where('date').equals(today()).toArray()).find(c => c.staffId === s.id)); }
     return s;
   };
 
   useEffect(() => {
     (async () => {
-      if (!ENV_SERVER) await seedDemo();
+      if (!ENV_SERVER) { await wireDemoRelay(); if (sideNow() === 'company') await seedCompanyDemo(); else await seedDemo(); }
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');
       if (saved) {
@@ -113,14 +127,21 @@ export default function App() {
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
   const home = () => { setPage('home'); };
   const go = (p: string) => { setPage((ALIAS[p] ?? p) as Page); setRox(false); };
-  const title = TITLE[page];
+  const company = settings?.kind === 'company';
+  const title = page in CO_TITLE ? CO_TITLE[page as CoPage] : TITLE[page as Page];
   const openRox = () => { sound.wake(); setRox(true); };
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
   if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
-    switch (page) {
+    if (company) {
+      if (page === 'home') return <CompanyHome role={me.role} go={p => setPage(p)} />;
+      if (page in CO_TITLE) return <CompanyPage page={page as CoPage} role={me.role} go={p => setPage(p)} />;
+      if (page === 'more') return <CompanyMore onLogout={logout} />;
+      return <CompanyHome role={me.role} go={p => setPage(p)} />;
+    }
+    switch (page as Page) {
       case 'home': return <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
       case 'orders-received': return <OrdersReceived />;
       case 'verify': return <Approve go={go} />;
@@ -167,6 +188,8 @@ export default function App() {
       case 'lite-export': return <LiteExport />;
       case 'orders-excel': return <MyDay />;
       case 'billing': return <Billing role={me.role} />;
+      case 'inbound': return <CompanyBills />;
+      case 'reorder': return <OrderToCompany />;
       case 'more': return <More role={me.role} onLogout={logout} onPlan={() => setPage('billing')} />;
     }
   };
@@ -210,6 +233,18 @@ export default function App() {
   );
 }
 
+// Company side "More": a short menu (sync, log out; in the demo, back to the distributor side)
+function CompanyMore({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div className="list">
+      <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
+      <button className="item" onClick={onLogout}><LogOut /> <span className="grow">Log out</span></button>
+      {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('distributor')}><Repeat /> <span className="grow">Demo: open the distributor side</span></button>}
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX</div>
+    </div>
+  );
+}
+
 // Plan banner: trial ending (10 days), payment pending (grace), locked, or licence needs internet.
 function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => void }) {
   if (!lic || lic.demo) return null;
@@ -236,7 +271,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
   const [demo, setDemo] = useState<Staff[]>([]);
   const [firms, setFirms] = useState<{ tenantId: string; firm: string }[] | null>(null);
   const [tenant, setTenant] = useState<string | undefined>();
-  const [newFirm, setNewFirm] = useState<{ firmName: string; ownerName: string; gstin: string } | null>(null);
+  const [newFirm, setNewFirm] = useState<{ firmName: string; ownerName: string; gstin: string; kind?: 'company' } | null>(null);
   useEffect(() => { if (!ENV_SERVER) db.staff.toArray().then(setDemo); }, []);
   const go = async (p = phone, n = pin) => {
     setErr('');
@@ -249,9 +284,9 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
 
   if (newFirm) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Start your 60-day free trial'}</div></div>
+      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{newFirm.kind === 'company' ? 'Company sign-up' : 'Start your 60-day free trial'}</div></div>
       <div className="stack">
-        <div className="field"><label>Firm name</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
+        <div className="field"><label>{newFirm.kind === 'company' ? 'Company name' : 'Firm name'}</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
         <div className="field"><label>GSTIN</label><input value={newFirm.gstin} onChange={e => setNewFirm({ ...newFirm, gstin: e.target.value.toUpperCase() })} /></div>
         <div className="field"><label>{t('phone')}</label><input inputMode="numeric" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} /></div>
@@ -291,10 +326,15 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
       </div>
       {err && <div style={{ color: 'var(--bad)', marginTop: 10, fontWeight: 600 }}>{err}</div>}
       {ENV_SERVER && <button className="btn block" style={{ marginTop: 16 }} onClick={() => setNewFirm({ firmName: '', ownerName: '', gstin: '' })}>New distributor? Start free trial</button>}
+      {ENV_SERVER && <button className="btn ghost block" style={{ marginTop: 8 }} onClick={() => setNewFirm({ firmName: '', ownerName: '', gstin: '', kind: 'company' })}>A company (brand)? Sign up</button>}
       {demo.length > 0 && (
         <div className="card" style={{ marginTop: 20 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>Demo logins — tap one</div>
-          <div className="row">{demo.map(s => <button key={s.id} className="btn small" onClick={() => { setPhone(s.phone); setPin(s.pin); void go(s.phone, s.pin); }}>{s.name}</button>)}</div>
+          <div className="row">{demo.filter(s => s.active).map(s => <button key={s.id} className="btn small" onClick={() => { setPhone(s.phone); setPin(s.pin); void go(s.phone, s.pin); }}>{s.name}</button>)}</div>
+          <div className="segmented" style={{ marginTop: 12 }}>
+            <button className={sideNow() === 'distributor' ? 'on' : ''} onClick={() => sideNow() !== 'distributor' && switchDemoSide('distributor')}>{'Distributor demo'}</button>
+            <button className={sideNow() === 'company' ? 'on' : ''} onClick={() => sideNow() !== 'company' && switchDemoSide('company')}>{'Company demo'}</button>
+          </div>
         </div>
       )}
     </div>

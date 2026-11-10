@@ -5,7 +5,9 @@ const { chromium } = require('playwright');
 const path = require('path'); const fs = require('fs');
 const OUT = process.argv[2] || path.join(__dirname, 'out'); fs.mkdirSync(path.join(OUT, 'sweep'), { recursive: true });
 const BASE = process.env.E2E_URL || 'http://localhost:4173';
-const ROLES = ['Vishnu (Owner)', 'Priya (Office)', 'Ravi (Salesman)', 'Mani (Godown)', 'Karthik (Delivery)'];
+const ROLES = ['Vishnu (Owner)', 'Priya (Office)', 'Ravi (Salesman)', 'Mani (Godown)', 'Karthik (Delivery)',
+  // company side (a brand's head office and team), opened with "Company demo" on the login screen
+  'co:Lakshmi (Head office)', 'co:Senthil (ASM)', 'co:Divya (SO)', 'co:Arun (Rep)'];
 const audit = () => {
   const out = [];
   const de = document.documentElement;
@@ -33,13 +35,15 @@ const audit = () => {
 (async () => {
   const b = await chromium.launch();
   const report = []; let screens = 0;
-  for (const who of ROLES) {
+  for (let who of ROLES) {
     const ctx = await b.newContext({ viewport: { width: 360, height: 780 }, geolocation: { latitude: 11.4066, longitude: 79.2577 }, permissions: ['geolocation'] });
     const p = await ctx.newPage();
     const errs = [];
     p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
     p.on('console', m => { if (m.type() === 'error' && !/fonts|Failed to load resource/.test(m.text())) errs.push('CONSOLE ' + m.text().slice(0, 160)); });
     await p.goto(BASE); await p.waitForSelector('text=Demo logins'); await p.waitForTimeout(800);
+    const isCo = who.startsWith('co:'); if (isCo) who = who.slice(3);
+    if (isCo) { await p.click('text=Company demo'); await p.waitForTimeout(800); await p.waitForSelector(`text=${who}`, { timeout: 60000 }); await p.waitForTimeout(800); }
     await p.click(`text=${who}`); await p.waitForTimeout(1200);
     const gate = await p.$('.gate .big-btn');
     if (gate) { await gate.click(); await p.waitForTimeout(1500); }
@@ -70,7 +74,7 @@ const audit = () => {
     }
     // More menu + engine
     await p.click('nav >> text=More'); await check('More');
-    for (const item of ['Bills', 'Claims tracker', 'Staff & access', 'Settings', 'Plan & billing']) {
+    for (const item of ['Bills', 'Claims tracker', 'Staff & access', 'Company links', 'Settings', 'Plan & billing']) {
       if (await p.$(`.item:has-text("${item}")`)) { await p.click(`.item:has-text("${item}")`); await check('More › ' + item); await p.click('nav >> text=More'); await p.waitForTimeout(200); const back = await p.$('button:has-text("← More")'); if (back) await back.click(); }
     }
     await p.click('.fab'); await check('Engine fresh');

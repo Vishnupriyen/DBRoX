@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
+  Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -33,10 +34,25 @@ class RoxDB extends Dexie {
   leaves!: Table<LeaveRequest, string>;
   advances!: Table<Advance, string>;
   audit!: Table<AuditEntry, string>;
+  territories!: Table<Territory, string>;
+  dbLinks!: Table<DbLink, string>;
+  secondary!: Table<Secondary, string>;
+  secondaryReturns!: Table<SecondaryReturn, string>;
+  dbStock!: Table<DbStock, string>;
+  primaryInvoices!: Table<PrimaryInvoice, string>;
+  inbound!: Table<Inbound, string>;
+  grns!: Table<Grn, string>;
+  primaryOrders!: Table<PrimaryOrder, string>;
+  dbClaims!: Table<DbClaim, string>;
+  claimDecisions!: Table<ClaimDecision, string>;
+  shopRequests!: Table<ShopRequest, string>;
+  workDays!: Table<WorkDay, string>;
+  travelClaims!: Table<TravelClaim, string>;
+  receipts!: Table<Receipt, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
-  constructor() {
-    super('dbrox');
+  constructor(name = 'dbrox') {
+    super(name);
     const common = 'id, tenantId, updatedAt, dirty';
     this.version(1).stores({
       settings: common,
@@ -75,10 +91,43 @@ class RoxDB extends Dexie {
       leaves: `${common}, staffId, status`,
       advances: `${common}, staffId, status`,
     });
+    // company module: the same app run by a brand's head office and team, linked to its distributors
+    this.version(5).stores({
+      products: `${common}, companyId, name, companyProductId`,
+      territories: `${common}, parentId`,
+      dbLinks: `${common}, status, inviteCode`,
+      secondary: `${common}, dbLinkId, date, shopId`,
+      secondaryReturns: `${common}, dbLinkId, date`,
+      dbStock: `${common}, dbLinkId, productId`,
+      primaryInvoices: `${common}, dbLinkId, date`,
+      inbound: `${common}, companyId, status, date`,
+      grns: `${common}, dbLinkId`,
+      primaryOrders: `${common}, dbLinkId, companyId, status`,
+      dbClaims: `${common}, dbLinkId, status`,
+      claimDecisions: `${common}, claimId`,
+      shopRequests: `${common}, dbLinkId`,
+      workDays: `${common}, staffId, date`,
+    });
+    this.version(6).stores({ travelClaims: `${common}, staffId, month, status` });
+    this.version(7).stores({ receipts: `${common}, companyId, status`, inbound: `${common}, companyId, date` });
   }
 }
+export { RoxDB };
 
-export const db = new RoxDB();
+// One phone runs one side: a distributor ('dbrox') or a company ('hanubix-company'). The demo can switch sides.
+export const SIDE_KEY = 'hanubix.side';
+export const sideNow = (): 'distributor' | 'company' => { try { return localStorage.getItem(SIDE_KEY) === 'company' ? 'company' : 'distributor'; } catch { return 'distributor'; } };
+export const DB_NAME = { distributor: 'dbrox', company: 'hanubix-company' } as const;
+export let db = new RoxDB(DB_NAME[sideNow()]);
+/** run core code against the other side's store (demo seeding and the demo relay only): restores the current one after */
+export async function onSide<T>(store: RoxDB, fn: () => Promise<T>): Promise<T> {
+  const was = db; db = store;
+  try { return await fn(); } finally { db = was; }
+}
+// after every save: the demo relay (company ⇄ distributor on one phone) listens here
+type CommitHook = (store: RoxDB, writes: { table: TableName; id: string }[]) => Promise<void>;
+const hooks: CommitHook[] = [];
+export function onCommit(h: CommitHook) { hooks.push(h); }
 
 // Time-ordered unique id made on the device (ULID-like). Sorts by creation time.
 const ALPHA = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -177,6 +226,9 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
 // audit entry per record, so the whole approval can be undone later.
 export class ChangeSet {
   readonly batchId = newId();
+  /** noAudit: a record, not an action (a location reading): no history entry, so nothing to undo and no bloat */
+  private opts: { noAudit?: boolean };
+  constructor(opts: { noAudit?: boolean } = {}) { this.opts = opts; }
   private writes: { table: TableName; rec: Base; action: string }[] = [];
   put<T extends Base = Base>(table: TableName, rec: object, action = 'save'): T {
     const s = stamp(rec as Partial<Base>) as unknown as T;
@@ -192,13 +244,15 @@ export class ChangeSet {
       for (const w of this.writes) {
         const before = await db.table(w.table).get(w.rec.id);
         await db.table(w.table).put(w.rec);
+        if (this.opts.noAudit) continue;
         await db.audit.put(stamp<AuditEntry>({
           at: nowIso(), by: currentUser, action: `${label}: ${w.action}`,
           table: w.table, recordId: w.rec.id, before, after: w.rec, batchId: this.batchId,
         } as AuditEntry));
       }
     });
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length } }));
+    for (const h of hooks) await h(db, this.writes.map(w => ({ table: w.table, id: w.rec.id })));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, tables: [...new Set(this.writes.map(w => w.table))] } }));
     return this.batchId;
   }
 }
