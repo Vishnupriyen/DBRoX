@@ -37,7 +37,8 @@ describe('sync', () => {
 describe('first sync of a busy distributor', () => {
   it('keeps pulling until the server has nothing more (a month of history is ~150,000 records)', async () => {
     let calls = 0;
-    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+    vi.stubGlobal('fetch', async (url: string, init: { body: string }) => {
+      if (!url.endsWith('/v1/sync')) return new Response('{}', { status: 404 }); // only the sync pages are counted here
       calls++;
       const b = JSON.parse(init.body) as { cursor: number };
       const more = calls < 60; // 60 pages of 2,000 = 120,000 records

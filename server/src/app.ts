@@ -9,6 +9,7 @@ import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
 import { relayIdle } from './link.js';
 import { coverIdle } from './reports.js';
+import { archiveAll, archiveMonth, archiveMonths, DB_ARCHIVE } from './archive.js';
 import { acceptInvite, companyRule, drainRelay, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
@@ -141,7 +142,8 @@ export async function buildApp(pool: pg.Pool) {
       const existing = new Set<string>();
       if (blockNew.size) {
         const want = changes.filter(ch => blockNew.has(ch.table));
-        if (want.length) for (const r of (await client.query('SELECT tbl, id FROM docs WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)', [c.t, [...blockNew], want.map(w => w.id)])).rows) existing.add(`${r.tbl}|${r.id}`);
+        if (want.length) for (const r of (await client.query(`SELECT tbl, id FROM docs WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)
+          UNION SELECT tbl, id FROM docs_archive_ids WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)`, [c.t, [...blockNew], want.map(w => w.id)])).rows) existing.add(`${r.tbl}|${r.id}`); // an old bill in the archive is not new
       }
       for (const ch of changes) {
         if (blockNew.has(ch.table) && !existing.has(`${ch.table}|${ch.id}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
@@ -379,6 +381,28 @@ export async function buildApp(pool: pg.Pool) {
     if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
     const { refreshAllCover } = await import('./reports.js');
     return { brands: await refreshAllCover(pool) };
+  });
+
+  // daily (Cloud Scheduler, 02:00 IST): old records move to the compressed archive (nothing is deleted)
+  app.post('/v1/cron/archive', async req => {
+    if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
+    return await archiveAll(pool);
+  });
+
+  // ---------------------------------------------------------------- the archive, for a new phone (old bills, so dues and
+  // reports stay complete). Only the tables this role reads; owner-only fields removed as in the normal sync.
+  const archiveTables = (role: string) => (READ[role] ?? []).filter(t => DB_ARCHIVE.includes(t) && t !== 'audit');
+  app.post('/v1/archive/list', async req => {
+    const c = await auth(req);
+    return { months: await archiveMonths(pool, c.t, archiveTables(c.r)) };
+  });
+  app.post('/v1/archive/month', async req => {
+    const c = await auth(req);
+    const b = req.body as { tbl?: string; month?: string };
+    const tbl = String(b.tbl ?? ''), month = String(b.month ?? '');
+    if (!archiveTables(c.r).includes(tbl) || !/^\d{4}-\d{2}$/.test(month)) throw err(403, 'Not available');
+    const rows = await archiveMonth(pool, c.t, tbl, month);
+    return { changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[tbl]) { d = { ...d }; for (const f of OWNER_ONLY[tbl]) delete d[f]; } return { table: tbl, id: r.id, updatedAt: r.updatedAt, data: d }; }) };
   });
 
   app.post('/v1/cron/daily', async req => {

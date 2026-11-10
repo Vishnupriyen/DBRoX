@@ -188,5 +188,11 @@ export async function companyDocs(pool: pg.Pool, tenant: string, scope: string[]
   const rows = args.ids?.length
     ? (await pool.query(`SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id = ANY($3)`, [tenant, tbl, args.ids.slice(0, 5000)])).rows
     : (await pool.query(`SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND data->>'dbLinkId' = $3 AND ($2 NOT IN ('secondary','secondaryReturns') OR data->>'date' >= $4) LIMIT 20000`, [tenant, tbl, args.dbLinkId ?? '', daysAgo(60)])).rows;
-  return rows.map(r => r.data as Doc).filter(d => !scope || scope.includes(String(d.dbLinkId)));
+  const docs = rows.map(r => r.data as Doc);
+  if (args.ids?.length) { // old bills (a claim on a bill from last year) come from the archive
+    const have = new Set(docs.map(d => String(d.id)));
+    const { archivedByIds } = await import('./archive.js');
+    for (const d of (await archivedByIds(pool, tenant, tbl, args.ids.slice(0, 5000).filter(i => !have.has(i)))).values()) docs.push(d);
+  }
+  return docs.filter(d => !scope || scope.includes(String(d.dbLinkId)));
 }

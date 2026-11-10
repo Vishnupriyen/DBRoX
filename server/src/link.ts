@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { COMPANY_PRODUCT_FIELDS, companyToDb, dbToCompany, linkInitial, RELAY_ONLY, type Doc, type Link, type Store, type Write } from './gen/relay.js';
 import { istToday } from './licence.js';
 import { kickCover } from './reports.js';
+import { archivedByIds } from './archive.js';
 
 type Q = pg.Pool | pg.PoolClient;
 
@@ -72,6 +73,11 @@ export async function writeInto(pool: pg.Pool, tenant: string, writes: Write[]) 
     if (bills.length) {
       const olds = new Map((await client.query(`SELECT tbl, id, data FROM docs WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)`,
         [tenant, [...new Set(bills.map(b => b.tbl))], bills.map(b => b.data.id)])).rows.map(r => [`${r.tbl}|${r.id}`, r.data as Doc]));
+      // a bill edited after it moved to the archive: its old version is taken out of the totals from the archive copy
+      for (const t of new Set(bills.map(b => b.tbl))) {
+        const gone = bills.filter(b => b.tbl === t && !olds.has(`${t}|${b.data.id}`)).map(b => String(b.data.id));
+        for (const [id, d] of await archivedByIds(client, tenant, t, gone)) olds.set(`${t}|${id}`, d);
+      }
       const acc: Acc = { daily: new Map(), month: new Map(), shop: new Map() };
       for (const b of bills) { roll(acc, b.tbl, olds.get(`${b.tbl}|${b.data.id}`), -1); roll(acc, b.tbl, b.data, 1); }
       const sp = (k: string) => k.split('|');
