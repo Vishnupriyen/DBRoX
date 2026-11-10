@@ -63,6 +63,9 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
 let running = false;
 export async function syncNow(): Promise<string> {
   let msg = '';
+  // a phone starting from nothing (new phone, reinstall) also needs the records the server has moved to its archive
+  // (bills older than last financial year): without them a shop's old dues and last year's reports would be missing
+  if (!(await db.meta.get('archiveDone')) && Number((await db.meta.get('cursor'))?.value ?? 0) === 0) await db.meta.put({ key: 'archiveDone', value: 'pending' });
   // keep going until everything is sent and received: stopping early left a busy owner's phone showing only a third of
   // the bills after first login (the cap is only a guard against a server that never says "done")
   for (let i = 0; i < 2000; i++) {
@@ -70,7 +73,42 @@ export async function syncNow(): Promise<string> {
     msg = r.msg;
     if (!r.more) break;
   }
+  if ((await db.meta.get('archiveDone'))?.value === 'pending' && msg.startsWith('Synced')) await fetchArchive();
   return msg;
+}
+
+/** the old records, a month at a time; each month is remembered once saved, so a cut-off download carries on later.
+ *  Saved as already-synced (never sent back), and a newer copy on the phone is never replaced. */
+export async function fetchArchive(): Promise<number> {
+  const url = await server();
+  if (!url || !navigator.onLine) return 0;
+  const call = async (path: string, body: object) => {
+    const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify(body) });
+    return r.ok ? await r.json() : r.status === 404 ? 404 : null;
+  };
+  let saved = 0;
+  try {
+    const list = await call('/v1/archive/list', {});
+    if (list === 404) { await db.meta.put({ key: 'archiveDone', value: 'yes' }); return 0; } // a server with no archive
+    if (!list) return 0;
+    const months = (Array.isArray(list.months) ? list.months : []) as { tbl: string; month: string }[];
+    for (const m of months) {
+      const key = `archive:${m.tbl}|${m.month}`;
+      if (!SYNC_TABLES.includes(m.tbl as TableName) || await db.meta.get(key)) continue;
+      const got = await call('/v1/archive/month', { tbl: m.tbl, month: m.month });
+      if (!got) return saved; // tried again on the next sync
+      const rows = (Array.isArray(got.changes) ? got.changes : []) as Change[];
+      await db.transaction('rw', [db.table(m.tbl), db.meta], async () => {
+        for (const c of rows) {
+          const cur = await db.table(m.tbl).get(c.id);
+          if (!cur || (!cur.dirty && cur.updatedAt < c.updatedAt)) { await db.table(m.tbl).put({ ...c.data, updatedAt: c.updatedAt, dirty: 0 }); saved++; }
+        }
+        await db.meta.put({ key, value: 1 });
+      });
+    }
+    await db.meta.put({ key: 'archiveDone', value: 'yes' });
+  } catch { /* no signal: carried on at the next sync */ }
+  return saved;
 }
 
 async function syncOnce(): Promise<{ msg: string; more: boolean }> {
