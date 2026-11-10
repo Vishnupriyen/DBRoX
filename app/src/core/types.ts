@@ -416,7 +416,7 @@ export interface DbLink extends Base {
   kind?: 'distributor' | 'super_stockist' | 'sub_stockist';
   parentLinkId?: string;      // a sub-stockist buys from this super stockist
 }
-export interface SecondaryLine { productId: string; name: string; qty: number; freeQty: number; rate: number; taxable: number; total: number }
+export interface SecondaryLine { productId: string; name?: string; qty: number; freeQty: number; rate: number; taxable: number; total?: number } // compact: a big brand receives hundreds of thousands a day
 export interface Secondary extends Base { dbLinkId: string; number: string; date: string; shopId: string; orderId?: string; fieldOrderId?: string; lines: SecondaryLine[]; taxable: number; total: number; deliveryStatus?: string; cancelled: boolean }
 export interface SecondaryReturn extends Base { dbLinkId: string; invoiceId: string; date: string; reason: string; lines: { productId: string; name: string; qty: number; amount: number }[]; total: number }
 export interface DbStock extends Base { dbLinkId: string; productId: string; name: string; qty: number; nearExpiry: number; expired: number; asOf: string }

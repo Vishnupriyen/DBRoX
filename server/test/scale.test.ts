@@ -11,15 +11,16 @@ let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let link: typeof import('../src/link.js');
 const port = 54335;
 beforeAll(async () => {
-  delete process.env.RELAY_INLINE;
+  process.env.RELAY_INLINE = '0'; // the real thing: the relay runs in the background
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-scale-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
   await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
   pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
+  pool.on('error', () => {}); // the database is stopped at the end while idle connections are still open
   const { migrate } = await import('../src/db.js'); await migrate(pool);
   const { buildApp } = await import('../src/app.js'); app = await buildApp(pool);
   link = await import('../src/link.js');
 }, 120000);
-afterAll(async () => { await app?.close(); await pool?.end(); await pgServer?.stop(); });
+afterAll(async () => { await link?.drainRelay(pool); await app?.close(); await pool?.end(); await pgServer?.stop(); });
 const post = async (url: string, body: unknown, token?: string) => { const r = await app.inject({ method: 'POST', url, payload: body as object, headers: token ? { authorization: `Bearer ${token}` } : {} }); return { status: r.statusCode, body: r.json() }; };
 let tick = 0; const at = () => new Date(Date.now() + (++tick) * 1000).toISOString();
 const ch = (table: string, data: Record<string, unknown>) => ({ table, id: String(data.id), updatedAt: at(), data });

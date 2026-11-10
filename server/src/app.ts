@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
+import { relayIdle } from './link.js';
 import { acceptInvite, companyRule, drainRelay, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
@@ -202,6 +203,9 @@ export async function buildApp(pool: pg.Pool) {
       changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.tbl]) { d = { ...d }; for (const f of OWNER_ONLY[r.tbl]) delete d[f]; } return { table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: d }; }),
     };
   });
+
+  // a stopping server finishes the relay batch in hand first (nothing half-sent)
+  app.addHook('onClose', async () => { await relayIdle(); });
 
   // ---------------------------------------------------------------- company reports (answered here, never by downloading every bill)
   const kindCache = new Map<string, 'company' | 'distributor'>();

@@ -129,7 +129,7 @@ export async function dbToCompany(link: Link, tbl: string, doc: Doc, db: Store, 
       const cp = await coProductOf(link, db, String(l.productId));
       if (!cp) continue; // a line of another brand never crosses, even on a bill marked for this company
       lines.push(tbl === 'invoices'
-        ? { productId: cp.id, name: l.name ?? cp.name, qty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, taxable: l.taxable, total: l.total }
+        ? { productId: cp.id, qty: l.qty, freeQty: l.freeQty ?? 0, rate: l.rate, taxable: l.taxable, total: l.total } // compact (no names): a big brand gets hundreds of thousands a day
         : { productId: cp.id, name: cp.name, qty: l.qty, amount: l.amount });
     }
     const value = (k: string) => Math.round(lines.reduce((a, x) => a + Number(x[k] ?? 0), 0) * 100) / 100;

@@ -51,6 +51,13 @@ export async function writeInto(pool: pg.Pool, tenant: string, writes: Write[]) 
       const t = w.keepTime && typeof w.doc.updatedAt === 'string' ? w.doc.updatedAt : now;
       const data = { ...w.doc, tenantId: tenant, updatedAt: t, createdAt: w.doc.createdAt ?? now };
       delete (data as Record<string, unknown>).dirty;
+      // stock at distributors lives in its own compact table (never a stored record per product)
+      if (w.tbl === 'dbStock') {
+        await client.query(`INSERT INTO link_stock(tenant_id, link_id, product_id, name, qty, near_expiry, expired, as_of) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          ON CONFLICT (tenant_id, link_id, product_id) DO UPDATE SET name=EXCLUDED.name, qty=EXCLUDED.qty, near_expiry=EXCLUDED.near_expiry, expired=EXCLUDED.expired, as_of=EXCLUDED.as_of`,
+          [tenant, w.doc.dbLinkId, w.doc.productId, w.doc.name ?? null, Number(w.doc.qty ?? 0), Number(w.doc.nearExpiry ?? 0), Number(w.doc.expired ?? 0), w.doc.asOf ?? null]);
+        continue;
+      }
       // the company's report totals: the old version of a bill out, the new one in (same transaction, same lock)
       if (w.tbl === 'secondary' || w.tbl === 'secondaryReturns') {
         const old = (await client.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [tenant, w.tbl, w.doc.id])).rows[0]?.data;
@@ -128,6 +135,8 @@ export function kickRelay(pool: pg.Pool) {
   draining = (async () => { let n = 0; try { for (;;) { const k = await drainOnce(pool); n += k; if (!k) break; } } finally { draining = null; } return n; })();
   draining.catch(() => {});
 }
+/** wait for a running background relay to finish (server shutdown) */
+export async function relayIdle() { if (draining) await draining.catch(() => 0); }
 /** empty the queue now (tests, the every-minute safety call, and RELAY_INLINE) */
 export async function drainRelay(pool: pg.Pool) { if (draining) await draining.catch(() => 0); let n = 0; for (;;) { const k = await drainOnce(pool); n += k; if (!k) break; } return n; }
 

@@ -17,6 +17,7 @@ beforeAll(async () => {
   await pgServer.start();
   await pgServer.createDatabase('dbrox');
   pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
+  pool.on('error', () => {}); // the test database is stopped at the end while idle connections are still open
   const { migrate } = await import('../src/db.js');
   await migrate(pool);
   const { buildApp } = await import('../src/app.js');

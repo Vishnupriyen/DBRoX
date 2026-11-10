@@ -4,7 +4,7 @@ import type pg from 'pg';
 
 type Doc = Record<string, unknown> & { id: string };
 const r2 = (n: number) => Math.round(n * 100) / 100;
-export const BIG_TABLES = ['secondary', 'secondaryReturns', 'dbStock', 'shops'];
+export const BIG_TABLES = ['secondary', 'secondaryReturns', 'dbStock', 'shops']; // dbStock: on the server it is the link_stock table
 
 /** the distributors (dbLinks ids) a person may see: head office → null (all); others → their own and their team's */
 export async function scopeFor(pool: pg.Pool, tenant: string, userId: string): Promise<string[] | null> {
@@ -67,11 +67,11 @@ async function stockCover(pool: pg.Pool, tenant: string, ids: string[], limit: n
   const norms = new Map((await pool.query(`SELECT id, coalesce((data->>'normDays')::numeric, 15) n FROM docs WHERE tenant_id=$1 AND tbl='dbLinks' AND id = ANY($2)`, [tenant, ids])).rows.map(r => [r.id, Number(r.n)]));
   const rows = (await pool.query(`
     WITH sold AS (SELECT link_id, product_id, sum(qty) q FROM roll_daily WHERE tenant_id=$1 AND day >= $2::date AND link_id = ANY($3) GROUP BY 1, 2)
-    SELECT s.data->>'dbLinkId' link, s.data->>'productId' pid, s.data->>'name' name, (s.data->>'qty')::numeric qty, coalesce((s.data->>'nearExpiry')::numeric, 0) near,
+    SELECT s.link_id link, s.product_id pid, coalesce(s.name, p.data->>'name') name, s.qty, s.near_expiry near,
       coalesce(sold.q, 0) / 30.0 per, coalesce((p.data->>'purchaseRate')::numeric, 0) rate
-    FROM docs s LEFT JOIN sold ON sold.link_id = s.data->>'dbLinkId' AND sold.product_id = s.data->>'productId'
-      LEFT JOIN docs p ON p.tenant_id = $1 AND p.tbl = 'products' AND p.id = s.data->>'productId'
-    WHERE s.tenant_id=$1 AND s.tbl='dbStock' AND s.data->>'dbLinkId' = ANY($3)`, [tenant, daysAgo(30), ids])).rows;
+    FROM link_stock s LEFT JOIN sold ON sold.link_id = s.link_id AND sold.product_id = s.product_id
+      LEFT JOIN docs p ON p.tenant_id = $1 AND p.tbl = 'products' AND p.id = s.product_id
+    WHERE s.tenant_id=$1 AND s.link_id = ANY($3)`, [tenant, daysAgo(30), ids])).rows;
   const value = new Map<string, number>(), low = new Map<string, number>(); const counts = { low: 0, high: 0, ok: 0, none: 0 };
   const out = [];
   for (const r of rows) {
@@ -90,6 +90,10 @@ async function stockCover(pool: pg.Pool, tenant: string, ids: string[], limit: n
 /** a few records of the company's own data on demand (the bills behind one claim, one distributor's stock) */
 export async function companyDocs(pool: pg.Pool, tenant: string, scope: string[] | null, tbl: string, args: { ids?: string[]; dbLinkId?: string }) {
   if (!BIG_TABLES.includes(tbl)) throw Object.assign(new Error('Not available'), { statusCode: 400 });
+  if (tbl === 'dbStock') {
+    const rows = (await pool.query(`SELECT link_id, product_id, name, qty, near_expiry, expired, as_of FROM link_stock WHERE tenant_id=$1 AND link_id=$2`, [tenant, args.dbLinkId ?? ''])).rows;
+    return rows.filter(r => !scope || scope.includes(r.link_id)).map(r => ({ id: `${r.link_id}:${r.product_id}`, dbLinkId: r.link_id, productId: r.product_id, name: r.name, qty: Number(r.qty), nearExpiry: Number(r.near_expiry), expired: Number(r.expired), asOf: r.as_of }));
+  }
   const rows = args.ids?.length
     ? (await pool.query(`SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id = ANY($3)`, [tenant, tbl, args.ids.slice(0, 5000)])).rows
     : (await pool.query(`SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND data->>'dbLinkId' = $3 AND ($2 NOT IN ('secondary','secondaryReturns') OR data->>'date' >= $4) LIMIT 20000`, [tenant, tbl, args.dbLinkId ?? '', daysAgo(60)])).rows;
