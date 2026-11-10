@@ -6,7 +6,10 @@ import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, loginFailed, loginLocked, loginOk, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { scanWithAI, type ScanKind } from './scan.js';
-import { acceptInvite, companyRule, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
+import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
+import { relayIdle } from './link.js';
+import { coverIdle } from './reports.js';
+import { acceptInvite, companyRule, drainRelay, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
 import { readFileSync } from 'node:fs';
@@ -178,11 +181,19 @@ export async function buildApp(pool: pg.Pool) {
     }
 
     const cursor = Number(b.cursor ?? 0);
+    // a brand's phones never download every distributor bill: head office gets reports from the server instead; a
+    // manager or rep gets only their own distributors' records, and bills of the last 60 days
+    const isCo = (kindCache.get(c.t) ?? (kindCache.set(c.t, await tenantKind(pool, c.t)), kindCache.get(c.t))) === 'company';
+    const scope = isCo ? await scopeFor(pool, c.t, c.u) : null;
+    const tables = (READ[c.r] ?? []).filter(t => !(isCo && c.r === 'cadmin' && BIG_TABLES.includes(t)));
     const rows = (await pool.query(
       // the history log is 80% of all data: phones get only its last 3 days (morning summary, undo); the full log stays here
       `SELECT tbl, id, data, updated_at, version FROM docs WHERE tenant_id=$1 AND version > $2 AND tbl = ANY($3)
-         AND (tbl <> 'audit' OR updated_at > now() - interval '3 days') ORDER BY version LIMIT $4`,
-      [c.t, cursor, READ[c.r] ?? [], config.pullLimit])).rows;
+         AND (tbl <> 'audit' OR updated_at > now() - interval '3 days')
+         AND ($5::text[] IS NULL OR tbl <> ALL($6) OR data->>'dbLinkId' = ANY($5))
+         AND (NOT $7 OR tbl NOT IN ('secondary','secondaryReturns') OR data->>'date' >= $8)
+         ORDER BY version LIMIT $4`,
+      [c.t, cursor, tables, config.pullLimit, scope, BIG_TABLES, isCo, new Date(Date.now() + 5.5 * 3600e3 - 60 * 86400e3).toISOString().slice(0, 10)])).rows;
     const maxVersion = rows.length ? Number(rows[rows.length - 1].version) : cursor;
     return {
       cursor: maxVersion,
@@ -192,6 +203,27 @@ export async function buildApp(pool: pg.Pool) {
       // owner-only fields (purchase rate, UPI id …) never reach a staff phone
       changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.tbl]) { d = { ...d }; for (const f of OWNER_ONLY[r.tbl]) delete d[f]; } return { table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: d }; }),
     };
+  });
+
+  // a stopping server finishes the relay batch in hand first (nothing half-sent)
+  app.addHook('onClose', async () => { await relayIdle(); await coverIdle(); });
+
+  // ---------------------------------------------------------------- company reports (answered here, never by downloading every bill)
+  const kindCache = new Map<string, 'company' | 'distributor'>();
+  const companyUser = async (req: FastifyRequest) => {
+    const c = await auth(req);
+    if (!['cadmin', 'manager', 'rep'].includes(c.r)) throw err(403, 'Company team only');
+    return { c, scope: await scopeFor(pool, c.t, c.u) };
+  };
+  app.post('/v1/company/report', async req => {
+    const { c, scope } = await companyUser(req);
+    const b = req.body as { kind?: string; [k: string]: unknown };
+    return { data: await companyReport(pool, c.t, scope, String(b.kind ?? ''), b) };
+  });
+  app.post('/v1/company/docs', async req => {
+    const { c, scope } = await companyUser(req);
+    const b = req.body as { tbl?: string; ids?: string[]; dbLinkId?: string };
+    return { docs: await companyDocs(pool, c.t, scope, String(b.tbl ?? ''), b) };
   });
 
   // ---------------------------------------------------------------- company links
@@ -337,6 +369,18 @@ export async function buildApp(pool: pg.Pool) {
   });
 
   // Daily job (Cloud Scheduler, 00:05 IST): a downgrade starts once the paid month is over; status kept for reports.
+  // safety net for the background relay (Cloud Scheduler, every minute): empties anything a stopped instance left behind
+  app.post('/v1/cron/relay', async req => {
+    if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
+    return { relayed: await drainRelay(pool) };
+  });
+  // every few minutes: head office's stock figures for every brand (changed products; everything once a day)
+  app.post('/v1/cron/cover', async req => {
+    if (!config.cronKey || req.headers['x-cron-key'] !== config.cronKey) throw err(403, 'No');
+    const { refreshAllCover } = await import('./reports.js');
+    return { brands: await refreshAllCover(pool) };
+  });
+
   app.post('/v1/cron/daily', async req => {
     const k = String(req.headers['x-cron-key'] ?? '');
     if (!config.cronKey || k !== config.cronKey) throw err(401, 'Cron key needed');

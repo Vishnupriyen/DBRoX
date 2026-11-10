@@ -1,4 +1,5 @@
 // Company ⇄ distributor link on a real database: the privacy wall holds end to end (independent review, 10 Nov 2026).
+process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -11,9 +12,11 @@ let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 const port = 54331;
 
 beforeAll(async () => {
+  process.env.RELAY_INLINE = '1';
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-link-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
   await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
   pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
+  pool.on('error', () => {}); // the test database is stopped at the end while idle connections are still open
   const { migrate } = await import('../src/db.js'); await migrate(pool);
   const { buildApp } = await import('../src/app.js'); app = await buildApp(pool);
 }, 120000);
@@ -70,7 +73,7 @@ describe('company link', () => {
     expect(text).not.toContain('50000');      // no credit limit
     expect(cdocs.some(d => d.tbl === 'payments')).toBe(false);
     expect(cdocs.filter(d => d.tbl === 'secondary').map(d => d.data.number)).toEqual(['VA/1']);
-    expect(cdocs.find(d => d.tbl === 'dbStock')?.data).toMatchObject({ productId: 'P1', qty: 40 });
+    expect((await pool.query('SELECT product_id, qty FROM link_stock WHERE tenant_id=$1', [co.tenantId])).rows.map(r => [r.product_id, Number(r.qty)])).toEqual([['P1', 40], ['P2', 0]]); // stock lives in its compact table (P2: the brand's new product, none in stock yet)
     expect(cdocs.find(d => d.tbl === 'dbLinks')?.data.status).toBe('linked');
     // the distributor's own Kaveri product was tied to the company's (by code), the new one added
     const ddocs = await docsOf(dist.tenantId);

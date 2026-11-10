@@ -78,6 +78,9 @@ async function alreadyPaid(dbLinkId: string, except: string) {
 }
 
 export async function checkClaim(claim: DbClaim): Promise<ClaimCheck> {
+  const want = [...new Set(claim.lines.map(l => l.invoiceId).filter((x): x is string => !!x))];
+  const have = new Set((await db.secondary.bulkGet(want)).filter(Boolean).map(x => x!.id));
+  if (want.some(id => !have.has(id))) await (await import('./company')).fetchDocs('secondary', { ids: want.filter(id => !have.has(id)) });
   const sec = new Map((await db.secondary.toArray()).filter(s => s.dbLinkId === claim.dbLinkId).map(s => [s.id, s]));
   const schemes = await db.schemes.toArray();
   const ptr = new Map((await db.products.toArray()).map(p => [p.id, p.rate]));

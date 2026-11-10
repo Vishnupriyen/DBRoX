@@ -1,4 +1,5 @@
 // Regression tests for the independent code review of the company module (10 Nov 2026). Each failed before its fix.
+process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -10,9 +11,11 @@ let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 const port = 54333;
 beforeAll(async () => {
+  process.env.RELAY_INLINE = '1';
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-review-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
   await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
   pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
+  pool.on('error', () => {}); // the test database is stopped at the end while idle connections are still open
   const { migrate } = await import('../src/db.js'); await migrate(pool);
   const { buildApp } = await import('../src/app.js'); app = await buildApp(pool);
 }, 120000);

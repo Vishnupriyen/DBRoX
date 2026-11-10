@@ -54,6 +54,7 @@ describe('billing on the real server', () => {
     pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'hanubix-pg-billing-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
     await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
     pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
+    pool.on('error', () => {}); // the test database is stopped at the end while idle connections are still open
     const { migrate } = await import('../src/db.js'); await migrate(pool);
     const { buildApp } = await import('../src/app.js'); app = await buildApp(pool);
   }, 120000);

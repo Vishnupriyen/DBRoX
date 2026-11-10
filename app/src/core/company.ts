@@ -4,7 +4,7 @@
 import { ChangeSet, daysFrom, db, getSettings, newId, thisMonth, today } from './db';
 import { bestProduct, norm } from './match';
 import { mapColumns, num, toIsoDate } from './readers';
-import type { DbLink, PrimaryInvoice, PrimaryLine, Product, Scheme, Staff } from './types';
+import type { DbLink, PrimaryInvoice, PrimaryLine, Product, Scheme, Shop, Staff } from './types';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const CODE = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -139,7 +139,26 @@ export async function sendPrimary(drafts: PrimaryDraft[]) {
 export interface DbRow { link: DbLink; primary: number; secondary: number; returns: number; shops: number; bills: number; stockValue: number; lowCover: number }
 const inMonth = (d: string, m: string) => d.slice(0, 7) === m;
 /** sales to distributors vs distributor sales to shops, by distributor, for a month (values before GST) */
+// ---- with a server, a brand's numbers come from the server's running totals (its phones never hold every bill)
+async function remote<T>(kind: string, args: Record<string, unknown> = {}): Promise<T | null> {
+  const { server } = await import('./sync');
+  const url = await server(); if (!url) return null;
+  const r = await fetch(`${url}/v1/company/report`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ kind, ...args }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not load the report. Check the internet.');
+  return (await r.json()).data as T;
+}
+/** a few of the company's records the phone does not keep (the bills behind a claim): fetched and kept for this check */
+export async function fetchDocs(tbl: 'secondary' | 'dbStock' | 'shops', args: { ids?: string[]; dbLinkId?: string }) {
+  const { server } = await import('./sync');
+  const url = await server(); if (!url) return;
+  const r = await fetch(`${url}/v1/company/docs`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ tbl, ...args }) });
+  if (!r.ok) throw new Error('Could not load the records. Check the internet.');
+  const docs = (await r.json()).docs as { id: string }[];
+  if (docs.length) await db.table(tbl).bulkPut(docs.map(d => ({ ...d, dirty: 0 })));
+}
+
 export async function salesByDistributor(month = thisMonth()): Promise<DbRow[]> {
+  const rem = await remote<DbRow[]>('links', { month }); if (rem) return rem;
   const links = (await db.dbLinks.toArray()).filter(l => l.status !== 'invited');
   const prim = (await db.primaryInvoices.toArray()).filter(i => !i.cancelled && inMonth(i.date, month));
   const sec = (await db.secondary.toArray()).filter(i => !i.cancelled && inMonth(i.date, month));
@@ -160,6 +179,7 @@ export async function salesByDistributor(month = thisMonth()): Promise<DbRow[]> 
 }
 export interface ProductRow { productId: string; name: string; primaryQty: number; secondaryQty: number; secondaryValue: number }
 export async function salesByProduct(month = thisMonth(), dbLinkId?: string): Promise<ProductRow[]> {
+  const rem = await remote<ProductRow[]>('products', { month, dbLinkId }); if (rem) return rem;
   const products = await db.products.toArray();
   const rows = new Map<string, ProductRow>(products.map(p => [p.id, { productId: p.id, name: p.name, primaryQty: 0, secondaryQty: 0, secondaryValue: 0 }]));
   for (const i of await db.primaryInvoices.toArray()) if (!i.cancelled && inMonth(i.date, month) && (!dbLinkId || i.dbLinkId === dbLinkId)) for (const l of i.lines) { const r = rows.get(l.productId); if (r) r.primaryQty += l.qty; }
@@ -168,7 +188,8 @@ export async function salesByProduct(month = thisMonth(), dbLinkId?: string): Pr
 }
 export interface CoverRow { dbLinkId: string; productId: string; name: string; qty: number; perDay: number; days: number | null; norm: number; status: 'low' | 'ok' | 'high' | 'none'; nearExpiry: number; value: number }
 /** stock at each distributor in days of sales (last 30 days), against that distributor's stock norm */
-export async function stockCover(): Promise<CoverRow[]> {
+export async function stockCover(opts: { dbLinkId?: string; status?: string } = {}): Promise<CoverRow[]> {
+  const rem = await remote<{ rows: CoverRow[] }>('stock', { ...opts, limit: 500 }); if (rem) return rem.rows;
   const links = new Map((await db.dbLinks.toArray()).map(l => [l.id, l]));
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const since = daysFrom(-30);
@@ -181,6 +202,7 @@ export async function stockCover(): Promise<CoverRow[]> {
     const days = perDay > 0 ? Math.round(s.qty / perDay) : null;
     const normD = link.normDays ?? 15;
     const status = s.qty === 0 && perDay === 0 ? 'none' : days === null ? (s.qty > 0 ? 'high' : 'none') : days < normD * 0.5 ? 'low' : days > normD * 2 ? 'high' : 'ok';
+    if (opts.dbLinkId && s.dbLinkId !== opts.dbLinkId) continue;
     out.push({ dbLinkId: s.dbLinkId, productId: s.productId, name: s.name || products.get(s.productId)?.name || '', qty: s.qty, perDay: r2(perDay), days, norm: normD, status, nearExpiry: s.nearExpiry, value: r2(s.qty * (products.get(s.productId)?.purchaseRate ?? 0)) });
   }
   return out.sort((a, b) => (a.days ?? 1e9) - (b.days ?? 1e9));
@@ -221,3 +243,14 @@ export async function myLinks(meId: string): Promise<DbLink[]> {
 }
 
 export async function companyName() { return (await getSettings()).firmName; }
+
+/** shops reached this month, and a search over the shop list (from the server when there is one) */
+export async function outletList(q = ''): Promise<{ total: number; bought: number; shops: (Shop & { monthValue: number })[] }> {
+  const rem = await remote<{ total: number; bought: number; shops: (Shop & { monthValue: number })[] }>('outlets', { q }); if (rem) return rem;
+  const links = new Set((await myLinks((await import('./db')).session().userId)).map(l => l.id));
+  const m = new Map<string, number>();
+  for (const x of await db.secondary.toArray()) if (!x.cancelled && x.date.slice(0, 7) === thisMonth()) m.set(x.shopId, (m.get(x.shopId) ?? 0) + x.taxable);
+  const all = (await db.shops.toArray()).filter(x => x.active !== false && (!x.dbLinkId || links.has(x.dbLinkId)));
+  const hit = q.trim() ? all.filter(x => `${x.name} ${x.area} ${x.beat}`.toLowerCase().includes(q.trim().toLowerCase())) : all;
+  return { total: all.length, bought: all.filter(x => m.get(x.id)).length, shops: hit.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 300).map(x => ({ ...x, monthValue: r2(m.get(x.id) ?? 0) })) };
+}
