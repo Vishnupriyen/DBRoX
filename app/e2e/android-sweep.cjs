@@ -12,6 +12,7 @@ const SHOTS = process.env.SHOTS !== '0';
   await device.shell('monkey -p com.hanubix.app -c android.intent.category.LAUNCHER 1');
   const webview = await device.webView({ pkg: 'com.hanubix.app' }, { timeout: 60000 });
   const p = await webview.page();
+  p.on('close', () => console.log('PAGE CLOSED at', new Date().toISOString()));
   const errs = []; const report = []; let screens = 0;
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   p.on('console', m => { if (/\[back\]/.test(m.text())) console.log('PAGE', m.text()); if (m.type() === 'error' && !/fonts|Failed to load resource/.test(m.text())) errs.push('CONSOLE ' + m.text().slice(0, 160)); });
@@ -79,4 +80,10 @@ const SHOTS = process.env.SHOTS !== '0';
   for (const r of report) for (const i of r.issues) console.log(`  ISSUE ${r.who} / ${r.page}: ${i}`);
   await device.close();
   process.exit(0);
-})().catch(e => { console.error('SCRIPT', e.message.split('\n').slice(0, 3).join(' | ')); process.exit(1); });
+})().catch(async e => {
+  console.error('SCRIPT', e.message.split('\n').slice(0, 3).join(' | '));
+  // why the app's page went away: the device's own log of the last moments (crash, kill, reload)
+  const { execSync } = require('child_process');
+  try { console.log(execSync("adb logcat -d -t 1500 | grep -iE 'hanubix|ActivityManager|ActivityTaskManager|lowmemory|lmkd|crash|died|fatal|renderer|SIGSEGV|Capacitor/' | grep -v 'Line 349' | tail -120").toString()); } catch { /* no device */ }
+  process.exit(1);
+});

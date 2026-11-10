@@ -16,6 +16,6 @@ trap 'kill $PREVIEW 2>/dev/null || true' EXIT
 for i in $(seq 1 40); do curl -sf http://localhost:4173 >/dev/null && break; sleep 0.5; done
 TZ=Asia/Kolkata node e2e/flow.cjs "$OUT"
 TZ=Asia/Kolkata node e2e/company.cjs "$OUT"   # the company side: rep → distributor → goods receipt → claim → credit note
-step '6/6 Every screen, every role, 360 px'
+step '6/6 Every screen, every role, 360 px and 412 px'
 TZ=Asia/Kolkata node e2e/sweep.cjs "$OUT"
 printf '\n\033[1;32m✔ GATE PASSED — safe to release.\033[0m\n'
