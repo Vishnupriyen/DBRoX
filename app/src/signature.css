@@ -16,3 +16,5 @@ h1,h2,h3,h4,.h,.home-greet,.home-back,.morning .t,.engine-chat .say{color:var(--
 .fab{background:#fff;box-shadow:0 0 0 1px var(--line),0 0 0 5px #fff}
 /* Financial action bars stay opaque so scrolled content cannot show through. */
 .sticky-foot{background:#fff}
+/* text on the dark jade-gold hero card stays readable (light on dark) */
+.kpi.navy{--on-navy:#fff;--on-navy-2:rgba(255,255,255,.85)}
