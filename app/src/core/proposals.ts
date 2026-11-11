@@ -1,4 +1,4 @@
-import { inr, showMonth, plural } from './i18n';
+import { inr, showDay, showMonth, plural } from './i18n';
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
@@ -8,7 +8,7 @@ import { buildCreditNote, collectionCheck, costValue, makeCreditNote, openPaid }
 import { creditNoteDeadline, GST_RATES, shopStateCode } from './gst';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, Company, Expense, Invoice, Payment, Product, Purchase, Scheme, Shop } from './types';
+import type { Batch, Company, Expense, Invoice, LeaveRequest, Payment, Product, Purchase, Scheme, Shop } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -25,6 +25,7 @@ export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
   | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix'
   | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo'
+  | 'leave' // a leave: asked by staff (waits for the owner) or given by the owner
   | 'fieldOrder'; // company rep: an order sent to the shop's distributor
 
 export interface Proposal {
@@ -47,6 +48,13 @@ export interface Validation {
   summary: string;
 }
 
+/** a stock count more than 1 case off the system needs the counted total typed again ('again' field) */
+function stockRetype(p: Proposal, caseSize: number, diff: number, counted: number): string | null {
+  if (Math.abs(diff) <= Math.max(1, caseSize)) return null;
+  const again = p.fields.find(f => f.key === 'again');
+  if (again && String(again.value ?? '').trim() !== '' && Number(again.value) === counted) return null;
+  return again && String(again.value ?? '').trim() !== '' ? 'Does not match the count — type the counted total again' : `More than 1 case different: type the counted total again to confirm`;
+}
 export const fieldValue = (p: Proposal, key: string) => p.fields.find(f => f.key === key)?.value ?? '';
 const n = (v: CellValue | undefined) => Number(v) || 0;
 const s = (v: CellValue | undefined) => String(v ?? '').trim();
@@ -306,8 +314,21 @@ export async function validate(p: Proposal): Promise<Validation> {
       });
       const prod = products.get(s(fieldValue(p, 'productId')));
       const d = cnt - sys;
+      // a count more than 1 case off the system is typed a second time before Approve (a slip must not wipe stock)
+      const retype = stockRetype(p, prod?.caseSize ?? 1, d, cnt);
+      if (retype) { if (p.fields.some(f => f.key === 'again')) v.fieldErrors.again = retype; else err(v, 0, 'counted', retype); }
       if (prod && Math.abs(d) > prod.caseSize * 5) v.warnings.push(`Big difference: ${d > 0 ? '+' : ''}${d} pcs (${r2(Math.abs(d) / prod.caseSize)} cases). Count again before saving.`);
       v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod ? ` · ${inr(r2(Math.abs(d) * prod.purchaseRate))}` : ''})`;
+      break;
+    }
+    case 'leave': {
+      const who = await db.staff.get(s(fieldValue(p, 'staffId')));
+      if (!who) v.fieldErrors.staffId = 'Pick the person';
+      const r = p.rows[0] ?? {};
+      const from = toIsoDate(s(r.from)), to = toIsoDate(s(r.to)) || from;
+      if (!from) err(v, 0, 'from', 'Pick the day');
+      if (from && to < from) err(v, 0, 'to', 'Ends before it starts');
+      if (from && to >= from) { const days = Math.round((Date.parse(`${to}T12:00:00`) - Date.parse(`${from}T12:00:00`)) / 86400000) + 1; v.summary = `${who?.name.split(' ')[0] ?? ''}: leave ${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''} · ${plural(days, 'day')}${p.meta.status === 'waiting' ? ' · goes to the owner' : ''}`; }
       break;
     }
     case 'productEdit': {
@@ -630,6 +651,7 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'stockFix': {
       const why = s(fieldValue(p, 'reason'));
       let sys = 0, cnt = 0;
+      { const prod = products.get(s(fieldValue(p, 'productId'))); const c0 = p.rows.reduce((a, r) => a + n(r.counted), 0), s0 = p.rows.reduce((a, r) => a + n(r.system), 0); const rt = stockRetype(p, prod?.caseSize ?? 1, c0 - s0, c0); if (rt) throw new Error(rt); }
       for (const r of p.rows) {
         const b = await db.batches.get(s(r.batchId));
         if (!b) continue;
@@ -639,6 +661,20 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       }
       if (!cs.size) throw new Error('Nothing changed: the count is the same as the system.');
       message = `Stock count saved: ${sys} → ${cnt} pcs.`;
+      break;
+    }
+    case 'leave': {
+      const staffId = s(fieldValue(p, 'staffId')); const who = await db.staff.get(staffId);
+      if (!who) throw new Error('Pick the person.');
+      const r = p.rows[0] ?? {}; const from = toIsoDate(s(r.from)); const to = toIsoDate(s(r.to)) || from;
+      if (!from || to < from) throw new Error('Pick the day of the leave.');
+      const status = p.meta.status === 'waiting' ? 'waiting' : 'approved';
+      // a second tap (or the same leave said twice) saves nothing more
+      if ((await db.leaves.where('staffId').equals(staffId).toArray()).some(l => l.status !== 'rejected' && l.from === from && l.to === to)) throw new Error(`${who.name.split(' ')[0]}'s leave on ${showDay(from)} is already there.`);
+      const reason = s(fieldValue(p, 'reason')) || 'personal';
+      cs.put<LeaveRequest>('leaves', { staffId, from, to, reason, status }, 'leave');
+      const when = `${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''}`;
+      message = status === 'waiting' ? `Leave request ${when} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${when} recorded (${reason}).`;
       break;
     }
     case 'productEdit': {

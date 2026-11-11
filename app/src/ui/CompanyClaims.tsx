@@ -64,8 +64,8 @@ function ClaimDetail({ claim, role, onBack }: { claim: DbClaim; role: Role; onBa
       <button className="btn small" onClick={onBack}>← {'Claims'}</button>
       <div className="kpis">
         <div className="kpi"><div className="v">{inr(claim.amount)}</div><div className="l">{'claimed'}</div></div>
-        <div className="kpi"><div className="v">{inr(chk.okAmount)}</div><div className="l">{'checks out'}</div></div>
-        <div className="kpi"><div className="v" style={{ color: chk.flagged ? 'var(--bad)' : undefined }}>{chk.flagged}</div><div className="l">{'lines to look at'}</div></div>
+        <div className="kpi"><div className="v">{inr(chk.okAmount)}</div><div className="l">{'matches the scheme'}</div></div>
+        <div className="kpi"><div className="v" style={{ color: chk.flagged ? 'var(--bad)' : undefined }}>{chk.flagged}</div><div className="l">{'to check'}</div></div>
       </div>
       {chk.gstWarning && <div className="card" style={{ borderColor: 'var(--warn)' }}><AlertTriangle size={16} /> {chk.gstWarning}</div>}
       {chk.budget.map(b => <div key={b.scheme.id} className="muted">{`${b.scheme.name}: budget ${inr(b.scheme.budget!)} · used ${inr(b.used)} · this claim ${inr(b.adding)}`}</div>)}

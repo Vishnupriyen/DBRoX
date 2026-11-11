@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Download, TrendingUp, TrendingDown, Percent, PackageX, Store, Building2, Users, MapPin, Undo2, Gift, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { db, thisMonth, daysFrom } from '../core/db';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showDate } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { downloadWorkbook } from '../core/readers';
 
@@ -54,7 +54,7 @@ export function Reports() {
       { key: 'company', icon: Building2, en: 'Company-wise', cols: [{ h: 'Company' }, ...gcols.slice(1)], rows: group(i => i.companyId).map(([k, v]) => fmt(cos.get(k) ?? k, v)) },
       { key: 'salesman', icon: Users, en: 'Salesman-wise', cols: [{ h: 'Salesman' }, ...gcols.slice(1)], rows: group(i => (i.orderId && bySalesmanOrder.get(i.orderId)) || shops.get(i.shopId)?.salesmanId || '').map(([k, v]) => fmt(staff.get(k) ?? (k || 'Office'), v)) },
       { key: 'area', icon: MapPin, en: 'Area-wise', cols: [{ h: 'Area' }, ...gcols.slice(1)], rows: group(i => shops.get(i.shopId)?.area ?? '').map(([k, v]) => fmt(k || '—', v)) },
-      { key: 'returns', icon: Undo2, en: 'Returns', cols: [{ h: 'Date' }, { h: 'Shop' }, { h: 'Reason' }, { h: '₹', num: true, money: true }], rows: cns.sort((a, b) => b.date.localeCompare(a.date)).map(c => [c.date.slice(5), shops.get(c.shopId)?.name ?? '', c.reason, c.total]), note: cns.length ? `${'Total'} ${inr(r2(cns.reduce((a, c) => a + c.total, 0)))} · ${Math.round(cns.reduce((a, c) => a + c.total, 0) / Math.max(1, invs.reduce((a, i) => a + i.total, 0)) * 1000) / 10}% ${'of sales'}` : undefined },
+      { key: 'returns', icon: Undo2, en: 'Returns', cols: [{ h: 'Date' }, { h: 'Shop' }, { h: 'Reason' }, { h: '₹', num: true, money: true }], rows: cns.sort((a, b) => b.date.localeCompare(a.date)).map(c => [showDate(c.date), shops.get(c.shopId)?.name ?? '', c.reason, c.total]), note: cns.length ? `${'Total'} ${inr(r2(cns.reduce((a, c) => a + c.total, 0)))} · ${Math.round(cns.reduce((a, c) => a + c.total, 0) / Math.max(1, invs.reduce((a, i) => a + i.total, 0)) * 1000) / 10}% ${'of sales'}` : undefined },
       { key: 'scheme', icon: Gift, en: 'Scheme cost', cols: [{ h: 'Scheme' }, { h: 'Lines', num: true }, { h: 'Discount', num: true, money: true }, { h: 'Free goods', num: true, money: true }], rows: [...sch.entries()].sort((a, b) => b[1].amount + b[1].free - a[1].amount - a[1].free).map(([k, v]) => [k, v.bills, r2(v.amount), r2(v.free)]), note: 'Company schemes come back as claims; own schemes are your cost.' },
     ];
     setReports(r);

@@ -316,9 +316,29 @@ export class ChangeSet {
       }
     });
     for (const h of hooks) await h(db, this.writes.map(w => ({ table: w.table, id: w.rec.id })));
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, quiet: !!this.opts.noAudit, tables: [...new Set(this.writes.map(w => w.table))] } }));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, quiet: !!this.opts.noAudit, tables: [...new Set(this.writes.map(w => w.table))], what: describeSave(label, this.writes) } }));
     return this.batchId;
   }
+}
+
+/** what a save was, for the Undo bubble: "Billed Annai Super Market ₹3,743" (the screen adds the shop names) */
+export function describeSave(_label: string, writes: { table: string; rec: object }[]): { verb: string; shopIds: string[]; amount?: number; count: number } | null {
+  const of = (t: string) => writes.filter(w => w.table === t).map(w => w.rec as Record<string, unknown>);
+  const pick = (verb: string, recs: Record<string, unknown>[], money?: string) => {
+    const shopIds = [...new Set(recs.map(r => String(r.shopId ?? '')).filter(Boolean))];
+    const amount = money ? Math.round(recs.reduce((a, r) => a + (Number(r[money]) || 0), 0) * 100) / 100 : undefined;
+    return { verb, shopIds, amount, count: recs.length };
+  };
+  const inv = of('invoices').filter(r => !r.cancelled);
+  if (of('creditNotes').length) return pick('Credit note', of('creditNotes'), 'total');
+  // only a new bill waits for the plan ("pending"); a bill being planned, sent out or delivered is not "Billed" again
+  const fresh = (r: Record<string, unknown>) => !r.createdAt || !r.updatedAt || Date.parse(String(r.updatedAt)) - Date.parse(String(r.createdAt)) < 5000; // made in this save, not a trip ended or cancelled
+  const made = inv.filter(r => r.deliveryStatus === 'pending' && !r.delivery && fresh(r));
+  if (made.length) return pick('Billed', made, 'total');
+  if (of('payments').length) return pick('Collected', of('payments'), 'amount');
+  if (of('orders').length) return pick('Order', of('orders'));
+  if (of('expenses').length) return pick('Expense', of('expenses'), 'amount');
+  return null;
 }
 
 // Undo one approval: put every record back the way it was before (never a hard delete

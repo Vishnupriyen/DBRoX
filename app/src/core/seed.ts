@@ -41,7 +41,7 @@ export async function seedDemo(tenantId = 'demo') {
   const owner = staff('Vishnu (Owner)', '9000000001', 'owner', '1111');
   staff('Priya (Office)', '9000000002', 'office', '2222', { salary: 12000 });
   const ravi = staff('Ravi (Salesman)', '9000000003', 'salesman', '3333', { salary: 15000, batta: 150 });
-  staff('Mani (Godown)', '9000000004', 'godown', '4444', { salary: 11000 });
+  const mani = staff('Mani (Godown)', '9000000004', 'godown', '4444', { salary: 11000 });
   const karthik = staff('Karthik (Delivery)', '9000000005', 'delivery', '5555', { vanId: van.id, salary: 12000, batta: 150 });
   van.driverId = karthik.id;
 
@@ -122,7 +122,7 @@ export async function seedDemo(tenantId = 'demo') {
   for (const i of invs) c4.put('invoices', { ...i, vanId: van.id });
   o.invoiceIds = invs.map(i => i.id);
   // packed by godown, waiting for the owner's approval
-  c4.put<Order>('orders', { shopId: S[1].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[5].id, qty: 24, rate: P[5].rate }, { productId: P[9].id, qty: 48, rate: P[9].rate }], date: today(), status: 'picked', issues: [], invoiceIds: [], picked: [{ productId: P[5].id, qty: 24 }, { productId: P[9].id, qty: 48 }], pickedBy: 'demo', pickedAt: new Date().toISOString() });
+  c4.put<Order>('orders', { shopId: S[1].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[5].id, qty: 24, rate: P[5].rate }, { productId: P[9].id, qty: 48, rate: P[9].rate }], date: today(), status: 'picked', issues: [], invoiceIds: [], picked: [{ productId: P[5].id, qty: 24 }, { productId: P[9].id, qty: 48 }], pickedBy: mani.id, pickedAt: new Date().toISOString() });
   // just booked by the salesman, waiting at the godown
   c4.put<Order>('orders', { shopId: S[2].id, salesmanId: ravi.id, source: 'salesman', lines: [{ productId: P[1].id, qty: 36, rate: P[1].rate }, { productId: P[3].id, qty: 20, rate: P[3].rate }], date: today(), status: 'approved', approvedBy: 'demo', approvedAt: new Date().toISOString(), issues: [], invoiceIds: [] });
   // just booked by the salesman, waiting for the owner

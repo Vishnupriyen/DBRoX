@@ -51,7 +51,7 @@
   ["claims list", "ask", "godown"],
   ["tomorrow leave", "leave", "godown"],
   ["help", "help", "godown"],
-  ["undo", "undo", "godown"],
+  ["undo", "undo:none", "godown"],
   ["selvam paid 500", "ask", "godown"],
   ["surf rate 115", "ask", "godown"],
   ["cancel kumar mart bill", "ask", "godown"],

@@ -6,7 +6,7 @@ import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatc
 import { r2 } from './ledger';
 import { nextNumbers } from './sync';
 import { billChangeBlock, isInterState } from './gst';
-import { costValue, extraBill, makeCreditNote, splitShort } from './credit';
+import { buildCreditNote, costValue, extraBill, makeCreditNote, splitShort } from './credit';
 import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
@@ -386,6 +386,21 @@ export async function settleDifference(invoiceId: string, action: 'modified' | '
   if (items.length) await makeCreditNote(cs, work, items, { reason: 'Short at delivery', source: 'delivery', takeOffBill: false });
   cs.put('invoices', { ...work, diffAction: 'credit_note' }, ex.length ? 'credit note + extra billed on a new bill' : 'credit note chosen');
   await cs.commit('Delivery difference settled');
+}
+
+/** what each day-close choice does to the money: the credit note gives back ₹back (the bill stays); extra pieces go on a new bill of about ₹extra */
+export async function differenceMoney(inv: Invoice) {
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
+  const cns = await db.creditNotes.where('invoiceId').equals(inv.id).toArray();
+  const items = (inv.delivery?.shortages ?? []).map(x => {
+    const l = inv.lines.find(y => y.productId === x.productId);
+    const split = x.paid != null ? { paid: x.paid, free: x.free ?? 0 } : l ? splitShort(l, x.qty, products.get(x.productId), schemes, inv.date) : { paid: 0, free: 0 };
+    return { productId: x.productId, ...split, restock: true };
+  }).filter(x => x.paid || x.free);
+  const back = items.length ? r2(buildCreditNote(inv, cns, items).total) : 0;
+  const extra = r2((inv.delivery?.excess ?? []).reduce((a, x) => { const l = inv.lines.find(y => y.productId === x.productId); return a + (l ? x.qty * l.total / (l.qty || 1) : 0); }, 0));
+  return { back, extra, becomes: r2(inv.total - back + extra) };
 }
 
 export async function closeDay(date = today(), received: Record<string, number> = {}) {

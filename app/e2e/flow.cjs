@@ -17,6 +17,14 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   const logout = async () => { await p.click('nav >> text=More'); await p.waitForTimeout(300); await p.click('text=Log out'); await p.waitForTimeout(300); };
   const home = async () => { await p.click('nav >> text=Home'); await p.waitForTimeout(500); };
   const tile = async (t) => { const exact = p.locator('.tile', { hasText: new RegExp('^\\s*' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\d*\\s*$') }); if (await exact.count()) await exact.first().click(); else await p.click(`.tile:has-text("${t}")`); await p.waitForTimeout(700); };
+  // UX round 4 checks: the TESRAX core never covers the last button; the Undo bubble says what it undoes and stays on its screen
+  const must = (ok, msg) => { if (!ok) throw new Error(msg); };
+  const ballClear = async (sel, what) => {
+    await p.evaluate(() => { const m = document.querySelector('.main'); m.scrollTo(0, m.scrollHeight); }); await p.waitForTimeout(250);
+    const r = await p.locator(sel).last().boundingBox(); const f = await p.locator('.fab').boundingBox();
+    must(r && f && (r.y + r.height <= f.y + 1 || r.x + r.width <= f.x || r.x >= f.x + f.width), `the TESRAX core covers "${what}" when scrolled to the end`);
+  };
+  const backArrow = async () => { await p.click('header button[aria-label="Back"]'); await p.waitForTimeout(500); };
   const setFile = async (btnText, file) => { const [ch] = await Promise.all([p.waitForEvent('filechooser'), p.click(`button:has-text("${btnText}")`)]); await ch.setFiles(file); await p.waitForTimeout(600); };
 
   await p.goto(BASE); await p.waitForSelector('text=Demo logins'); await p.waitForTimeout(1500);
@@ -32,9 +40,25 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.locator('button:has-text("Order")').first().click(); await p.waitForTimeout(900);
   await p.click('text=Usual'); await p.waitForTimeout(400);
   const plus = p.locator('.stepper button[aria-label="more"]'); await plus.nth(0).click(); await plus.nth(1).click(); await p.waitForTimeout(300); await shot('salesman-order');
+  const orderShop = (await p.textContent('.main .h')).trim();
+  { const g = await p.evaluate(() => ({ foot: document.querySelector('.sticky-foot').getBoundingClientRect().bottom, tabs: document.querySelector('.tabs').getBoundingClientRect().top }));
+    must(Math.abs(g.foot - g.tabs) <= 2, `only the total + Approve bar is pinned, sitting on the tab bar (bar ends at ${g.foot}, tabs start at ${g.tabs})`);
+    await p.evaluate(() => document.querySelector('.main').scrollBy(0, 400)); await p.waitForTimeout(200);
+    must(await p.evaluate(() => document.querySelector('.main .h').getBoundingClientRect().bottom <= document.querySelector('.main').getBoundingClientRect().top), 'the shop name and credit box scroll away with the list');
+    await p.evaluate(() => document.querySelector('.main').scrollTo(0, 0)); }
+  await backArrow();
+  must(await p.locator('.dialog', { hasText: 'Leave this order?' }).count() && await p.locator('.dialog', { hasText: '1 line will be lost' }).count(), 'back from an order with lines asks "Leave this order? 1 line will be lost."');
+  await p.click('.dialog button:has-text("Cancel")'); await p.waitForTimeout(300);
+  must(await p.locator('.sticky-foot button', { hasText: 'Send to owner' }).count(), 'after Cancel the order is still open, and the salesman\'s button says "Send to owner"');
   await p.click('.sticky-foot button'); await p.waitForTimeout(900); await shot('salesman-order-sent');
+  must(!(await p.locator('.main .avatar.bad').count()) && await p.locator('.main .avatar.ok').count(), 'a sent order shows the green tick');
+  must(/· 1 item ·/.test(await p.textContent('.main')), 'the sent order counts its items in words ("1 item", never "1 items")');
+  must(new RegExp(`Order ${orderShop}`).test(await p.textContent('.toast').catch(() => '')), `the Undo bubble names the shop ("Order ${orderShop}")`);
   await p.click('text=Next shop'); await p.waitForTimeout(300);
+  await home(); must(!(await p.locator('.toast').count()), 'the Undo bubble goes away when the screen changes');
   await p.click('.fab'); await p.waitForTimeout(500); await p.fill('textarea', 'leave Monday fever'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-leave');
+  must(await p.locator('.engine .prop', { hasText: 'Leave' }).count() && /Mon \d{1,2} [A-Z][a-z]{2}/.test(await p.textContent('.engine')), 'a leave comes as the ✓ table with the day in words (Mon 16 Nov)');
+  must(await p.locator('.engine .prop button', { hasText: 'Send to owner' }).count() && !(await p.locator('.engine button', { hasText: 'Download Excel' }).count()), 'field staff: "Send to owner", no Download Excel');
   await p.click('.engine-x[aria-label="Close"]'); await logout();
 
   // Owner: home, Bill → Orders received (history strip) → approve
@@ -50,6 +74,9 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Mani (Godown)'); await gate(); await shot('godown-home');
   await tile('Pick orders'); await shot('godown-pick-list');
   await p.locator('.item.tap').first().click(); await p.waitForTimeout(700);
+  await backArrow(); must(await p.locator('h3', { hasText: 'Orders to pick' }).count(), 'back from an order being packed goes to the list of orders, not home');
+  await p.locator('.item.tap').first().click(); await p.waitForTimeout(700);
+  must(await p.locator('button[aria-label="Packed"] svg.lucide-check').count(), 'each pick line has the same ✓ button as Load vans');
   await p.locator('.stepper button[aria-label="less"]').first().click(); await p.waitForTimeout(200); await shot('godown-pick-changed');
   const packs = p.locator('button[aria-label="Packed"]'); const pc = await packs.count(); for (let i = 0; i < pc; i++) await packs.nth(i).click();
   await p.click('button:has-text("Packed")'); await p.waitForTimeout(700);
@@ -63,8 +90,12 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Vishnu (Owner)'); await tile('Bill'); await tile('to verify'); await shot('owner-verify');
   const dn = p.locator('button:has-text("Done → bill")'); while (await dn.count()) { await dn.first().click(); await p.waitForTimeout(700); }
   await shot('owner-billed');
+  { const chips = await p.locator('.alert.ok button').allTextContents(); must(chips.length && chips.every(c => / · \S/.test(c)), `bill numbers come with the shop name: ${chips.join(' | ')}`);
+    const nums = chips.map(c => c.split(' · ')[0].trim()); must(nums.join() === [...nums].sort().join(), 'bill numbers are in order');
+    must(/^Billed .+ ₹/.test(await p.textContent('.toast').catch(() => '')), 'the Undo bubble says "Billed <shop> ₹…"'); }
   await home(); await tile('Delivery'); await shot('owner-delivery-icons'); await tile('Plan'); await shot('owner-plan-ask');
   await p.click('button:has-text("TESRAX, suggest")'); await p.waitForTimeout(900); await shot('owner-plan');
+  await ballClear('button:has-text("Confirm plan")', 'Confirm plan');
   await p.click('button:has-text("Confirm plan")'); await p.waitForTimeout(800);
   await logout();
 
@@ -79,14 +110,22 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Karthik (Delivery)'); await gate(); await tile('My trip'); await shot('driver-trip');
   await p.click('button:has-text("Start trip")'); await p.waitForTimeout(700);
   await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
+  await backArrow(); must(await p.locator('.route .stop').count(), 'back from a stop goes to the trip list, not home');
+  await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
   await p.locator('button:has-text("Short")').first().click(); await p.waitForTimeout(300); await p.fill('.dialog input, dialog input, input[type=number] >> nth=-1', '4').catch(() => {}); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
   const why = p.locator('button:has-text("Not loaded")'); if (await why.count()) { await why.click(); await p.waitForTimeout(300); }
   await shot('driver-stop-short');
   await p.click('button:has-text("Delivered")'); await p.waitForTimeout(500); await shot('driver-photos-needed');
+  { const b = p.locator('button[aria-label="Shop confirms delivery"]');
+    must(await b.isDisabled() && /Goods received/.test(await b.textContent()) && Number(await b.evaluate(el => getComputedStyle(el).opacity)) < .6, 'before both photos the "Goods received ✓" button looks switched off'); }
+  await backArrow(); must(await p.locator('button:has-text("Delivered")').count(), 'back from the photos step goes to the items, not home');
+  await p.click('button:has-text("Delivered")'); await p.waitForTimeout(400);
   const cams = await p.locator('button:has-text("photo")').elementHandles(); for (const c of cams) { const [ch] = await Promise.all([p.waitForEvent('filechooser'), c.click()]); await ch.setFiles(`${FIX}/shop.jpg`); await p.waitForTimeout(500); } await shot('driver-photos-done');
   await p.click('button[aria-label="Shop confirms delivery"]'); await p.waitForTimeout(800); await shot('driver-collect-bills');
   await p.click('button:has-text("Full")'); await p.waitForTimeout(200); await p.click('.segmented button:has-text("UPI")'); await p.waitForTimeout(600); await shot('driver-collect-qr');
-  await p.fill('input:visible >> nth=-1', '4471'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700); await shot('driver-after');
+  must(await p.locator('input.bigamount[type=text]').count() && (await p.getAttribute('input.bigamount', 'placeholder')) && await p.locator('.card .row:has(input.bigamount) span', { hasText: '₹' }).count(), 'amount box: ₹ in front, the due amount as the hint, no spinner arrows');
+  await p.fill('input:visible >> nth=-1', '4471'); await ballClear('button[aria-label="Shop confirms payment"]', 'Money paid ✓'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700); await shot('driver-after');
+  must(/₹[\d,.]+ by UPI/.test(await p.textContent('.main')), 'the collection done screen says "₹… by UPI"');
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
@@ -107,6 +146,9 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Delivery'); await tile('Delivery status'); await shot('owner-status');
   await home(); await tile('Day close'); await shot('owner-dayclose-checklist');
   await p.click('.check:has-text("differences")'); await p.waitForTimeout(600); await shot('owner-differences');
+  must(await p.locator('.card', { hasText: 'Bill stays' }).count(), 'each day-close choice says what it does ("Bill stays; shop gets ₹… back")');
+  await backArrow(); must(await p.locator('h3', { hasText: 'Checklist' }).count(), 'back from the differences goes to the day-close checklist, not home');
+  await p.click('.check:has-text("differences")'); await p.waitForTimeout(600);
   // delivered bills are never re-written: each difference is settled with a credit note (+ a new bill for extra pieces)
   const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); }
   await p.click('button:has-text("Back to day close")').catch(() => p.click('text=← Day close')); await p.waitForTimeout(600);

@@ -16,6 +16,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   const setOrders: typeof setOrders0 = v => { setLoaded(true); setOrders0(v); };
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
+  const [shopName, setShopName] = useState<Map<string, string>>(new Map());
   const [edit, setEdit] = useState<Record<string, Record<number, number>>>({}); // orderId → picked line index → qty
   const [tick, setTick] = useState(0);
   const [printing, setPrinting] = useState<Invoice | null>(null);
@@ -24,6 +25,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   useEffect(() => {
     (async () => {
       const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
+      setShopName(new Map([...shops.values()].map(s => [s.id, s.name])));
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
       setStaff(new Map((await db.staff.toArray()).map(s => [s.id, s.name.split(' ')[0]])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'picked').sort((a, b) => (a.pickedAt ?? '').localeCompare(b.pickedAt ?? ''));
@@ -44,7 +46,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
     const picked = pickedOf(o).map((p, i) => ({ ...p, qty: qtyAt(o, i) }));
     const { ChangeSet } = await import('../core/db');
     const cs = new ChangeSet(); cs.put('orders', { ...o, picked }, 'verified'); await cs.commit('Verified');
-    const r = await approvePicked(o.id); setMade(m => [...r.invoices, ...m]); setTick(x => x + 1);
+    const r = await approvePicked(o.id); setMade(m => [...r.invoices, ...m].sort((a, b) => a.number.localeCompare(b.number))); setTick(x => x + 1);
   };
 
   return (
@@ -52,7 +54,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
       <div className="sechead"><h3>{'Picked — to verify'} · {orders.length}</h3></div>
       {locked && <div className="alert bad"><Lock /><div><b>{'Billing is locked'}</b> — {`close ${locked} first.`} {go && <button className="link" onClick={() => go('dayclose')}>{'Day close →'}</button>}</div></div>}
-      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div></div></div>}
+      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number} · {shopName.get(i.shopId) ?? ''}</button>)}</div></div></div>}
       {orders.map(o => {
         const pk = pickedOf(o);
         const orderedQty = (pid: string) => o.lines.find(l => l.productId === pid)?.qty ?? 0;
@@ -60,7 +62,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? ''} {o.pickedAt?.slice(11, 16)}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? 'godown'}{o.pickedAt ? ` at ${new Date(o.pickedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {diffs ? <div className="muted">{plural(diffs, 'line')} {'changed by the picker — shown in red'}</div> : <div className="muted">{'Packed exactly as ordered'}</div>}

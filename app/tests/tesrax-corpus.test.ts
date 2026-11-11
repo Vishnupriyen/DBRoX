@@ -267,7 +267,7 @@ const CORPUS: Case[] = [
   ['tomorrow leave', 'leave', 'salesman'],
   ['i am on leave monday', 'leave', 'godown'],
   ['Ravi on leave tomorrow', 'leave'],
-  ['leave pls', 'leave', 'delivery'],
+  ['leave pls', 'ask', 'delivery'], // no day said: "Which day?" (UX round 4)
   // help
   ['?', 'help'],
   ['what can u do', 'help'],

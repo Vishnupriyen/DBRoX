@@ -1,4 +1,4 @@
-import { inr, showDate, plural } from './i18n';
+import { inr, showDate, showDay, plural } from './i18n';
 // TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, English). The AI is only used to
 // read photos, never to decide money.
@@ -12,7 +12,7 @@ import {
 export { orderRow, refreshOrderRow } from './proposals';
 import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
-import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Staff } from './types';
+import { MODULES, type Advance, type ModuleKey, type Product, type Role, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
 import { costValue, creditValue, openPaid } from './credit';
 import { STATES } from './gst';
@@ -28,7 +28,7 @@ export interface Reply {
   go?: string; // open this screen (Page id in the app shell)
   link?: { label: string; page: string }; // an answer given in words, with a button to the screen behind it (never jumps away)
   parts?: Reply[];          // a message that asked for several things: one reply per thing, in the order said
-  pending?: { said: string; need: 'shop' | 'amount' }; // TESRAX asked which shop; the next message may just name it
+  pending?: { said: string; need: 'shop' | 'amount' | 'date' }; // TESRAX asked which shop; the next message may just name it
   replaces?: boolean;       // a follow-up that changed the table just shown (the old one is closed)
   follow?: 'tap' | 'dropped'; // "yes" (tap ✓ to save) / "no" (table dropped)
   refused?: boolean;        // a clear no: not this role's screen or action
@@ -116,7 +116,7 @@ export const W = {
   newShop: ['new shop', 'new outlet', 'add outlet', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer'],
   paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer'],
   ret: ['return', 'returned', 'took back', 'sent back', 'send back', 'gave back', 'give back', 'taken back'],
-  damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled'],
+  damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'udanju', 'udanjiruchu', 'odanju', 'kizhinjiruchu'],
   order: ['order'],
   outstanding: ['outstanding', 'pending', 'owes', 'owe', 'balance', 'due', 'dues', 'has to pay', 'have to pay', 'yet to pay', 'to pay', 'not paid', 'unpaid', 'credit', 'overdue', 'late payment', 'defaulters'],
   sales: ['sales', 'sale today', 'today summary', 'summary', 'sold today', 'sold', 'sell today', 'total sales', 'billing today', 'today billing', 'today s billing', 'how much billed', 'turnover'],
@@ -710,7 +710,7 @@ async function damageProposal(textIn: string, file?: File): Promise<Reply> {
   const products = await db.products.toArray();
   const t = norm(textIn);
   const kind = /expir/.test(t) ? 'expiry' : /transit|van/.test(t) ? 'transit' : 'damage';
-  const cleaned = textIn.replace(/damaged|damage|expired|expiry|claim|add to|leak|broken/gi, ' ');
+  const cleaned = textIn.replace(/damaged|damage|expired|expiry|claim|add to|leak|broken|udanjiruchu|udanju|odanju|kizhinjiruchu/gi, ' ');
   const lines = parseItemLines(cleaned);
   const rows: Row[] = lines.map(l => {
     const p = bestProduct(products, l.productText).product;
@@ -1002,28 +1002,53 @@ function parseDate(t: string): string | null {
   const m = t.match(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
   if (m) { const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : today().slice(0, 4); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  if (t.includes('tomorrow')) return daysFrom(1);
-  if (t.includes('today')) return today();
-  for (let i = 0; i < 7; i++) if (t.includes(days[i])) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return daysFrom(diff); }
+  if (TOMORROW.test(t)) return daysFrom(1);
+  if (TODAY.test(t)) return today();
+  for (let i = 0; i < 7; i++) if (new RegExp(`\\b${days[i]}\\b`).test(t)) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return daysFrom(diff); }
   return null;
 }
+// "nalaiku leave" is tomorrow, "inniku" today (it used to be read as today with the reason "nalaiku")
+const TOMORROW = /\b(tomorrow|tmrw|tmr|nalaiku|naalaiku|nalai|naalai|nalaikku|naalaikku)\b/;
+const TODAY = /\b(today|inniku|innaiku|indru|innikku)\b/;
+/** a day is said in this message (the answer to "Which day?") */
+export function dayIn(t: string) { return /\d{1,2}[\/-]\d{1,2}/.test(t) ? parseDate(t) : parseDate(norm(t)); }
 async function whom(t: string, role: Role): Promise<Staff | undefined> {
   const staff = (await db.staff.toArray()).filter(s => s.active);
   if (role === 'owner' || role === 'office') { const hit = staff.find(s => s.role !== 'owner' && t.includes(norm(s.name.split(' ')[0]))); if (hit) return hit; }
   return staff.find(s => s.id === session().userId);
 }
+// Leave always comes as the check-and-✓ table with the day in words. Nothing is saved before ✓, a day is never guessed.
 async function leaveRequest(textIn: string, role: Role): Promise<Reply> {
   const t = norm(textIn);
+  // "Ravi leave approve", "ok Ravi leave": the owner wants to approve a request, not to make a new leave
+  if ((role === 'owner' || role === 'office') && /\b(approve|approved|ok|okay|accept|sanction)\b/.test(t)) return { text: 'Opening Payroll → Today. Leave requests are approved there.', go: 'today' };
   const who = await whom(t, role); if (!who) return { text: 'Who is the leave for?', tone: 'warn' };
-  const dates = [...t.matchAll(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/g)].map(m => parseDate(m[0])!);
-  const from = dates[0] ?? parseDate(t) ?? today(); const to = dates[1] ?? from;
-  const reason = textIn.replace(/leave|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|to|for|on/gi, '').replace(new RegExp(who.name.split(' ')[0], 'i'), '').trim() || 'personal';
+  // dates read before the words are normalised (norm() turns "12/11" into "12 11": the day was lost and today taken)
+  const dates = [...textIn.matchAll(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/g)].map(m => parseDate(m[0])!);
+  const from = dates[0] ?? parseDate(t);
+  if (!from) return { text: `Which day is the leave${who.id === session().userId ? '' : ` for ${who.name.split(' ')[0]}`}? Say e.g. "tomorrow", "Monday" or "16/11".`, tone: 'warn', pending: { said: textIn, need: 'date' } };
+  const to = dates[1] && dates[1] >= from ? dates[1] : from;
+  const first = norm(who.name.split(' ')[0]);
+  const reason = norm(textIn.replace(/\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, ' '))
+    .replace(new RegExp(`\\b(${first}|leave|leaves|i|want|need|am|on|is|for|to|from|till|until|day|days|please|pls|plz|sir|madam|give|apply|take|taking|and|${TOMORROW.source.slice(3, -3)}|${TODAY.source.slice(3, -3)}|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\\b`, 'g'), ' ')
+    .replace(/\s+/g, ' ').trim() || 'personal';
   const self = who.id === session().userId;
-  if (DRY) return { text: 'leave', tone: 'ok' };
-  const cs = new ChangeSet();
-  cs.put<LeaveRequest>('leaves', { staffId: who.id, from, to, reason, status: self && role !== 'owner' ? 'waiting' : 'approved' }, 'leave');
-  await cs.commit('Leave');
-  return { text: self && role !== 'owner' ? `Leave request ${from}${to !== from ? ' to ' + to : ''} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${from}${to !== from ? ' to ' + to : ''} recorded (${reason}).`, tone: 'ok' };
+  const status = self && role !== 'owner' ? 'waiting' : 'approved';
+  const staff = (await db.staff.toArray()).filter(s => s.active && s.role !== 'owner');
+  const when = `${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''}`;
+  return {
+    text: status === 'waiting' ? `Leave ${when} (${reason}). Check and tap ✓ to send it to the owner.` : `${who.name.split(' ')[0]}: leave ${when} (${reason}). Check and tap ✓.`,
+    proposal: {
+      id: newId(), kind: 'leave', title: 'Leave',
+      fields: [
+        { key: 'staffId', label: 'Who', type: 'select', readonly: self, options: (self ? [who] : staff).map(s => ({ value: s.id, label: s.name })), value: who.id },
+        { key: 'reason', label: 'Reason', value: reason },
+      ],
+      columns: [{ key: 'from', label: 'From', type: 'date', width: 140 }, { key: 'to', label: 'To', type: 'date', width: 140 }],
+      rows: [{ from, to }],
+      meta: { status },
+    },
+  };
 }
 async function advanceRequest(textIn: string, role: Role): Promise<Reply> {
   const t = norm(textIn);

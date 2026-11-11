@@ -85,6 +85,11 @@ export function showDate(iso?: string | null) {
   const thisYear = String(new Date().getFullYear());
   return `${d} ${MON[m - 1]}${y === thisYear ? '' : ` ${y}`}`;
 }
+/** a day as people say it, with the weekday: "Mon 16 Nov" (leave, plans) */
+export function showDay(iso?: string | null) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso ?? '';
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso.slice(0, 10)}T12:00:00`).getDay()]} ${showDate(iso)}`;
+}
 /** a month as people say it: "Nov 2026" (input YYYY-MM) */
 export function showMonth(ym?: string | null) {
   if (!ym || !/^\d{4}-\d{2}/.test(ym)) return ym ?? '';
