@@ -4,7 +4,7 @@
 // (or office, within the owner's limit) approves it on their own phone — the credit note then gets a server number the
 // usual way — or rejects it with a reason. Nothing is changed until then.
 import { inr, plural } from './i18n';
-import { ChangeSet, db, getSettings, nowIso, session, today } from './db';
+import { ChangeSet, db, getSettings, localDay, nowIso, session, today } from './db';
 import { r2 } from './ledger';
 import { countLot, creditNoteNumbers, pickBatches } from './billing';
 import { buildCreditNote, costValue, makeCreditNote } from './credit';
@@ -93,6 +93,22 @@ export async function countValue(rows: CountRow[]) {
   return r2(rows.reduce((a, r) => a + Math.max(0, r.system - r.counted) * writeOffRate(products.get(r.productId ?? batches.get(r.batchId)?.productId ?? '')), 0));
 }
 
+/** what this person has already written off today, in ₹ (damage and count together): their saved write-offs (stock moves
+ *  out of the shelf for damage or a count) and their requests still waiting or approved. The limit is a running total, so
+ *  three small entries cannot slip under it one by one. */
+export async function writtenOffToday(userId: string, day = today()) {
+  const products = new Map((await db.products.toArray()).map(x => [x.id, x]));
+  const batches = new Map((await db.batches.toArray()).map(b => [b.id, b]));
+  let total = 0;
+  for (const m of await db.stockMoves.toArray()) {
+    if (m.by !== userId || m.delta >= 0 || localDay(m.at) !== day) continue;
+    if (!/damaged out of stock|count adjust/.test(m.reason)) continue;
+    total += -m.delta * writeOffRate(products.get(m.productId ?? batches.get(m.batchId)?.productId ?? ''));
+  }
+  for (const r of (await db.requests.toArray()).filter(x => x.date === day)) if (r.by === userId && r.kind !== 'return' && r.status !== 'rejected') total += r.value;
+  return r2(total);
+}
+
 /** does this return / write-off go to the owner as a request? (and does only the owner decide it?) */
 export async function needsRequest(kind: StaffRequest['kind'], value: number) {
   const { role } = await me();
@@ -104,8 +120,9 @@ export async function needsRequest(kind: StaffRequest['kind'], value: number) {
     return { request: true, ownerOnly: over };
   }
   // a write-off: the owner's own is saved; anyone else's above the limit waits for the owner
-  const over = value > (st.writeOffLimit ?? DEFAULT_WRITE_OFF_LIMIT);
-  return { request: role !== 'owner' && over, ownerOnly: true };
+  const { id } = await me();
+  const over = role !== 'owner' && value + (value > 0 ? await writtenOffToday(id) : 0) > (st.writeOffLimit ?? DEFAULT_WRITE_OFF_LIMIT);
+  return { request: over, ownerOnly: true };
 }
 
 export async function makeRequest(cs: ChangeSet, r: Pick<StaffRequest, 'kind' | 'reason' | 'value' | 'rows'> & Partial<Pick<StaffRequest, 'shopId' | 'photo' | 'ownerOnly'>>) {

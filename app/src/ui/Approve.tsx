@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Printer, Lock, Minus, Plus } from 'lucide-react';
-import { db } from '../core/db';
+import { db, getSettings } from '../core/db';
+import { billValueOf } from '../core/billing';
+import { isInterState } from '../core/gst';
 import { approvePicked, billingLockedBy, rejectOrder } from '../core/pipeline';
 import { inr, plural, showTime } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
-import type { Invoice, Order, Product, Shop } from '../core/types';
+import type { Invoice, Order, Product, Scheme, Settings, Shop } from '../core/types';
 
 
 // Bill → Picked, to verify. Owner checks the physical pack against the screen, may edit, taps Done → bill. No send-back.
@@ -15,6 +17,8 @@ export function Approve({ go }: { go?: (p: string) => void }) {
   const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
   const setOrders: typeof setOrders0 = v => { setLoaded(true); setOrders0(v); };
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
+  const [cfg, setCfg] = useState<Settings | undefined>(undefined);
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
   const [shopName, setShopName] = useState<Map<string, string>>(new Map());
   const [edit, setEdit] = useState<Record<string, Record<number, number>>>({}); // orderId → picked line index → qty
@@ -27,6 +31,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
       const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
       setShopName(new Map([...shops.values()].map(s => [s.id, s.name])));
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
+      setSchemes(await db.schemes.toArray()); setCfg(await getSettings());
       setStaff(new Map((await db.staff.toArray()).map(s => [s.id, s.name.split(' ')[0]])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'picked').sort((a, b) => (a.pickedAt ?? '').localeCompare(b.pickedAt ?? ''));
       setOrders(os.map(o => ({ ...o, shop: shops.get(o.shopId)! })));
@@ -36,7 +41,8 @@ export function Approve({ go }: { go?: (p: string) => void }) {
 
   const pickedOf = (o: Order): NonNullable<Order['picked']> => o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }));
   const qtyAt = (o: Order, i: number) => edit[o.id]?.[i] ?? pickedOf(o)[i].qty;
-  const value = (o: Order) => pickedOf(o).reduce((a, pk, i) => { const l = o.lines.find(x => x.productId === pk.productId); const p = products.get(pk.productId); return a + qtyAt(o, i) * (l?.rate ?? 0) * (1 + (p?.gst ?? 0) / 100); }, 0);
+  // the amount shown is what the bill will be: the same schemes, tax and round-off as billing (core/billing.ts)
+  const value = (o: Order & { shop: Shop }) => billValueOf(pickedOf(o).map((pk, i) => ({ productId: pk.productId, qty: qtyAt(o, i), rate: o.lines.find(x => x.productId === pk.productId)?.rate ?? 0 })), products, schemes, isInterState(o.shop, cfg ?? { stateCode: '' }));
   const [saving, setSaving] = useState<string | null>(null);
   const done = async (o: Order) => {
     if (saving) return; setSaving(o.id);

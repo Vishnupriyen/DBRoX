@@ -5,7 +5,7 @@ import { billingState, isUpgrade, istToday, makeLicence, PACKS, sealLicence, TIE
 import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, readToken, signToken, verifyPin, type Claims } from './auth.js';
-import { badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
+import { badLines, badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
 import { clearHits, hit, isLocked } from './limits.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
@@ -220,6 +220,7 @@ export async function buildApp(pool: pg.Pool) {
         if (badMoney(ch.table, data)) { refuse(key); continue; }
         if (kind === 'distributor') {
           if (distributorRule(c.r, c.u, ch.table, data, ex)) { refuse(key); continue; }
+          if (badLines(ch.table, data)) { refuse(key); continue; }
           if (ch.table === 'invoices' && (!billAddsUp(data) || !billLotsOk(data))) { refuse(key); continue; }
           // a bill's credit notes together never come to more than it charged (the bill and earlier notes, here or in this push)
           if (ch.table === 'creditNotes') {

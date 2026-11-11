@@ -305,6 +305,7 @@ export interface Payment extends Base {
   dupOk?: boolean;       // the owner checked: the same amount twice from this shop today is real, not a double entry
   note?: string;
   receiptNo?: string;    // R/FY/n — the running receipt number the shop is shown (from the server; numbered at next sync when offline)
+  chequeBank?: string;   // a cheque: the bank written on it
   chequeDate?: string;   // a cheque: the date written on it (post-dated: it clears no dues before this day)
   bounce?: { at: string; by: string; reason: string };
 }

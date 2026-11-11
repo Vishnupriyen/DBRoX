@@ -3,7 +3,7 @@
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
 import { ChangeSet, db, getSettings, nowIso, session, today, daysFrom, ymd } from './db';
 import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatches, refreshSchemeClaims, type BillCut } from './billing';
-import { r2 } from './ledger';
+import { invoiceBalances, paymentCounts, r2 } from './ledger';
 import { nextNumbers } from './sync';
 import { billChangeBlock, isInterState } from './gst';
 import { buildCreditNote, costValue, extraBill, makeCreditNote, splitShort } from './credit';
@@ -265,6 +265,22 @@ export async function endTrip(tripId: string, undelivered: Record<string, 'godow
 }
 
 // ---- 5. day close: what went out, what came back, cash per person
+/**
+ * The day's two headline figures, one definition for Day close, Home and TESRAX:
+ *  - billed = the day's bills less their credit notes; a bill that was refused or fully credited counts as ₹0, a cancelled one is not a bill;
+ *  - collected = money that clears dues today; a post-dated cheque is not collected until its date (shown apart as "cheques to clear").
+ */
+export async function dayFigures(date = today()) {
+  const bills = (await db.invoices.where('date').equals(date).toArray()).filter(i => !i.cancelled);
+  const cns = await db.creditNotes.toArray();
+  const credited = new Map<string, number>(); for (const c of cns) credited.set(c.invoiceId, r2((credited.get(c.invoiceId) ?? 0) + c.total));
+  const sales = r2(bills.reduce((a, i) => a + (i.deliveryStatus === 'returned' ? 0 : Math.max(0, i.total - (credited.get(i.id) ?? 0))), 0));
+  const pays = (await db.payments.where('date').equals(date).toArray()).filter(p => p.status === 'ok');
+  const collected = r2(pays.filter(p => paymentCounts(p, date)).reduce((a, p) => a + p.amount, 0));
+  const chequesToClear = r2((await db.payments.toArray()).filter(p => p.status === 'ok' && !paymentCounts(p, date)).reduce((a, p) => a + p.amount, 0));
+  return { sales, collected, chequesToClear, billsToday: bills.length };
+}
+
 export async function daySummary(date = today()) {
   const invs = (await db.invoices.toArray()).filter(i => !i.cancelled);
   const trips = (await db.trips.where('date').equals(date).toArray());
@@ -289,8 +305,7 @@ export async function daySummary(date = today()) {
     nonCash: nonCash.map(p => ({ id: p.id, mode: p.mode, amount: p.amount, ref: p.ref ?? '', by: staff.get(p.collectedBy) ?? p.collectedBy })),
     waiting: waiting.length,
     creditNotes: r2(cns.reduce((a, c) => a + c.total, 0)),
-    sales: r2(invs.filter(i => i.date === date).reduce((a, i) => a + i.total, 0)),
-    collected: r2(pays.filter(p => p.date === date && p.status === 'ok').reduce((a, p) => a + p.amount, 0)),
+    ...(await dayFigures(date)),
     closed: !!(await db.dayCloses.where('date').equals(date).first()),
   };
 }
@@ -332,6 +347,9 @@ export async function confirmNotDuplicate(paymentIds: string[]) {
 export async function cancelPayment(paymentId: string, reason: string) {
   const p = await db.payments.get(paymentId);
   if (!p || p.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
+  // only the owner or office cancel a payment; a collector may cancel only their own, before it reaches the office (the server rule)
+  const role = (await db.staff.get(session().userId))?.role;
+  if (role !== 'owner' && role !== 'office' && !(p.collectedBy === session().userId && !p.settled)) throw new Error('Only the owner or office cancels a payment.');
   if (p.bankLineId) throw new Error('This payment is matched to the bank statement. Unmatch it in Accounts → Bank first.');
   const cs = new ChangeSet();
   cs.put('payments', { ...p, status: 'cancelled', note: reason }, 'payment cancelled');
@@ -340,6 +358,8 @@ export async function cancelPayment(paymentId: string, reason: string) {
 
 /** a cheque bounced: asked to confirm, with the reason; it stops counting and the bills it paid are open again */
 export async function bounceCheque(paymentId: string, reason: string) {
+  const role = (await db.staff.get(session().userId))?.role;
+  if (role !== 'owner' && role !== 'office') throw new Error('Only the owner or office marks a cheque as bounced.');
   const p = await db.payments.get(paymentId);
   if (!p || p.mode !== 'cheque') throw new Error('That is not a cheque payment.');
   if (p.status === 'bounced') throw new Error('This cheque is already marked bounced.');
@@ -363,7 +383,8 @@ export async function saveBillEdit(invoiceId: string, shopId: string, edits: { p
   const shop = await db.shops.get(shopId); if (!shop) throw new Error('Shop not found.');
   const live = edits.filter(l => l.qty > 0);
   if (!live.length) throw new Error('A bill needs at least one line. Cancel the bill instead.');
-  if (live.some(l => !Number.isInteger(l.qty) || !(l.rate >= 0))) throw new Error('Quantities are whole pieces and rates are 0 or more.');
+  if (live.some(l => !Number.isInteger(l.qty) || !(l.rate > 0))) throw new Error('Quantities are whole pieces and rates are more than ₹0.');
+  if (live.some(l => (l.discount ?? 0) < 0 || (l.discount ?? 0) > r2(l.qty * l.rate))) throw new Error('A discount cannot be more than the value of the line.');
   const settings = await getSettings();
   const inter = isInterState(shop, settings);
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
@@ -387,6 +408,7 @@ export async function saveBillEdit(invoiceId: string, shopId: string, edits: { p
   for (const id of touched) { const x = batches.find(y => y.id === id); if (x) cs.put('batches', { ...x }, 'bill edited'); }
   const { isB2B } = await import('./ledger');
   const upd = cs.put<Invoice>('invoices', { ...inv, shopId: shop.id, kind: isB2B(shop) ? 'B2B' : 'B2C', lines, ...billTotals(lines), original: inv.original ?? { lines: inv.lines, total: inv.total, at: nowIso() } }, 'bill edited before print');
+  if (!(upd.total > 0) || lines.some(l => !(l.total > 0))) throw new Error('A bill line cannot come to ₹0. Cancel the bill instead, or give the line a real rate.');
   await refreshSchemeClaims(cs, upd, []);
   return cs.commit('Bill edited');
 }
@@ -432,6 +454,33 @@ export async function differenceMoney(inv: Invoice) {
   const back = items.length ? r2(buildCreditNote(inv, cns, items).total) : 0;
   const extra = r2((inv.delivery?.excess ?? []).reduce((a, x) => { const l = inv.lines.find(y => y.productId === x.productId); return a + (l ? x.qty * l.total / (l.qty || 1) : 0); }, 0));
   return { back, extra, becomes: r2(inv.total - back + extra) };
+}
+
+/** what a delivered bill's shortages (short, damaged, refused) will be credited — not yet a credit note, so the bill still shows its full total */
+export async function pendingShortCredit(inv: Invoice) {
+  if (inv.cancelled || inv.diffAction || !(inv.delivery?.shortages?.length)) return 0;
+  return (await differenceMoney(inv)).back;
+}
+/** the bills a shop can pay now, for the driver's and salesman's collection: each bill's balance less what the delivery already
+ *  knows will be credited (so the driver asks for the delivered value, not the full bill), with the shop's old dues as they are */
+export async function collectableBills(shopId: string) {
+  const out: { invoice: Invoice; balance: number; short: number; due: number }[] = [];
+  for (const b of (await invoiceBalances(shopId)).filter(x => x.balance > 0.5)) {
+    const short = await pendingShortCredit(b.invoice);
+    const due = r2(Math.max(0, b.balance - short));
+    if (due > 0.5) out.push({ invoice: b.invoice, balance: b.balance, short: r2(b.balance - due), due });
+  }
+  return out;
+}
+
+/** "Settle all as credit notes": every bill with a delivery difference gets its credit note (and a new bill for extras), one after the other;
+ *  a bill that cannot be settled is reported and the rest still are. Safe to tap twice (a settled bill is skipped). */
+export async function settleAllAsCreditNotes(invoiceIds: string[]) {
+  const done: string[] = []; const failed: { id: string; message: string }[] = [];
+  for (const id of invoiceIds) {
+    try { await settleDifference(id, 'credit_note'); done.push(id); } catch (e) { failed.push({ id, message: (e as Error).message }); }
+  }
+  return { done, failed };
 }
 
 export async function closeDay(date = today(), received: Record<string, number> = {}) {

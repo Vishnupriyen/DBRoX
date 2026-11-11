@@ -173,10 +173,10 @@ describe('2/12. staff returns and godown write-offs are requests the owner decid
     const s0 = await stockOf(surf.id);
     as(godown);
     try {
-      const big = await commit(claim(10)); // 10 × selling rate > ₹500
-      expect(big.message).toMatch(/sent to the owner/);
-      expect(await stockOf(surf.id)).toBe(s0);
       await commit(claim(1)); // about ₹112: under the limit, saved at once
+      expect(await stockOf(surf.id)).toBe(s0 - 1);
+      const big = await commit({ ...claim(10), id: 'c2' }); // 10 × selling rate > ₹500 (the day's running total counts too)
+      expect(big.message).toMatch(/sent to the owner/);
       expect(await stockOf(surf.id)).toBe(s0 - 1);
     } finally { asOwner(); }
     const req = (await waitingRequests()).find(r => r.kind === 'damage')!;

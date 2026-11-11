@@ -58,6 +58,20 @@ export function billTotals(lines: InvoiceLine[]) {
   const total = Math.round(exact);
   return { taxable, cgst, sgst, igst, roundOff: r2(total - exact), total, schemeSaving: r2(lines.reduce((s, x) => s + x.discount + x.freeQty * x.rate, 0)) };
 }
+/**
+ * What these lines would be billed at, to the rupee: the same schemes, tax and per-bill round-off as makeInvoices (one bill per company).
+ * The order, approval and picking screens show this, so the order total is the bill total when it is packed as ordered.
+ */
+export function billValueOf(lines: { productId: string; qty: number; rate: number }[], products: Map<string, Product>, schemes: Scheme[], inter: boolean, date = today()) {
+  const by = new Map<string, InvoiceLine[]>();
+  for (const l of lines) {
+    const p = products.get(l.productId);
+    if (!p || !(l.qty > 0)) continue;
+    by.set(p.companyId, [...(by.get(p.companyId) ?? []), billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter)]);
+  }
+  return r2([...by.values()].reduce((a, ls) => a + billTotals(ls).total, 0));
+}
+
 /** the next number of the one running bill series: from the server when there is one, else the settings counter */
 export function takeBillNumber(cs: ChangeSet, settings: Settings, numbers: { first: number; prefix: string } | undefined, date: string) {
   if (numbers) { const n = `${numbers.prefix}/${finYear(date)}/${String(numbers.first).padStart(5, '0')}`; numbers.first += 1; return n; } // issued by the server
@@ -147,11 +161,10 @@ export async function checkOrder(shop: Shop, lines: OrderLine[]): Promise<OrderC
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const batches = await db.batches.toArray();
   const settings = await getSettings();
-  let total = 0;
+  const total = billValueOf(lines, products, await db.schemes.toArray(), isInterState(shop, settings));
   for (const l of lines) {
     const p = products.get(l.productId);
     if (!p) { issues.push('Unknown product'); continue; }
-    total += l.qty * l.rate * (1 + p.gst / 100);
     const { short } = pickBatches(batches, p.id, l.qty);
     if (short > 0) issues.push(`Stock short: ${p.name} needs ${short} more pcs`);
     if (l.rate < p.rate * (1 - settings.discountAlertPct / 100)) issues.push(`Low rate for ${p.name}: ${inr(l.rate)} vs ${inr(p.rate)}`);
