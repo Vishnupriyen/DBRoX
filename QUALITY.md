@@ -74,7 +74,7 @@ Proven to work: a deliberately planted stock bug was caught within 36 actions.
 | 3 Tests in Indian time + chaos laws | Logic is right on a phone in India, including 00:00–05:30 |
 | 4 Build | It ships |
 | 5 Business day end to end (`e2e/flow.cjs`) | Every role can do the full day: order → approve → pick → bill → plan → deliver (short, photos) → collect (QR) → day close → reports. Any page error or console error fails it. |
-| 6 Every screen, every role at 360 px (`e2e/sweep.cjs`) | 111 screens: no crash, no sideways scroll, no cut-off text, nothing off screen, no leftover light backgrounds, all text readable (contrast ≥ 3:1) |
+| 6 Every screen, every role at 360 px (`e2e/sweep.cjs`) | 111 screens: no crash, no sideways scroll, no cut-off text, nothing off screen, white application surfaces, all text readable (contrast ≥ 3:1; gradient backgrounds checked at their brightest stop) |
 
 Screens and the sweep report are saved in `app/e2e/out/` so anyone can look.
 

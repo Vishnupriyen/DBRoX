@@ -4,7 +4,7 @@ name: APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, apk]
+    branches: [main, apk, design/locked-jade-gold-signature-20261111]
     paths: ['app/**', '.github/workflows/apk.yml', '.github/scripts/apk-smoke.sh']
 
 jobs:
