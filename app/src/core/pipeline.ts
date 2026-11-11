@@ -6,7 +6,7 @@ import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatc
 import { invoiceBalances, paymentCounts, r2 } from './ledger';
 import { nextNumbers } from './sync';
 import { billChangeBlock, isInterState } from './gst';
-import { buildCreditNote, costValue, extraBill, makeCreditNote, splitShort } from './credit';
+import { buildCreditNote, costValue, extraBill, lineRoom, makeCreditNote, splitShort } from './credit';
 import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
@@ -563,6 +563,8 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
     const inv = await db.invoices.get(id);
     if (!inv || inv.cancelled || ['delivered', 'partial', 'returned'].includes(inv.deliveryStatus)) continue;
     const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b })) }));
+    // pieces a shop already returned (credit note) are off the bill: the short is split against what is still open on each line
+    const room = lineRoom(inv, await db.creditNotes.where('invoiceId').equals(inv.id).toArray());
     const shortages: { productId: string; qty: number; reason: string }[] = [];
     const excess: { productId: string; qty: number }[] = [];
     for (const l of lines) {
@@ -579,7 +581,9 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
       if (qty <= 0) continue;
       const reason = DELIVERY_REASONS.find(r => r.value === s.reason) ?? DELIVERY_REASONS[0];
       // paid and scheme-free pieces are kept apart: the shop keeps the most paid pieces whose free pieces still fit
-      const split = splitShort(l, qty, products.get(l.productId), schemes, inv.date);
+      const full = splitShort(l, qty, products.get(l.productId), schemes, inv.date), open = room[lines.indexOf(l)];
+      const paid = Math.min(open.paid, Math.max(full.paid, qty - open.free));
+      const split = { paid, free: Math.min(open.free, qty - paid) };
       shortages.push({ productId: l.productId, qty, reason: reason.label, ...split });
       // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
       let left = qty;
