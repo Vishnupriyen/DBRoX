@@ -14,3 +14,5 @@ h1,h2,h3,h4,.h,.home-greet,.home-back,.morning .t,.engine-chat .say{color:var(--
 @media(min-width:900px){.top{min-height:88px;padding-inline:24px}.top .brand-lockup>img{width:210px}.main{height:calc(100% - 88px);padding:22px 28px 28px}.home{max-width:1100px}}
 @media print{.brand-footer,.signature-hero{display:none!important}}
 .fab{background:#fff;box-shadow:0 0 0 1px var(--line),0 0 0 5px #fff}
+/* Financial action bars stay opaque so scrolled content cannot show through. */
+.sticky-foot{background:#fff}
