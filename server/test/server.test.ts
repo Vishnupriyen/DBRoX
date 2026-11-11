@@ -88,9 +88,14 @@ describe('DBRoX server', () => {
     await post('/v1/sync', { cursor: 0, changes: [{ table: 'staff', id: 'dr1', updatedAt: now, data: drv }, { table: 'products', id: 'p1', updatedAt: now, data: { id: 'p1', name: 'Surf', purchaseRate: 90, rate: 100, updatedAt: now } }] }, owner.token);
     const d = await post('/v1/login', { phone: '9844444444', pin: '5555' });
     expect(d.status).toBe(200);
-    // every shared table the driver may write is accepted
+    // Office assigns and loads a trip; a driver can start it, not create it.
+    const assignedAt = new Date(Date.now() - 3000).toISOString();
+    await post('/v1/sync', { cursor: 0, changes: [{
+      table: 'trips', id: 't1', updatedAt: assignedAt,
+      data: { id: 't1', vanId: 'v1', driverId: 'dr1', date: now.slice(0, 10), status: 'loaded', stops: [], track: [], updatedAt: assignedAt },
+    }] }, owner.token);
     const push = await post('/v1/sync', { cursor: 0, changes: [
-      { table: 'trips', id: 't1', updatedAt: now, data: { id: 't1', vanId: 'v1', date: now.slice(0, 10), status: 'out', stops: [], track: [], updatedAt: now } },
+      { table: 'trips', id: 't1', updatedAt: now, data: { id: 't1', vanId: 'v1', driverId: 'dr1', date: now.slice(0, 10), status: 'out', startedAt: now, stops: [], track: [], updatedAt: now } },
       { table: 'checkIns', id: 'c1', updatedAt: now, data: { id: 'c1', staffId: 'dr1', date: now.slice(0, 10), at: now, late: false, updatedAt: now } },
       { table: 'leaves', id: 'l1', updatedAt: now, data: { id: 'l1', staffId: 'dr1', from: now.slice(0, 10), to: now.slice(0, 10), reason: 'x', status: 'waiting', updatedAt: now } },
     ] }, d.body.token);
