@@ -184,7 +184,10 @@ export async function buildApp(pool: pg.Pool) {
               'SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
               [c.t, 'trips', tripId]
             )).rows[0]?.data as Record<string, unknown> | undefined : undefined;
-            const reason = driverInvoiceWrite(c.u, data, prior, trip);
+            const tripChange = changes.find(p => p.table === 'trips' && p.id === tripId);
+            const startedOrEnding = !!trip && !!tripChange &&
+              !driverTripWrite(c.u, { ...tripChange.data, tenantId: c.t, id: tripId }, trip);
+            const reason = driverInvoiceWrite(c.u, data, prior, trip, startedOrEnding);
             if (reason) { rejected.push(key); continue; }
           }
           if (ch.table === 'payments') {
