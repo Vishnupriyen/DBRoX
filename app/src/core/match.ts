@@ -160,6 +160,9 @@ export function findShopInText(shops: Shop[], text: string, prefer?: ShopPrefer)
     rest = rest.replace(new RegExp(words, 'i'), ' ');
   }
   for (const w of norm(best.name).split(' ').concat(scored[0].phrase.split(' '))) if (w.length >= 2) rest = rest.replace(new RegExp(`(^|[^a-z0-9])${escape(w)}(?=[^a-z0-9]|$)`, 'ig'), ' ');
+  // a slip in another word of the shop's name ("velan provison") is still the shop's name, never a product
+  const nameWords = norm(best.name).split(' ').filter(w => w.length >= 5);
+  rest = rest.replace(/[a-z]{5,}/gi, x => nameWords.some(w => lev(x.toLowerCase(), w) === 1) ? ' ' : x);
   return { shop: best, rest: rest.replace(/^[\s,;:-]+/, '').replace(/\s+/g, ' ') };
 }
 
@@ -168,7 +171,7 @@ const PCS_WORDS = ['pc', 'pcs', 'piece', 'pieces', 'nos', 'no', 'units', 'unit',
 const DOZEN_WORDS = ['dozen', 'dozens', 'dz', 'dzn', 'doz'];
 // pack sizes are part of the product name, never a quantity: "5kg", "250 g", "172 pages"
 const MEASURE = new Set(['kg', 'kgs', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'l', 'ltr', 'litre', 'liter', 'pages', 'page', 'mm', 'cm', 'pads']);
-const FILLER = new Set(['and', 'also', 'order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
+const FILLER = new Set(['shop', 'shops', 'and', 'also', 'order', 'orders', 'take', 'new', 'for', 'please', 'pls', 'plz', 'send', 'need', 'needs', 'want', 'wants', 'give', 'of', 'the', 'to', 'x', 'each', 'also', 'more', 'add', 'extra', 'additional', 'another', 'from', 'book', 'booking']);
 
 export interface ParsedLine { text: string; qty: number; unit: 'case' | 'pcs' | 'dozen'; productText: string }
 const unitOf = (w: string): ParsedLine['unit'] | null => CASE_WORDS.includes(w) ? 'case' : DOZEN_WORDS.includes(w) ? 'dozen' : PCS_WORDS.includes(w) ? 'pcs' : null;
@@ -287,12 +290,39 @@ const SAY: [RegExp, string][] = [
   [/\bbal\b/gi, 'balance'], [/\bo\/s\b/gi, 'outstanding'], [/\b(qty)\b/gi, 'quantity'],
   [/\b(settled|settle|cleared)\b/gi, 'paid'],
   [/\b(sir|bro|boss|madam|mam)\b/gi, ' '],
+  // spelling slips staff make every day
+  [/\b(desel|deisel|deisal|disel|diesal|dieseal|deasel)\b/gi, 'diesel'],
+  // Tamil typed in English letters (Tanglish), as distributor staff type it
+  [/\b(petti|petty|peti|pettis)\b/gi, 'case'],
+  [/\b(oru|onnu|ondru)\b(?=\s+(case|cs|box|dozen|pcs|pc|bag|bags|packet|pkt)\b)/gi, '1'], [/\b(rendu|randu|rendhu)\b/gi, '2'], [/\bmoonu\b/gi, '3'], [/\bnaalu\b/gi, '4'],
+  [/\b(kadai|kada|kadaiku|kadaikku|kadaila|kadaile|kadaiyila)\b/gi, 'shop'],
+  [/\b(puthu|pudhu)\b/gi, 'new'],
+  [/\b(evlo|evvalavu|yevlo|evalo|evlavu|evalavu|evvlo)\b/gi, 'how much'],
+  [/\b(baaki|baki|bakki|baakki)\b/gi, 'balance'],
+  [/\b(kudukanum|kodukanum|kudukkanum|kodukkanum|tharanum)\b/gi, 'has to pay'],
+  [/\b(thirumba|thirumbi)\s+(kuduthaanga|kuduthanga|kuduthar|kudutha|koduthanga|koduthar|kodutha|kudthanga|kuduthutaanga|kuduthutanga|eduthen|eduthom|vangitten|vangiten)\b/gi, 'returned'],
+  [/\b(kuduthaanga|kuduthanga|kuduthar|kudutha|koduthanga|koduthar|kodutha|kudthanga|kuduthutaanga|kuduthutanga|kuduthutar)\b/gi, 'paid'],
+  [/\b(vangitten|vaangitten|vangiten|vaangiten|vanginen|vaanginen|vangittom|vaangittom)\b/gi, 'received'],
+  [/\b(anuppunga|anupunga|anuppu|anupu|anupunga|kudunga|kodunga)\b/gi, 'send'],
+  [/\b(venum|vendum|veenum|venumam)\b/gi, 'need'],
+  [/^\s*(illa|illai|ila)\b/gi, 'no'], [/\b(venam|venaam|vendam|vendaam|venda|vaenam|vaendam)\b/gi, 'no need'],
+  [/\b(aakku|aakunga|aakkunga|akku|aaku|aakidu|aakkidu)\b/gi, 'make'], [/\b(maathu|maathunga|mathunga|maathidu|maathanum)\b/gi, 'change'],
+  [/\b(thappu|thapu|tappu)\b/gi, 'wrong'],
+  [/\b(irukka|irukkaa|iruka)\b/gi, 'available'],
+  [/\b(enga|yenga)\b/gi, 'where'], [/\b(kitta|kita|kitte)\b/gi, 'with'],
+  [/\b(sari|seri|sariya)\b/gi, 'ok'],
+  [/\b(vandhuchu|vanthuchu|vandhachu|vanthachu|vandhiruchu|vanthiruchu)\b/gi, 'came'],
+  [/(^|\s)(ku|kku|ukku|la|le)(?=\s|$|[,.])/gi, ' '],
 ];
 /** one clean-up pass before TESRAX reads a message */
 export function cleanSaid(t: string): string {
   let s = wordsToNumbers(t);
   for (const [rx, to] of SAY) s = s.replace(rx, to);
   s = s.replace(/__K(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 1000))).replace(/__L(\d+(?:\.\d+)?)/g, (_, n) => String(Math.round(Number(n) * 100000)));
+  // "irukku" (there is) with a number is a count ("good day 990 irukku", read by the stock count); without one it asks
+  if (!/\d/.test(s)) s = s.replace(/\b(irukku|iruku|irukkudhu|irukkuthu)\b/gi, 'available');
+  // "1500 illa 1400": "illa" (not) after an amount says that amount is wrong → "not 1500 1400"; "owner illa" → "owner not"
+  s = s.replace(/(\d+(?:\.\d+)?)\s+(illa|illai|ila)\b/gi, 'not $1').replace(/\b(illa|illai)\b/gi, 'not');
   return s.replace(/\/-/g, ' ').replace(/\s+/g, ' ').trim();
 }
 

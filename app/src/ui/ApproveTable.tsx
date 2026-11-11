@@ -87,7 +87,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     return amt && at >= 0 ? [...cs.slice(0, at + 1).filter(c => c !== amt), amt, ...cs.slice(at + 1).filter(c => c !== amt)] : cs;
   })();
   const sendWord = field && (p.kind === 'order' || p.kind === 'leave') ? 'Send to owner' : field && p.kind === 'fieldOrder' ? 'Send to distributor' : t('approve').replace(' ✓', '');
-  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo', 'leave'].includes(p.kind);
+  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo', 'leave', 'visit'].includes(p.kind);
   return (
     <div className="prop">
       <h4>{p.title}</h4>

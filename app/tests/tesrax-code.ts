@@ -7,7 +7,7 @@
 //   expense:<₹>:<category>       expense table              expFix:<old>-><new> | expDel:<₹> | expFix:none
 //   stockFix:<product>:<pcs>     stock count table          product:<product>:<field>=<value>,…     product change
 //   shop:<shop>:<field>=<value>,…  shop details change      undo | undo:none                         undo the last save
-//   return:<shop>  claim  newshop  schemes  leave  advance:<₹>
+//   return:<shop>  claim  newshop  schemes  leave  advance:<₹>  noOrder:<shop> (a visit with no order, and why)
 //   t:<table>  go:<screen>  export:<tally|gstr1|einvoice|claims>  help  ask (a clear question back, never a wrong action)
 import { db } from '../src/core/db';
 import { HELP_TEXT, type Reply } from '../src/core/engine';
@@ -43,6 +43,7 @@ export function code(r: Reply): string {
       case 'productEdit': return `product:${prod}:${kv()}`;
       case 'shopEdit': return `shop:${shop}:${kv()}`;
       case 'undo': return 'undo';
+      case 'visit': return `noOrder:${shop}`;
       default: return p.kind;
     }
   }

@@ -50,9 +50,25 @@ function sig(r: Reply): string {
   return `x:${r.text}`;
 }
 
+/** "murugan 2 case surf ganapathi 1 case vim": a second shop named after the first shop's items (and with its own
+ *  quantities or amount after it) starts a new request, as if a comma were typed there */
+function cutAtShops(t: string, shops: Shop[], products: Product[]): string {
+  const w = t.split(' ');
+  for (let i = 2; i < w.length - 1; i++) {
+    if (/[,;.?/+]$/.test(w[i - 1]) || !/\d/.test(w.slice(0, i).join(' ')) || !/\d/.test(w.slice(i + 1).join(' '))) continue;
+    const here = findShopInText(shops, w.slice(i, i + 3).join(' ')).shop;
+    if (!here || !findShopInText([here], w[i]).shop || bestProduct(products, w[i]).score >= 0.8) continue;
+    const before = findShopInText(shops, w.slice(0, i).join(' ')).shop;
+    if (!before || before.id === here.id) continue;
+    return `${w.slice(0, i).join(' ')}, ${cutAtShops(w.slice(i).join(' '), shops, products)}`;
+  }
+  return t;
+}
+
 export async function splitIntents(said: string): Promise<string[]> {
   learnNames(await db.products.toArray());
-  const t = cleanSaid(said).replace(/(\d),(\d{3})\b/g, '$1$2')
+  const shops0 = (await db.shops.toArray()).filter(s => s.active !== false);
+  const t = cutAtShops(cleanSaid(said), shops0, (await db.products.toArray()).filter(p => p.active)).replace(/(\d),(\d{3})\b/g, '$1$2')
     // "2000 cash 1000 gpay" = two payments
     .replace(/(\d+(?:\.\d+)?\s*(?:cash|upi|gpay|google pay|phonepe|paytm|cheque|chq|neft))\s+(?=\d+(?:\.\d+)?\s*(?:cash|upi|gpay|google pay|phonepe|paytm|cheque|chq|neft)\b)/gi, '$1, ');
   const segs = protectNames(t).split(/\s*(?:;|\n|,|\?|\.(?=\s|$)|\s\/\s|\s\+\s|\band also\b|\band then\b|\balso\b|\bthen\b|\bnext\b|\band\b|\s&\s)\s*/i).map(x => x.replace(/ ＋ /g, ' & ').trim()).filter(Boolean);
@@ -78,6 +94,8 @@ export async function splitIntents(said: string): Promise<string[]> {
     const prev = groups[groups.length - 1];
     if (prev && !n.replace(CONT, ' ').replace(/\b\d+(\.\d+)?\b/g, ' ').trim()) { prev.parts.push(seg); continue; } // "it is 300"
     const shop = findShopInText(shops, seg).shop;
+    // "velan no order, stock irukku": the words after a no-order visit are its reason
+    if (prev?.sig?.startsWith('visit:') && !shop && !/\d/.test(n)) { prev.parts.push(seg); continue; }
     // the rest of an order change ("change murugan order surf 2 case, vim 24") stays with it
     if (prev?.orderish && !shop) { prev.parts.push(seg); continue; }
     const prevText = prev?.parts[prev.parts.length - 1];

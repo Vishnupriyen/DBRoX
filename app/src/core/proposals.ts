@@ -1,14 +1,15 @@
 import { inr, showDay, showMonth, plural } from './i18n';
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
-import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
+import { ChangeSet, db, getSettings, nowIso, session, today, undoBatch } from './db';
+import { NO_ORDER_REASONS } from './field';
 import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, pickBatches, stockOf } from './billing';
 import { bookOrder, cancelInvoice, changeOrder } from './pipeline';
 import { buildCreditNote, collectionCheck, costValue, makeCreditNote, openPaid } from './credit';
 import { creditNoteDeadline, GST_RATES, shopStateCode } from './gst';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, Company, Expense, Invoice, LeaveRequest, Payment, Product, Purchase, Scheme, Shop } from './types';
+import type { Batch, Company, Expense, Invoice, LeaveRequest, Payment, Product, Purchase, Scheme, Shop, Visit } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -26,6 +27,7 @@ export type ProposalKind =
   | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix'
   | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo'
   | 'leave' // a leave: asked by staff (waits for the owner) or given by the owner
+  | 'visit' // a shop visited with no order, and why (TESRAX: "no order ganapathi shop closed")
   | 'fieldOrder'; // company rep: an order sent to the shop's distributor
 
 export interface Proposal {
@@ -329,6 +331,13 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (!from) err(v, 0, 'from', 'Pick the day');
       if (from && to < from) err(v, 0, 'to', 'Ends before it starts');
       if (from && to >= from) { const days = Math.round((Date.parse(`${to}T12:00:00`) - Date.parse(`${from}T12:00:00`)) / 86400000) + 1; v.summary = `${who?.name.split(' ')[0] ?? ''}: leave ${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''} · ${plural(days, 'day')}${p.meta.status === 'waiting' ? ' · goes to the owner' : ''}`; }
+      break;
+    }
+    case 'visit': {
+      const shop = await db.shops.get(s(fieldValue(p, 'shopId')));
+      if (!shop) v.fieldErrors.shopId = 'Pick the shop';
+      if (!NO_ORDER_REASONS.includes(s(fieldValue(p, 'reason')))) v.fieldErrors.reason = 'Pick why there was no order';
+      if (shop) v.summary = `${shop.name}: no order · ${s(fieldValue(p, 'reason'))}`;
       break;
     }
     case 'productEdit': {
@@ -675,6 +684,20 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       cs.put<LeaveRequest>('leaves', { staffId, from, to, reason, status }, 'leave');
       const when = `${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''}`;
       message = status === 'waiting' ? `Leave request ${when} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${when} recorded (${reason}).`;
+      break;
+    }
+    case 'visit': {
+      // one visit per shop, per person, per day: a second tap (or saying it twice) updates the same visit
+      const shopId = s(fieldValue(p, 'shopId'));
+      const shop = await db.shops.get(shopId);
+      if (!shop) throw new Error('Pick the shop.');
+      const reason = s(fieldValue(p, 'reason'));
+      if (!NO_ORDER_REASONS.includes(reason)) throw new Error('Pick why there was no order.');
+      const me = session().userId;
+      const cur = (await db.visits.where('date').equals(today()).toArray()).find(v => v.staffId === me && v.shopId === shopId);
+      if (cur?.outcome === 'order') throw new Error(`${shop.name} already has an order from you today.`);
+      cs.put<Visit>('visits', { ...(cur ?? { shopId, staffId: me, date: today(), at: nowIso() }), outcome: 'no_order', reason } as Visit, cur ? 'visit updated' : 'visit');
+      message = `${shop.name}: visit saved — no order (${reason.toLowerCase()}).`;
       break;
     }
     case 'productEdit': {
