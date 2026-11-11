@@ -57,7 +57,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   must(new RegExp(`Order ${orderShop}`).test(await p.textContent('.toast').catch(() => '')), `the Undo bubble names the shop ("Order ${orderShop}")`);
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await home(); must(!(await p.locator('.toast').count()), 'the Undo bubble goes away when the screen changes');
-  await p.click('.fab'); await p.waitForTimeout(500); await p.fill('textarea', 'leave Monday fever'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-leave');
+  await p.dblclick('.fab .tx-core'); await p.waitForTimeout(500); await p.fill('textarea', 'leave Monday fever'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-leave');
   must(await p.locator('.engine .prop', { hasText: 'Leave' }).count() && /Mon \d{1,2} [A-Z][a-z]{2}/.test(await p.textContent('.engine')), 'a leave comes as the ✓ table with the day in words (Mon 16 Nov)');
   must(await p.locator('.engine .prop button', { hasText: 'Send to owner' }).count() && !(await p.locator('.engine button', { hasText: 'Download Excel' }).count()), 'field staff: "Send to owner", no Download Excel');
   // P11: sent to the owner is said as "Sent to owner", never "Approved"
@@ -157,7 +157,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   must(/₹[\d,.]+ by UPI/.test(await p.textContent('.main')), 'the collection done screen says "₹… by UPI"');
   must(/Delivered ₹[\d,.]+ · paid ₹/.test(await p.textContent('[data-testid=stop-summary]').catch(() => '')), 'the stop ends with a one-line summary (delivered · paid)');
   await p.click('text=Next shop'); await p.waitForTimeout(300);
-  await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
+  await p.dblclick('.fab .tx-core'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
   // P3: the payment table keeps the Balance column on screen on a phone
   await p.fill('textarea', 'Murugan Stores paid 500 cash'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); await shot('rox-payment-table'); await oneLineBillNos('TESRAX payment table');

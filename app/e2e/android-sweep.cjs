@@ -57,7 +57,7 @@ const SHOTS = process.env.SHOTS !== '0';
       }
     }
     await p.click('nav >> text=More'); await check('More');
-    await p.click('.fab'); await check('Engine fresh');
+    await p.dblclick('.fab .tx-core'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1500); await check('Engine help');
     // the phone's back button closes the engine instead of leaving the app
     await p.evaluate(() => (document.activeElement)?.blur?.()); await p.waitForTimeout(300); // keyboard away, as a person would see it

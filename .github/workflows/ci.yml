@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
       - run: npm ci
+      - run: npm ci && node scripts/relay-copy.mjs
+        working-directory: server
       - run: npx vitest run
       - run: npm run build
       - uses: actions/upload-artifact@v4
