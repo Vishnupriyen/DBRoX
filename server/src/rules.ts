@@ -121,6 +121,23 @@ export function badMoney(table: string, d: Doc): string | null {
   return null;
 }
 
+/** order and bill lines the books never take, from any phone (the app's own order and bill-editor checks, held here too):
+ *  a quantity is a whole number of pieces (more than 0 on an order) and a rate is more than ₹0 — an order of 2.5 pieces or at rate 0
+ *  would be approved and then stick, or make a ₹0 bill. A cheque's date, when sent, is a real day. Returns the reason, or null. */
+export function badLines(table: string, d: Doc): string | null {
+  if (table === 'orders' || table === 'invoices') {
+    const lines = Array.isArray(d.lines) ? d.lines as Doc[] : [];
+    for (const l of lines) {
+      if (!l || typeof l !== 'object') return 'a line is not valid';
+      if (table === 'invoices' && l.qty === undefined) continue; // a bill line without pieces (old or partial record) is the bill's own checks
+      if (!Number.isInteger(l.qty) || (l.qty as number) < 0 || (table === 'orders' && (l.qty as number) <= 0)) return 'quantity must be whole pieces';
+      if (((l.qty as number) > 0 || table === 'orders') && !(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0)) return 'rate must be more than 0';
+    }
+  }
+  if (table === 'payments' && d.chequeDate != null && !(typeof d.chequeDate === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(d.chequeDate))) return 'cheque date is not a date';
+  return null;
+}
+
 /** a credit note never takes a bill below zero: with the bill's other notes it comes to at most what the bill charged */
 export function creditNoteRoom(cn: Doc, bill: Doc | undefined, otherNotesTotal: number): string | null {
   if (!bill) return 'a credit note needs its bill';

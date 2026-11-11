@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Check, Download, Plus, X } from 'lucide-react';
 import { commit, hasErrors, validate, type Proposal, type Row, type Validation } from '../core/proposals';
-import { refreshOrderRow } from '../core/engine';
+import { CHEQUE_FIELDS, refreshOrderRow } from '../core/engine';
 import { downloadSheet } from '../core/readers';
 import { showDate, t } from '../core/i18n';
-import { db, session } from '../core/db';
+import { db, session, today } from '../core/db';
 import type { Invoice, Role } from '../core/types';
 import { notify } from './dialog';
 
@@ -54,7 +54,10 @@ export function ApproveTable({ proposal, onDone }: Props) {
     setP({ ...p, rows });
   };
   const setField = (key: string, value: string) => {
-    setP({ ...p, fields: p.fields.map(f => f.key === key ? { ...f, value: f.type === 'number' ? Number(value) : value } : f) });
+    let fields = p.fields.map(f => f.key === key ? { ...f, value: f.type === 'number' ? Number(value) : value } : f);
+    // a payment turned into a cheque asks for the date written on it and the bank
+    if (p.kind === 'payment' && key === 'mode' && value === 'cheque' && !fields.some(f => f.key === 'chequeDate')) fields = [...fields, ...CHEQUE_FIELDS(today(), '')];
+    setP({ ...p, fields });
   };
   const addRow = () => {
     const blank: Row = {};
@@ -88,7 +91,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     return amt && at >= 0 ? [...cs.slice(0, at + 1).filter(c => c !== amt), amt, ...cs.slice(at + 1).filter(c => c !== amt)] : cs;
   })();
   const sendWord = field && (p.kind === 'order' || p.kind === 'leave') ? 'Send to owner' : field && p.kind === 'fieldOrder' ? 'Send to distributor' : t('approve').replace(' ✓', '');
-  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo', 'leave', 'visit'].includes(p.kind);
+  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo', 'leave', 'advance', 'visit'].includes(p.kind);
   return (
     <div className="prop">
       <h4>{p.title}</h4>

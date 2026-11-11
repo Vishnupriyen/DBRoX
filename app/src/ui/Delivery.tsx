@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PhotoButton } from './PhotoButton';
 import { Check, ArrowLeft, PackageX, Navigation, Flag } from 'lucide-react';
-import { endTrip, startTrip, trackPoint, recordDelivery, DELIVERY_REASONS } from '../core/pipeline';
+import { endTrip, startTrip, trackPoint, recordDelivery, pendingShortCredit, DELIVERY_REASONS } from '../core/pipeline';
 import { Pack } from './Pack';
 import { ChangeSet, db, getSettings, session, today } from '../core/db';
 import { PayBox } from './PayBox';
@@ -22,6 +22,7 @@ export function Delivery() {
   const setStops: typeof setStops0 = v => { setLoaded(true); setStops0(v); };
   const [open, setOpen] = useState<Stop | null>(null);
   const [tick, setTick] = useState(0);
+  const [shortBy, setShortBy] = useState<Record<string, number>>({}); // per shop: what a short or damage will be credited (not on the bill yet)
   const [ending, setEnding] = useState(false);
   useBack(() => { if (open) { setOpen(null); setTick(x => x + 1); return true; } if (ending) { setEnding(false); return true; } return false; });
   useEffect(() => {
@@ -33,6 +34,9 @@ export function Delivery() {
       if (!mine) { setStops([]); return; }
       const invs = (await db.invoices.where('tripId').equals(mine.id).toArray()).filter(i => !i.cancelled);
       const shops = new Map((await db.shops.toArray()).map(x => [x.id, x]));
+      const sp: Record<string, number> = {};
+      for (const i of invs) sp[i.shopId] = r2((sp[i.shopId] ?? 0) + await pendingShortCredit(i));
+      setShortBy(sp);
       setStops(mine.stops.map(sid => ({ shop: shops.get(sid)!, invoices: invs.filter(i => i.shopId === sid) })).filter(x => x.invoices.length));
     })();
   }, [tick]);
@@ -66,7 +70,7 @@ export function Delivery() {
             <button key={s.shop.id} className={`stop item tap ${fin ? 'done' : left[0]?.shop.id === s.shop.id && trip?.status === 'out' ? 'now' : ''}`} disabled={fin || trip?.status !== 'out'} style={{ opacity: fin ? .6 : 1 }} onClick={() => setOpen(s)}>
               <div className={`avatar ${fin ? 'ok' : ''}`}>{fin ? <Check size={22} /> : <span>{k + 1}</span>}</div>
               <div className="grow"><div className="t">{s.shop.name}</div><div className="s">{s.shop.area} · {s.invoices.length} {t('bills')}{s.shop.phone ? ` · ${s.shop.phone}` : ''}</div></div>
-              <span className="amt num">{inr(s.invoices.reduce((a, i) => a + i.total, 0))}</span>
+              <span className="amt num">{inr(r2(s.invoices.reduce((a, i) => a + i.total, 0) - (shortBy[s.shop.id] ?? 0)))}</span>
             </button>
           );
         })}

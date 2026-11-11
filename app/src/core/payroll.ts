@@ -16,6 +16,7 @@ export interface SalaryRow {
   s: Staff;
   daysInMonth: number; workDays: number; // working days counted (Sundays off; days before today, from the day they joined)
   present: number; leave: number; paidLeave: number; unpaidLeave: number; absent: number; cutDays: number;
+  beforeJoining: number; // calendar days of the month before the person joined (not paid)
   fixed: number; cut: number; batta: number; gross: number;
   advance: number; shortfall: number; net: number; carry: number; paid: boolean; takes: { id: string; take: number }[];
 }
@@ -41,7 +42,9 @@ export async function salarySheet(month: string): Promise<SalaryRow[]> {
     const paidLeave = Math.min(leave, paidLeaves), unpaidLeave = leave - paidLeave;
     const cutDays = unpaidLeave + absent;
     const fixed = s.salary ?? 0;
-    const cut = Math.round(fixed * cutDays / days.length);
+    // pay only from the joining date: salary ÷ days in the month × days since joining (the days before are not paid)
+    const beforeJoining = days.filter(d => d < joined).length;
+    const cut = Math.round(fixed * (cutDays + beforeJoining) / days.length);
     const batta = p * (s.batta ?? 0);
     const gross = Math.max(0, Math.round(fixed - cut + batta));
     // recoveries never take more than the salary: advance instalments first, then cash shortfalls; the rest carries over
@@ -55,7 +58,7 @@ export async function salarySheet(month: string): Promise<SalaryRow[]> {
     }
     const net = gross - advance - shortfall;
     return {
-      s, daysInMonth: days.length, workDays: work.length, present: p, leave, paidLeave, unpaidLeave, absent, cutDays,
+      s, beforeJoining, daysInMonth: days.length, workDays: work.length, present: p, leave, paidLeave, unpaidLeave, absent, cutDays,
       fixed, cut, batta, gross, advance, shortfall, net, carry: due - advance - shortfall, takes,
       paid: paidExp.some(e => e.note === `Salary ${month} ${s.name}`),
     };

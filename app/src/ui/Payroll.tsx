@@ -118,7 +118,7 @@ export function Salary() {
         <div key={r.s.id} className="item">
           <div className="grow">
             <div className="t">{r.s.name.split(' (')[0]}</div>
-            <div className="s">{[salaryDaysLine(r), r.leave ? `${r.leave} leave (${r.paidLeave} paid)` : '', r.absent ? `${plural(r.absent, 'day')} absent` : '', r.cutDays ? `${r.cutDays} cut −${inr(r.cut)}` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
+            <div className="s">{[salaryDaysLine(r), r.leave ? `${r.leave} leave (${r.paidLeave} paid)` : '', r.absent ? `${plural(r.absent, 'day')} absent` : '', r.beforeJoining ? `joined this month: ${plural(r.beforeJoining, 'day')} before joining not paid` : '', r.cutDays ? `${r.cutDays} cut −${inr(r.cut - Math.round(r.fixed * r.beforeJoining / r.daysInMonth))}` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
             {r.carry > 0 && <div className="s">{inr(r.carry)} {'carries to next month'}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>

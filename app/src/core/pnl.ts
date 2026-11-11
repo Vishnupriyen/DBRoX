@@ -10,6 +10,17 @@ import { cnTaxLines } from './gst';
 import { DELIVERY_REASONS } from './pipeline';
 
 export type PnlHead = { key: string; label: string; amount: number; items: { d: string; t: string; v: number }[] };
+/** the money the owner has now: ONE number for the P&L screen, Cash flow and TESRAX. Cash in hand = cash the office has received
+ *  (settled) − approved cash expenses (+ other income); bank = every bank-statement line; with staff = cash not yet handed over. */
+export async function moneyPosition() {
+  const pays = (await db.payments.toArray()).filter(p => p.status === 'ok');
+  const exps = (await db.expenses.toArray()).filter(e => e.approved && e.status !== 'rejected');
+  const cashIn = pays.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0);
+  const cashOut = exps.filter(e => e.category !== 'income').reduce((a, e) => a + e.amount, 0) - exps.filter(e => e.category === 'income').reduce((a, e) => a + e.amount, 0);
+  const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
+  const staff = r2(pays.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0));
+  return { cash: r2(cashIn - cashOut), bank, staff, total: r2(cashIn - cashOut + bank + staff) };
+}
 export interface Pnl { income: PnlHead[]; expense: PnlHead[]; cash: number; bank: number; staff: number }
 const month = () => today().slice(0, 7);
 
@@ -67,12 +78,9 @@ export async function profitAndLoss(period: 'today' | 'month'): Promise<Pnl> {
   const cost = (e: typeof exps[0]) => e.category === 'salary' ? (e.gross ?? e.amount) : e.amount; // salary: the full salary, recoveries included
   const byCat = new Map<string, typeof exps>(); for (const e of exps) { if (e.category === 'income') continue; byCat.set(e.category, [...(byCat.get(e.category) ?? []), e]); }
   for (const [k, list] of [...byCat.entries()].sort((a, b) => b[1].reduce((x, e) => x + cost(e), 0) - a[1].reduce((x, e) => x + cost(e), 0))) expense.push({ key: 'exp-' + k, label: k[0].toUpperCase() + k.slice(1), amount: r2(list.reduce((a, e) => a + cost(e), 0)), items: list.map(e => ({ d: e.date, t: e.note || k, v: cost(e) })) });
-  // cash for the same period: cash collected and handed over − approved expenses paid in cash (+ other income)
-  const pays = (await db.payments.toArray()).filter(p => p.status === 'ok');
-  const bank = r2((await db.bankLines.toArray()).filter(b => inRange(b.date)).reduce((a, b) => a + b.credit - b.debit, 0));
-  const cashIn = pays.filter(p => p.mode === 'cash' && p.settled && inRange(p.date)).reduce((a, p) => a + p.amount, 0);
-  const cashOut = exps.filter(e => e.approved && e.category !== 'income').reduce((a, e) => a + e.amount, 0) - incExp.reduce((a, e) => a + e.amount, 0);
-  return { income, expense, cash: r2(cashIn - cashOut), bank, staff: r2(pays.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)) };
+  // cash, bank and cash with staff are what the owner has NOW (not the period's): the same figures as Cash flow
+  const pos = await moneyPosition();
+  return { income, expense, cash: pos.cash, bank: pos.bank, staff: pos.staff };
 }
 
 /** income − expenses, and profit as a share of income (whole percent) */

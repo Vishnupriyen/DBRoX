@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Phone, AlertTriangle, Landmark, MessageSquareText, Download, FileCheck2, ChevronRight, Wallet } from 'lucide-react';
 import { ChangeSet, db, today, activeShops, ymd } from '../core/db';
-import { profitAndLoss } from '../core/pnl';
+import { moneyPosition, profitAndLoss } from '../core/pnl';
 import { inr, showDate, showMonth, plural, showTime } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
@@ -134,7 +134,8 @@ export function PnL() {
         <div className="row" style={{ justifyContent: 'space-between', minHeight: 36, fontWeight: 800, borderTop: '1px solid var(--line)' }}><span>{'Total expenses'}</span><span className="num" style={{ color: 'var(--bad)' }}>− {inr(expT)}</span></div>
         <div className="row" style={{ justifyContent: 'space-between', minHeight: 36, fontWeight: 800, borderTop: '2px solid var(--ink)' }}><span>{'Net profit'}</span><span className="num">{inr(profit)}</span></div>
       </div>
-      <div className="kpis"><div className="kpi"><div className="v">{inr(d.cash)}</div><div className="l">{'cash in hand'}</div></div><div className="kpi"><div className="v">{inr(d.bank)}</div><div className="l">{'in bank'}</div></div><div className="kpi"><div className="v" style={{ color: d.staff ? 'var(--warn)' : undefined }}>{inr(d.staff)}</div><div className="l">{'with staff'}</div></div></div>
+      <div className="kpis"><div className="kpi"><div className="v">{inr(d.cash)}</div><div className="l">{'cash in hand now'}</div></div><div className="kpi"><div className="v">{inr(d.bank)}</div><div className="l">{'in bank now'}</div></div><div className="kpi"><div className="v" style={{ color: d.staff ? 'var(--warn)' : undefined }}>{inr(d.staff)}</div><div className="l">{'with staff now'}</div></div></div>
+      <div className="muted">{'Sales here are before GST and after returns — the same as Reports and GST. Money figures are what you have now, the same as Cash flow.'}</div>
     </div>
   );
 }
@@ -156,11 +157,10 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
     const payCo: Line[] = [...(await companyPayables()).entries()].filter(([, v]) => v.due > 0.5).map(([id, v]) => ({ id, name: cos.get(id) ?? id, amount: v.due, sub: `${v.bills} ${'company bills'} · ${'oldest'} ${v.oldest.slice(5)}${v.paid ? ` · paid ${inr(v.paid)}` : ''}${v.credited ? ` · credit notes ${inr(v.credited)}` : ''}` })).sort((a, b) => b.amount - a.amount);
     const pays = (await db.payments.toArray());
     const cheques: Line[] = pays.filter(p => p.mode === 'cheque' && p.status !== 'cancelled' && !p.bankLineId).map(p => ({ id: p.shopId, name: shops.get(p.shopId) ?? '', amount: p.amount, sub: `${p.ref ?? ''} · ${showDate(p.date)}${p.status === 'bounced' ? ' · ' + 'BOUNCED' : ''}` }));
-    const ok = pays.filter(p => p.status === 'ok');
-    const bank = r2((await db.bankLines.toArray()).reduce((a, b) => a + b.credit - b.debit, 0));
     const exps = await db.expenses.toArray();
     const claims = r2((await db.claims.toArray()).filter(c => ['submitted', 'approved'].includes(c.status)).reduce((a, c) => a + c.amount - (c.received ?? 0), 0));
-    setD({ cash: r2(ok.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(ok.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)), recv, recvOverdue: r2(bal.filter(b => b.overdueDays > 0).reduce((a, b) => a + b.balance, 0)), payCo, cheques, claims, loans: r2(exps.filter(e => e.category === 'loan').reduce((a, e) => a + e.amount, 0)) });
+    const pos = await moneyPosition(); // the same cash, bank and staff cash as the P&L screen
+    setD({ cash: pos.cash, bank: pos.bank, staff: pos.staff, recv, recvOverdue: r2(bal.filter(b => b.overdueDays > 0).reduce((a, b) => a + b.balance, 0)), payCo, cheques, claims, loans: r2(exps.filter(e => e.category === 'loan').reduce((a, e) => a + e.amount, 0)) });
   })(); }, [tick]);
   // record a payment made to a company, or a credit note it sent (claim settled), against its oldest bills
   const payCompany = async (l: Line) => {
@@ -249,7 +249,7 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     <div className="stack">
       <div className="card" style={{ background: 'var(--navy)', color: 'var(--on-navy)' }}>
         <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{showMonth(m)}</div>
-        <div style={{ fontSize: '1.0625rem', lineHeight: 1.5 }}>{`Sales ${inr(d.sales)} (after credit notes) on ${plural(d.bills, 'bill')} · tax to pay ${inr(d.tax)} · ${d.flags.length ? `${d.flags.length} ${d.flags.length === 1 ? 'thing' : 'things'} to fix` : 'nothing to fix'} · file GSTR-1 by ${showDate(d.due)} (${d.daysLeft} days).`}</div>
+        <div style={{ fontSize: '1.0625rem', lineHeight: 1.5 }}>{`Sales before GST, after returns: ${inr(d.sales)} on ${plural(d.bills, 'bill')} · tax to pay ${inr(d.tax)} · ${d.flags.length ? `${d.flags.length} ${d.flags.length === 1 ? 'thing' : 'things'} to fix` : 'nothing to fix'} · file GSTR-1 by ${showDate(d.due)} (${d.daysLeft} days).`}</div>
       </div>
       {d.flags.map((f, i) => <button key={i} className={`flag ${f.tone ?? ''}`} onClick={() => f.page && go?.(f.page)} style={{ textAlign: 'left' }}><AlertTriangle style={{ color: f.tone === 'bad' ? 'var(--bad)' : 'var(--warn)', flex: 'none' }} /><span className="grow">{f.text}</span>{f.page && <ChevronRight />}</button>)}
       {!d.flags.length && <div className="alert ok"><Check /><div>{'Everything is in order for filing.'}</div></div>}

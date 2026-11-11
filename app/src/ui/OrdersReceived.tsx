@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-react';
-import { ChangeSet, db } from '../core/db';
+import { ChangeSet, db, getSettings } from '../core/db';
+import { billValueOf } from '../core/billing';
+import { isInterState } from '../core/gst';
 import { approveOrder, flagArrivedOrders, rejectOrder, shopHistory } from '../core/pipeline';
 import { allOutstanding } from '../core/ledger';
 import { inr, plural } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
-import type { Order, Product, Shop } from '../core/types';
+import type { Order, Product, Scheme, Settings, Shop } from '../core/types';
 
 type Hist = Awaited<ReturnType<typeof shopHistory>> & { late: number }; // late: days past the credit days
 
@@ -15,6 +17,8 @@ export function OrdersReceived() {
   const [list, setOrders] = useState<(Order & { shop: Shop; hist: Hist; salesman: string })[] | null>(null);
   const orders = list ?? [];
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
+  const [cfg, setCfg] = useState<Settings | undefined>(undefined);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     (async () => {
@@ -25,6 +29,7 @@ export function OrdersReceived() {
       // a company rep's order (through the company link) names the company and the rep
       const who = (o: Order) => o.source === 'company' ? `${cos.get(o.companyId ?? '') ?? 'Company'} rep ${o.companyRep ?? ''}`.trim() : staff.get(o.salesmanId ?? '') ?? o.source;
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
+      setSchemes(await db.schemes.toArray()); setCfg(await getSettings());
       const os = (await db.orders.toArray()).filter(o => o.status === 'new' || o.status === 'needs_ok').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const dues = await allOutstanding(); // one pass over the bills for every shop, not one per order
       const hist = (s: Shop): Hist => { const d = dues.get(s.id); return { bills: d?.bills ?? 0, amount: d?.amount ?? 0, oldestDays: d?.oldestDays ?? 0, late: d?.maxOverdueDays ?? 0, limit: s.creditLimit, days: s.creditDays }; };
@@ -33,7 +38,8 @@ export function OrdersReceived() {
     })();
   }, [tick]);
 
-  const value = (o: Order) => o.lines.reduce((a, l) => { const p = products.get(l.productId); return a + l.qty * l.rate * (1 + (p?.gst ?? 0) / 100); }, 0);
+  // what the bill will be (schemes, tax, round-off as billing does it), not a rough qty × rate
+  const value = (o: Order & { shop: Shop }) => billValueOf(o.lines, products, schemes, isInterState(o.shop, cfg ?? { stateCode: '' }));
   const bad = (o: typeof orders[0]) => (o.hist.limit > 0 && o.hist.amount + value(o) > o.hist.limit) || (o.hist.days > 0 && o.hist.oldestDays > o.hist.days);
   const clean = orders.filter(o => !o.issues.length && !bad(o) && !o.rateRemark);
   // approving takes the order off the list; no full reload after every tap

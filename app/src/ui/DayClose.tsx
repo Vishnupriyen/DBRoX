@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
-import { dupeGroups, billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleDifference } from '../core/pipeline';
+import { dupeGroups, billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleAllAsCreditNotes, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
 import { inr, showDate, plural, showTime } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
@@ -61,6 +61,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
         <div className="kpi navy"><div className="v">{inr(s.sales)}</div><div className="l">{'billed today'}</div></div>
         <div className="kpi navy"><div className="v">{inr(s.collected)}</div><div className="l">{'collected today'}</div></div>
       </div>
+      {s.chequesToClear > 0 && <div className="muted">{'Cheques to clear (dated later, not in collected):'} {inr(s.chequesToClear)}</div>}
 
       <div className="sechead"><h3>{'Checklist'} · {open ? `${open} ${'open'}` : 'all clear'}</h3></div>
       <div className="stack" style={{ gap: 8 }}>
@@ -126,7 +127,17 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
     setShops(new Map((await db.shops.toArray()).map(s => [s.id, { name: s.name, pref: (s as unknown as { diffPref?: string }).diffPref }])));
     setProducts(new Map((await db.products.toArray()).map(p => [p.id, p.name])));
   })(); }, []);
+  const reasonOf = (inv: Invoice) => [...new Set((inv.delivery?.shortages ?? []).map(x => x.reason).filter(Boolean))].join(', ') || 'short at delivery';
+  const settleAll = async () => {
+    const total = list.reduce((a, i) => a + (money[i.id]?.back ?? 0), 0);
+    if (!await confirmBox(`Credit notes for ${list.length} bills?`, `${inr(Math.round(total * 100) / 100)} with GST goes back to the shops, taken off their bills. Extras are billed on new bills.`, 'Make credit notes')) return;
+    const r = await settleAllAsCreditNotes(list.map(i => i.id));
+    setList(l => l.filter(x => !r.done.includes(x.id)));
+    if (r.failed.length) await notify('Some were not done', r.failed.map(f => f.message).join('\n'));
+  };
   const act = async (inv: Invoice, a: 'modified' | 'credit_note') => {
+    // a credit note moves money: the owner sees the amount (with GST) and the reason before it is made
+    if (a === 'credit_note' && !await confirmBox(`Credit note for ${shops.get(inv.shopId)?.name ?? 'this shop'}?`, `${inr(money[inv.id]?.back ?? 0)} with GST, taken off bill ${inv.number}. Reason: ${reasonOf(inv)}.`, 'Make credit note')) return;
     try { await settleDifference(inv.id, a); } catch (e) { await notify('Not done', (e as Error).message); return; }
     const shop = await db.shops.get(inv.shopId); if (shop) { const cs = new ChangeSet(); cs.put('shops', { ...shop, diffPref: a } as typeof shop, 'difference preference'); await cs.commit('Shop preference'); }
     setList(l => l.filter(x => x.id !== inv.id));
@@ -134,6 +145,7 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
   return (
     <div className="stack">
       <div className="sechead"><h3>{'Bills with differences'} · {list.length}</h3><button className="link" onClick={onBack}>{'← Day close'}</button></div>
+      {list.length > 1 && <button className="btn primary block" onClick={settleAll}><Receipt /> {'Settle all as credit notes'}</button>}
       {list.map(inv => {
         const sh = shops.get(inv.shopId); const einv = !!(inv as unknown as { irn?: string }).irn;
         // a delivered (or printed) bill is never re-written: only a credit note for less and a new bill for extra

@@ -180,7 +180,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await backArrow(); must(await p.locator('h3', { hasText: 'Checklist' }).count(), 'back from the differences goes to the day-close checklist, not home');
   await p.click('.check:has-text("differences")'); await p.waitForTimeout(600);
   // delivered bills are never re-written: each difference is settled with a credit note (+ a new bill for extra pieces)
-  const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); }
+  const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); const d = p.locator('.dialog-wrap', { hasText: 'with GST, taken off bill' }); must(await d.count() === 1 && /Reason:/.test(await d.innerText()), 'a credit note asks first: amount with GST, the bill and the reason'); await p.click('.dialog-wrap button:has-text("Make credit note")'); await p.waitForTimeout(500); }
   await p.click('button:has-text("Back to day close")').catch(() => p.click('text=← Day close')); await p.waitForTimeout(600);
   // remaining items: trips not ended → end trip is driver's; mark via Live? we end trip from owner side quickly by logging in as driver later. Approve expenses:
   const exp = p.locator('.check:has-text("Expenses")'); if (await exp.count() && !(await exp.isDisabled())) { await exp.click(); await p.waitForTimeout(500); await p.click('button:has-text("Approve all")').catch(() => {}); await p.waitForTimeout(400); await home(); await tile('Day close'); }

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Check, QrCode, AlertTriangle, Send } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ChangeSet, getSettings, session, today } from '../core/db';
-import { invoiceBalances, r2 } from '../core/ledger';
+import { r2 } from '../core/ledger';
+import { collectableBills } from '../core/pipeline';
 import { inr, showDate, t } from '../core/i18n';
 import { PhotoButton } from './PhotoButton';
 import { collectionCheck } from '../core/credit';
@@ -26,7 +27,9 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
   const [chequeDate, setChequeDate] = useState(today());
   const [receipt, setReceipt] = useState<{ p: Payment; text: string } | null>(null);
   // from Collect (no bill named) every open bill is ticked; the person unticks what the shop is not paying
-  useEffect(() => { invoiceBalances(shop.id).then(bs => { const list = bs.filter(b => b.balance > 0.5).sort((a, b) => a.invoice.date.localeCompare(b.invoice.date)).map(b => ({ id: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: b.balance })); setBills(list); if (!preferInvoiceIds.length && list.length) setSel(new Set(list.map(b => b.id))); }); }, [shop.id]);
+  const [shortCredit, setShortCredit] = useState(0);
+  // the amount asked is the delivered value (after shorts and damage) plus old dues: a short will be credited at day close
+  useEffect(() => { collectableBills(shop.id).then(bs => { setShortCredit(r2(bs.reduce((a, b) => a + b.short, 0))); const list = bs.sort((a, b) => a.invoice.date.localeCompare(b.invoice.date)).map(b => ({ id: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: b.due })); setBills(list); if (!preferInvoiceIds.length && list.length) setSel(new Set(list.map(b => b.id))); }); }, [shop.id]);
   useEffect(() => { (async () => { const s = await getSettings(); if (!s.upiId) { setQr(undefined); return; } setQr(await QRCode.toDataURL(`upi://pay?pa=${s.upiId}&pn=${encodeURIComponent(s.firmName)}&am=${amount || ''}&cu=INR`, { width: 480, margin: 1 })); })(); }, [amount]);
 
   const chosen = bills.filter(b => sel.has(b.id));
@@ -77,6 +80,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
         {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : null}</div><div className="grow" style={{ minWidth: 0 }}><div className="t" style={{ overflowWrap: 'anywhere' }}>{b.number}</div><div className="s">{showDate(b.date)}</div><div className="amt num">{inr(b.balance)}</div></div></button>)}
         {!bills.length && <div className="muted">{'No bills pending for this shop.'}</div>}
       </div>
+      {shortCredit > 0 && <div className="muted">{'Short'} {inr(shortCredit)} — {'credit note at day close'}</div>}
       {chosen.length > 0 && <>
         <div className="eyebrow">{'2. Amount'} · {'due'} {inr(due)}</div>
         <div className="row" style={{ gap: 6 }}><button className="btn small" onClick={() => setAmount(due)}>{'Full'} {inr(due)}</button></div>

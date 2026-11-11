@@ -42,6 +42,7 @@ export function code(r: Reply): string {
       case 'stockFix': return `stockFix:${prod}:${p.meta.target}`;
       case 'productEdit': return `product:${prod}:${kv()}`;
       case 'shopEdit': return `shop:${shop}:${kv()}`;
+      case 'advance': return `advance:${p.rows[0]?.amount}`;
       case 'undo': return 'undo';
       case 'visit': return `noOrder:${shop}`;
       default: return p.kind;
