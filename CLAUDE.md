@@ -29,4 +29,7 @@ and brings the owner only the finished result and the decisions that are theirs.
 5. **independent-tester** — checks it without the developer's story; cannot edit code; bugs go back to step 4.
 6. **ui-designer** — real phone screenshots against the locked design.
 7. **security-operations** — data safety, backups, cost; signs off every release.
+Specialists, whenever their area is touched: **gst-accounts-specialist** (bills, tax, credit notes, payments, ledgers,
+P&L, e-invoice, GSTR-1, Tally — after step 4, before release) and **tesrax-language-specialist** (any TESRAX change, and
+every week on the TESRAX report's misses).
 Small fixes may skip 1–3, never 5. The owner is told about a step only when it changes what they get.
