@@ -1,5 +1,6 @@
 // Hanubix icon set — bold solid glyphs with one accent detail, drawn for us. Ink = currentColor, accent = --accent.
 import type React from 'react';
+import { ChartNoAxesCombined, FileText, Truck, WalletCards, BookOpenText, PackageCheck, FileCheck2, UsersRound, CalendarCheck2 } from 'lucide-react';
 // Used for the module tiles, the header mark and TESRAX. Sub-screens use the same style via <Glyph/> wrappers.
 import type { CSSProperties } from 'react';
 
@@ -50,7 +51,16 @@ export const IcHome = (p: P) => (
   <S {...p}><path fill="currentColor" d="M24 6l19 16h-5v19a2 2 0 0 1-2 2H28V30h-8v13H12a2 2 0 0 1-2-2V22H5z" /><path fill={A} d="M20 30h8v4h-8z" /></S>
 );
 
+// Premium family iconography: consistent 1.8px outlined glyphs across product modules.
+// Preserve named legacy exports so other screens cannot break during visual migration.
 export const MODULE_ICON: Record<string, (p: P) => React.ReactElement> = {
-  sales: IcSales, bill: IcBill, delivery: IcDelivery, collection: IcCollection, accountant: IcAccountant,
-  inventory: IcInventory, gst: IcGst, payroll: IcPayroll, dayclose: IcDayClose,
+  sales: p => <ChartNoAxesCombined size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  bill: p => <FileText size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  delivery: p => <Truck size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  collection: p => <WalletCards size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  accountant: p => <BookOpenText size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  inventory: p => <PackageCheck size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  gst: p => <FileCheck2 size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  payroll: p => <UsersRound size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
+  dayclose: p => <CalendarCheck2 size={p.size ?? 28} strokeWidth={1.8} className={p.className} style={p.style} />,
 };
