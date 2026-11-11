@@ -25,7 +25,7 @@ describe('offline delivery merge blockers', () => {
     expect(mayOfferUndo(['payments'], 'Payment received')).toBe(false);
     expect(mayOfferUndo(['invoices'], 'Delivered')).toBe(false);
     expect(mayOfferUndo(['shops'], 'Shop name changed')).toBe(true);
-    const tripAudit = await db.audit.where('recordId').equals('security-trip').last();
+    const tripAudit = (await db.audit.toArray()).find(a => a.recordId === 'security-trip');
     expect(tripAudit).toBeDefined();
     expect(await undoBatch(tripAudit!.batchId)).toBe(-1);
     expect((await db.trips.get('security-trip'))?.status).toBe('out');
