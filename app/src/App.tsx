@@ -141,7 +141,7 @@ export default function App() {
   }, []);
 
 
-  if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;
+  if (!ready) return <div className="login"><div className="mark">HANUBIX</div></div>;
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow();
@@ -159,7 +159,7 @@ export default function App() {
   const openRox = () => { sound.wake(); setRox(true); };
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
-  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">HANUBIX</div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     if (company) {
@@ -225,7 +225,7 @@ export default function App() {
     <div className="app">
       <GradDefs />
       <header className="top">
-        {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark">HANUBIX</div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
@@ -240,7 +240,7 @@ export default function App() {
         <div className="engine" role="dialog" aria-label="TESRAX">
           <div className="engine-col">
             <div className="engine-head" onPointerDown={e => { (e.currentTarget as HTMLElement).dataset.y = String(e.clientY); }} onPointerUp={e => { const y0 = Number((e.currentTarget as HTMLElement).dataset.y ?? e.clientY); if (e.clientY - y0 > 70) setRox(false); }}>
-              <span className="engine-mark">Hanubix<sup>™</sup></span>
+              <span className="engine-mark">HANUBIX</span>
               <span className="engine-pw">Powered by <b>TESRAX</b></span>
               <button className="engine-x" onClick={() => { const v = !soundOn; sound.set(v); setSoundOn(v); }} aria-label={soundOn ? 'Sound off' : 'Sound on'}>{soundOn ? <Volume2 /> : <VolumeX />}</button>
               <button className="engine-x" onClick={() => setRox(false)} aria-label="Close"><X /></button>
@@ -286,9 +286,9 @@ function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => v
   return <button className={`plan-bar ${lic.status === 'locked' ? 'bad' : ''}`} onClick={onOpen}>{text}</button>;
 }
 
-// The signature gradient as an SVG paint server, so icon accents can use fill="url(#hg)".
+// The legacy SVG paint server is a restrained solid accent. TESRAX owns the spectrum.
 function GradDefs() {
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#425BE8" /><stop offset=".5" stopColor="#425BE8" /><stop offset="1" stopColor="#425BE8" /></linearGradient></defs></svg>;
 }
 
 function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
@@ -311,7 +311,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
 
   if (newFirm) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{newFirm.kind === 'company' ? 'Company sign-up' : 'Start your 60-day free trial'}</div></div>
+      <div className="login-hero"><div className="mark">HANUBIX</div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{newFirm.kind === 'company' ? 'Company sign-up' : 'Start your 60-day free trial'}</div></div>
       <div className="stack">
         <div className="field"><label>{newFirm.kind === 'company' ? 'Company name' : 'Firm name'}</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
@@ -327,7 +327,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
 
   if (firms) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
+      <div className="login-hero"><div className="mark">HANUBIX</div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
       <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
@@ -336,10 +336,10 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
     <div className="login">
       <div className="login-hero">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div className="mark">Hanubix<sup>™</sup></div>
+          <div className="mark">HANUBIX</div>
         </div>
-        <div className="powered">Powered by <b>TESRAX</b></div>
-        <div className="tag" style={{ margin: '10px 0 0' }}>{t('appTagline')}</div>
+        <div className="tagline-locked">RETAIL INTELLIGENCE</div>
+        <div className="powered-line"><span>Powered by</span><TesraxCore size={32} interactive={false} /><strong>TESRAX</strong></div>
       </div>
       <label className="eyebrow" htmlFor="login-phone">{t('phone')}</label>
       <input id="login-phone" className="phone" inputMode="numeric" autoComplete="tel" placeholder="98765 43210" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} />
