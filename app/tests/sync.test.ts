@@ -50,3 +50,35 @@ describe('first sync of a busy distributor', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('rejected offline write recovery', () => {
+  it('restores the authoritative record and persists warning across database restart', async () => {
+    setSession('t1', 'o1');
+    const id = 'rejected-offline-shop';
+    const outdated = '2026-11-09T10:00:00.000Z';
+    const authoritative = '2026-11-11T10:00:00.000Z';
+    await db.shops.put({ id, tenantId: 't1', updatedAt: outdated, dirty: 1,
+      name: 'Unauthorized local edit' } as never);
+    vi.stubGlobal('fetch', async (url: string, init: { body: string }) => {
+      if (!url.endsWith('/v1/sync')) return new Response('{}', { status: 404 });
+      const b = JSON.parse(init.body) as { cursor: number };
+      return new Response(JSON.stringify({
+        cursor: b.cursor, more: false, accepted: [], rejected: [`shops|${id}`],
+        changes: [{ table: 'shops', id, updatedAt: authoritative,
+          data: { id, tenantId: 't1', updatedAt: authoritative, name: 'Approved shop' } }]
+      }), { status: 200 });
+    });
+    const { syncNow } = await import('../src/core/sync');
+    const message = await syncNow();
+    expect(message).toContain('rejected');
+    expect((await db.shops.get(id))?.name).toBe('Approved shop');
+    expect((await db.shops.get(id))?.dirty).toBe(0);
+    const before = (await db.meta.get('syncWarnings'))?.value as { key: string; recovered: boolean }[];
+    expect(before.some(x => x.key === `shops|${id}` && x.recovered)).toBe(true);
+    db.close();
+    await db.open();
+    const after = (await db.meta.get('syncWarnings'))?.value as { key: string }[];
+    expect(after.some(x => x.key === `shops|${id}`)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+});
