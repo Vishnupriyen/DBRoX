@@ -1,70 +1,32 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Download, TrendingUp, TrendingDown, Percent, PackageX, Store, Building2, Users, MapPin, Undo2, Gift, Zap } from 'lucide-react';
+import { ArrowLeft, Download, TrendingUp, TrendingDown, Percent, PackageX, Store, Building2, Users, MapPin, Undo2, Gift, Zap, BookOpen, Wallet, IndianRupee } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { db, thisMonth, daysFrom } from '../core/db';
+import { thisMonth } from '../core/db';
 import { inr, plural } from '../core/i18n';
-import { r2 } from '../core/ledger';
 import { downloadWorkbook } from '../core/readers';
+import { buildReports, period as periodOf, type PeriodKind, type ReportData } from '../core/reports';
 
-type Col = { h: string; num?: boolean; money?: boolean };
-type Report = { key: string; icon: LucideIcon; en: string; cols: Col[]; rows: (string | number)[][]; note?: string };
+type Report = ReportData & { icon: LucideIcon };
+const ICONS: Record<string, LucideIcon> = { sales: IndianRupee, daybook: BookOpen, collections: Wallet, fast: TrendingUp, slow: TrendingDown, himargin: Percent, lomargin: Percent, dead: PackageX, shop: Store, company: Building2, salesman: Users, area: MapPin, returns: Undo2, scheme: Gift };
 
 const month = () => thisMonth();
 
-// One menu, every report the owner asked for; each is a table for the chosen period with Excel export.
+// One menu, every report the owner asked for; each is a table for the chosen period with Excel export (core/reports.ts).
 export function Reports() {
-  const [period, setPeriod] = useState<'month' | '90'>('month');
+  const [period, setPeriod] = useState<PeriodKind>('month');
+  const [picked, setPicked] = useState(month());
   const [reports, setReports] = useState<Report[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  const per = periodOf(period, picked);
   useEffect(() => { (async () => {
-    const since = period === 'month' ? month() + '-01' : daysFrom(-90);
-    const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-    const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
-    const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
-    const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
-    const invs = (await db.invoices.toArray()).filter(i => !i.cancelled && i.date >= since);
-    const cns = (await db.creditNotes.toArray()).filter(c => c.date >= since);
-    const batches = (await db.batches.toArray()).filter(b => b.qty > 0);
-    const orders = (await db.orders.toArray()).filter(o => o.date >= since);
-    const bySalesmanOrder = new Map<string, string>(); for (const o of orders) if (o.salesmanId) bySalesmanOrder.set(o.id, o.salesmanId);
-
-    // product movement
-    const prod = new Map<string, { qty: number; free: number; sales: number; cost: number; bills: Set<string> }>();
-    for (const i of invs) for (const l of i.lines) { const v = prod.get(l.productId) ?? { qty: 0, free: 0, sales: 0, cost: 0, bills: new Set() }; v.qty += l.qty; v.free += l.freeQty; v.sales += l.taxable; v.cost += (l.qty + l.freeQty) * (products.get(l.productId)?.purchaseRate ?? 0); v.bills.add(i.id); prod.set(l.productId, v); }
-    const stockOf = (pid: string) => batches.filter(b => b.productId === pid).reduce((a, b) => a + b.qty, 0);
-    const movers = [...products.values()].filter(p => p.active).map(p => { const v = prod.get(p.id); const stock = stockOf(p.id); return { p, qty: v?.qty ?? 0, sales: r2(v?.sales ?? 0), margin: v ? r2(v.sales - v.cost) : 0, pct: v && v.sales ? Math.round((v.sales - v.cost) / v.sales * 100) : 0, stock, bills: v?.bills.size ?? 0 }; });
-    const lastSold = new Map<string, string>(); for (const i of (await db.invoices.toArray()).filter(i => !i.cancelled)) for (const l of i.lines) if ((lastSold.get(l.productId) ?? '') < i.date) lastSold.set(l.productId, i.date);
-
-    // shop / company / salesman / area
-    const group = <K,>(key: (i: typeof invs[0]) => K) => { const m = new Map<K, { sales: number; bills: number; cost: number }>(); for (const i of invs) { const k = key(i); const v = m.get(k) ?? { sales: 0, bills: 0, cost: 0 }; v.sales += i.taxable; v.bills++; v.cost += i.lines.reduce((a, l) => a + (l.qty + l.freeQty) * (products.get(l.productId)?.purchaseRate ?? 0), 0); m.set(k, v); } return [...m.entries()].sort((a, b) => b[1].sales - a[1].sales); };
-    const fmt = (name: string, v: { sales: number; bills: number; cost: number }) => [name, v.bills, r2(v.sales), r2(v.sales - v.cost), v.sales ? Math.round((v.sales - v.cost) / v.sales * 100) + '%' : '—'];
-    const gcols: Col[] = [{ h: '' }, { h: 'Bills', num: true }, { h: 'Sales', num: true, money: true }, { h: 'Margin', num: true, money: true }, { h: '%', num: true }];
-
-    // scheme cost
-    const sch = new Map<string, { bills: number; amount: number; free: number }>();
-    for (const i of invs) for (const l of i.lines) for (const n of l.schemeNames) { const v = sch.get(n) ?? { bills: 0, amount: 0, free: 0 }; v.bills++; v.amount += l.discount; v.free += l.freeQty * l.rate; sch.set(n, v); }
-
-    const r: Report[] = [
-      { key: 'fast', icon: TrendingUp, en: 'Fast movers', cols: [{ h: 'Product' }, { h: 'Sold', num: true }, { h: 'Bills', num: true }, { h: 'Sales', num: true, money: true }, { h: 'Stock', num: true }], rows: [...movers].sort((a, b) => b.qty - a.qty).slice(0, 30).map(m => [m.p.name, m.qty, m.bills, m.sales, m.stock]) },
-      { key: 'slow', icon: TrendingDown, en: 'Slow movers', cols: [{ h: 'Product' }, { h: 'Sold', num: true }, { h: 'Stock', num: true }, { h: 'Last sold' }], rows: [...movers].filter(m => m.stock > 0).sort((a, b) => a.qty - b.qty).slice(0, 30).map(m => [m.p.name, m.qty, m.stock, lastSold.get(m.p.id) ?? '—']) },
-      { key: 'himargin', icon: Percent, en: 'High margin', cols: [{ h: 'Product' }, { h: '%', num: true }, { h: 'Margin ₹', num: true, money: true }, { h: 'Sales', num: true, money: true }], rows: [...movers].filter(m => m.sales > 0).sort((a, b) => b.pct - a.pct).slice(0, 30).map(m => [m.p.name, m.pct + '%', m.margin, m.sales]) },
-      { key: 'lomargin', icon: Percent, en: 'Low margin', cols: [{ h: 'Product' }, { h: '%', num: true }, { h: 'Margin ₹', num: true, money: true }, { h: 'Sales', num: true, money: true }], rows: [...movers].filter(m => m.sales > 0).sort((a, b) => a.pct - b.pct).slice(0, 30).map(m => [m.p.name, m.pct + '%', m.margin, m.sales]), note: 'Below 5% — check the rate or the scheme.' },
-      { key: 'dead', icon: PackageX, en: 'Dead stock', cols: [{ h: 'Product' }, { h: 'Stock', num: true }, { h: 'Value', num: true, money: true }, { h: 'Last sold' }], rows: [...movers].filter(m => m.stock > 0 && m.qty === 0).sort((a, b) => b.stock * b.p.purchaseRate - a.stock * a.p.purchaseRate).map(m => [m.p.name, m.stock, r2(m.stock * m.p.purchaseRate), lastSold.get(m.p.id) ?? 'never']), note: 'Stock with no sale in the period. Clear it from Ageing.' },
-      { key: 'shop', icon: Store, en: 'Shop-wise', cols: [{ h: 'Shop' }, ...gcols.slice(1)], rows: group(i => i.shopId).map(([k, v]) => fmt(shops.get(k)?.name ?? k, v)) },
-      { key: 'company', icon: Building2, en: 'Company-wise', cols: [{ h: 'Company' }, ...gcols.slice(1)], rows: group(i => i.companyId).map(([k, v]) => fmt(cos.get(k) ?? k, v)) },
-      { key: 'salesman', icon: Users, en: 'Salesman-wise', cols: [{ h: 'Salesman' }, ...gcols.slice(1)], rows: group(i => (i.orderId && bySalesmanOrder.get(i.orderId)) || shops.get(i.shopId)?.salesmanId || '').map(([k, v]) => fmt(staff.get(k) ?? (k || 'Office'), v)) },
-      { key: 'area', icon: MapPin, en: 'Area-wise', cols: [{ h: 'Area' }, ...gcols.slice(1)], rows: group(i => shops.get(i.shopId)?.area ?? '').map(([k, v]) => fmt(k || '—', v)) },
-      { key: 'returns', icon: Undo2, en: 'Returns', cols: [{ h: 'Date' }, { h: 'Shop' }, { h: 'Reason' }, { h: '₹', num: true, money: true }], rows: cns.sort((a, b) => b.date.localeCompare(a.date)).map(c => [c.date.slice(5), shops.get(c.shopId)?.name ?? '', c.reason, c.total]), note: cns.length ? `${'Total'} ${inr(r2(cns.reduce((a, c) => a + c.total, 0)))} · ${Math.round(cns.reduce((a, c) => a + c.total, 0) / Math.max(1, invs.reduce((a, i) => a + i.total, 0)) * 1000) / 10}% ${'of sales'}` : undefined },
-      { key: 'scheme', icon: Gift, en: 'Scheme cost', cols: [{ h: 'Scheme' }, { h: 'Lines', num: true }, { h: 'Discount', num: true, money: true }, { h: 'Free goods', num: true, money: true }], rows: [...sch.entries()].sort((a, b) => b[1].amount + b[1].free - a[1].amount - a[1].free).map(([k, v]) => [k, v.bills, r2(v.amount), r2(v.free)]), note: 'Company schemes come back as claims; own schemes are your cost.' },
-    ];
-    setReports(r);
-  })(); }, [period]);
+    setReports((await buildReports(per)).map(r => ({ ...r, icon: ICONS[r.key] ?? Zap })));
+  })(); }, [period, picked]);
 
   const cur = reports.find(r => r.key === open);
-  const exportAll = () => downloadWorkbook(`Hanubix-reports-${month()}`, reports.map(r => ({ name: r.en, header: r.cols.map(c => c.h), rows: r.rows })));
+  const exportAll = () => downloadWorkbook(`Hanubix-reports-${per.month ?? per.to}`, reports.map(r => ({ name: r.en, header: r.cols.map(c => c.h), rows: r.rows })));
   if (cur) return (
     <div className="stack">
-      <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{cur.en}</div><div className="muted">{period === 'month' ? 'This month' : 'Last 90 days'}</div></div><button className="btn small" onClick={() => downloadWorkbook(`Hanubix-${cur.key}-${month()}`, [{ name: cur.en, header: cur.cols.map(c => c.h), rows: cur.rows }])}><Download size={16} /> Excel</button></div>
+      <div className="row" style={{ flexWrap: 'nowrap' }}><button className="icon-btn" onClick={() => setOpen(null)} aria-label="Back"><ArrowLeft /></button><div className="grow"><div className="h">{cur.en}</div><div className="muted">{per.label}</div></div><button className="btn small" onClick={() => downloadWorkbook(`Hanubix-${cur.key}-${per.month ?? per.to}`, [{ name: cur.en, header: cur.cols.map(c => c.h), rows: cur.rows }])}><Download size={16} /> Excel</button></div>
       {cur.note && <div className="muted">{cur.note}</div>}
       <table className="tbl"><thead><tr>{cur.cols.map((c, i) => <th key={i}>{c.h}</th>)}</tr></thead>
         <tbody>{cur.rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} className={cur.cols[j].num ? 'num' : ''}>{typeof v === 'number' && cur.cols[j].money ? inr(v) : v}</td>)}</tr>)}</tbody></table>
@@ -74,7 +36,8 @@ export function Reports() {
   return (
     <div className="stack">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <div className="segmented" style={{ maxWidth: 260 }}><button className={period === 'month' ? 'on' : ''} onClick={() => setPeriod('month')}>{'This month'}</button><button className={period === '90' ? 'on' : ''} onClick={() => setPeriod('90')}>{'90 days'}</button></div>
+        <div className="segmented" style={{ maxWidth: 320 }}><button className={period === 'month' ? 'on' : ''} onClick={() => setPeriod('month')}>{'This month'}</button><button className={period === 'last' ? 'on' : ''} onClick={() => setPeriod('last')}>{'Last month'}</button><button className={period === '90' ? 'on' : ''} onClick={() => setPeriod('90')}>{'90 days'}</button></div>
+        <input type="month" aria-label="Pick a month" value={period === 'pick' ? picked : ''} max={month()} onChange={e => { if (e.target.value) { setPicked(e.target.value); setPeriod('pick'); } }} />
         <button className="btn small" onClick={exportAll}><Download size={16} /> {'All to Excel'}</button>
       </div>
       <div className="list">

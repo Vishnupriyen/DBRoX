@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Banknote, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr, showDate, plural } from '../core/i18n';
+import { inr, showDate, plural, showTime } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { ShopStatement } from './ShopStatement';
 import type { Advance, Payment } from '../core/types';
@@ -39,7 +39,7 @@ export function CashWithStaff() {
             <span className="amt num">{inr(g.total)}</span>{openStaff === g.staffId ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openStaff === g.staffId && <div className="list">
-            {g.pays.map(p => <button key={p.id} className="item tap" onClick={() => setOpenShop(p.shopId)}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{p.shop}</div><div className="s">{p.date} {p.createdAt.slice(11, 16)} · {'bills'} {p.bills || '—'}</div></div><span className="amt num">{inr(p.amount)}</span></button>)}
+            {g.pays.map(p => <button key={p.id} className="item tap" onClick={() => setOpenShop(p.shopId)}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{p.shop}</div><div className="s">{showDate(p.date)} {showTime(p.createdAt)} · {'bills'} {p.bills || '—'}</div></div><span className="amt num">{inr(p.amount)}</span></button>)}
           </div>}
         </div>
       ))}

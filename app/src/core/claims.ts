@@ -26,15 +26,27 @@ export async function addClaimLine(input: { companyId: string; kind: ClaimEntry[
   cs.put<ClaimEntry>('claimEntries', { companyId: input.companyId, month: input.month ?? thisMonth(), kind: input.kind, productId: input.productId, qty: input.qty ?? 0, amount: r2(input.amount), note: input.note.trim(), refNumber: input.refNumber?.trim(), photo: input.photo } as ClaimEntry, 'claim line');
   await cs.commit('Claim line');
 }
+/** a claim line that can be claimed: not dropped (bill cancelled / returned / owner dropped it) and valued */
+export const claimable = (e: ClaimEntry) => !e.dropped && !e.valuePending && e.amount > 0;
 /** lines of a month not already in a claim that was sent */
 export async function openLines(companyId: string, month: string) {
   const sent = new Set((await db.claims.toArray()).filter(c => c.companyId === companyId && c.status !== 'draft' && c.status !== 'rejected').flatMap(c => c.lineIds ?? []));
-  return (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month && !sent.has(e.id));
+  return (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month && !sent.has(e.id) && claimable(e));
+}
+/** the owner takes a line out before sending (never deleted: the line says why) */
+export async function dropClaimLine(id: string, reason: string) {
+  const e = await db.claimEntries.get(id);
+  if (!e) throw new Error('Claim line not found.');
+  if (e.dropped) throw new Error('This line is already dropped.');
+  const sent = (await db.claims.toArray()).some(c => c.status !== 'draft' && c.status !== 'rejected' && (c.lineIds ?? []).includes(id));
+  if (sent) throw new Error('This line is already sent to the company.');
+  const cs = new ChangeSet(); cs.put<ClaimEntry>('claimEntries', { ...e, dropped: reason.trim() || 'Dropped by owner' }, 'claim line dropped'); await cs.commit('Claim line dropped');
 }
 /** send the month's open lines to a linked company as one claim (safe to tap twice) */
 export async function sendClaim(companyId: string, month: string) {
   const co = await db.companies.get(companyId);
   if (co?.link?.status !== 'linked') throw new Error('This company is not linked. Send its claim file the usual way (say "claim file").');
+  await (await import('./credit')).fillPendingValues();
   const lines = await openLines(companyId, month);
   if (!lines.length) throw new Error('Nothing new to claim for this month.');
   const cs = new ChangeSet();

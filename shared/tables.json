@@ -43,7 +43,10 @@
     "workDays",
     "travelClaims",
     "receipts",
-    "tesraxDays"
+    "tesraxDays",
+    "openingDues",
+    "requests",
+    "stockMoves"
   ],
   "read": {
     "owner": "*",
@@ -67,7 +70,8 @@
       "leaves",
       "advances",
       "dayPlans",
-      "liteEntries"
+      "liteEntries",
+      "openingDues"
     ],
     "godown": [
       "settings",
@@ -105,7 +109,8 @@
       "advances",
       "dayPlans",
       "liteEntries",
-      "expenses"
+      "expenses",
+      "openingDues"
     ],
     "cadmin": "*",
     "manager": [
@@ -164,6 +169,7 @@
       "products",
       "shops",
       "batches",
+      "stockMoves",
       "schemes",
       "orders",
       "invoices",
@@ -187,7 +193,9 @@
       "leaves",
       "advances",
       "primaryOrders",
-      "receipts"
+      "receipts",
+      "openingDues",
+      "requests"
     ],
     "salesman": [
       "orders",
@@ -200,11 +208,13 @@
       "liteEntries",
       "expenses",
       "audit",
-      "tesraxDays"
+      "tesraxDays",
+      "requests"
     ],
     "godown": [
       "orders",
       "batches",
+      "stockMoves",
       "purchases",
       "products",
       "claimEntries",
@@ -214,12 +224,14 @@
       "advances",
       "audit",
       "tesraxDays",
-      "receipts"
+      "receipts",
+      "requests"
     ],
     "delivery": [
       "invoices",
       "payments",
       "batches",
+      "stockMoves",
       "claimEntries",
       "trips",
       "shops",
@@ -229,7 +241,8 @@
       "liteEntries",
       "expenses",
       "audit",
-      "tesraxDays"
+      "tesraxDays",
+      "requests"
     ],
     "cadmin": "*",
     "manager": [
@@ -264,10 +277,8 @@
   "ownerOnlyFields": {
     "products": [
       "purchaseRate"
-    ],
-    "settings": [
-      "upiId"
     ]
   },
-  "_company": "Company side (a brand's head office and team): cadmin = head office, manager = RSM/ASM/SO, rep = field rep. Tables marked relay-only in shared/relay.ts are written only by the server's relay, never by a phone."
+  "_company": "Company side (a brand's head office and team): cadmin = head office, manager = RSM/ASM/SO, rep = field rep. Tables marked relay-only in shared/relay.ts are written only by the server's relay, never by a phone.",
+  "_stock": "stockMoves: stock travels as movements (lot, delta), never as an overwritten total. Add-only. Every role that writes batches writes them; the server keeps each lot's qty = the sum of its movements."
 }

@@ -18,6 +18,19 @@ checks the final state of every record. If one rule breaks, **nothing** in that 
 | Pieces on a bill line are never negative | "A bill line has an invalid … quantity" |
 | A payment is more than zero and never split for more than it is | "Payment amount must be more than zero" |
 | Expense amounts are valid, order quantities are valid | — |
+| A bill's credit notes together never come to more than the bill charged | "Credit notes on bill … would come to ₹… — more than the ₹… it charged" |
+| Every money amount, in every table (and inside lines), is a real number | "Money amount … is not a valid number" |
+| The same company bill number is never entered twice for one company | "Company bill … of this company is already entered" |
+| The bill number prefix is 1–4 letters or digits | "Bill number prefix: 1 to 4 letters or digits only" |
+| Every bill line carries its stock lots; when what a bill charges is set (new or edited) the lots hold exactly those pieces — one rule for every path (`core/lots.ts`, held by the server too) | "A bill line … has no stock lots" / "Not enough stock for …" |
+| A shop's old due (opening balance) is more than ₹0 and is never saved as a bill | "An old due must be more than ₹0" / "An old due is not a bill" |
+| Every change of a lot's stock is a stock movement (`stockMoves`: lot, ± whole pieces) written in the same save — `ChangeSet.commit` makes it, so no path can forget one. A movement is never changed. | "A stock movement is never changed" |
+
+**Stock between phones (round 5).** Stock travels as movements, never as an overwritten total. The phone's lot qty is a
+running total; the server keeps the true qty = the sum of the lot's movements (`qty = qty + delta` inside the sync
+transaction), refuses a movement that would take a lot below zero (that record only — the phone holds it, shows "held"
+and tries again), and sends every lot it touched back, so every phone shows the server's qty + its own unsent movements.
+A bill saved by the owner or office from a copy older than the driver's delivery result keeps that result (server rule).
 
 **New rule = add it to `guard()` + add a test in `tests/regressions.test.ts`.**
 
@@ -29,7 +42,7 @@ checks the final state of every record. If one rule breaks, **nothing** in that 
 
 ## 3. The money & stock laws (chaos test)
 `app/tests/laws.test.ts` plays random business days: orders, picking, billing with double taps, planning, deliveries
-(short, damaged, refused, extra, double taps), trip ends, day-close differences, payments, cancels (twice) and undo of
+(short, damaged, refused, extra, double taps), trip ends, day-close differences, payments, shop returns (credit notes), cancels (twice) and undo of
 random past actions. **After every single action** it checks:
 
 1. **Stock is conserved.** Every piece is in exactly one place: on the shelf, out on a live bill, or written off as van damage.
@@ -38,6 +51,14 @@ random past actions. **After every single action** it checks:
 4. Every bill adds up: tax parts + round-off = total; line taxables = bill taxable.
 5. An order is billed at most once.
 6. No bill shows a negative balance, and no money is lost: billed − credited − received = still owed (− shop advance).
+7. A bill's credit notes never come to more than it charged, and never credit more paid pieces than a line billed.
+8. Claim lines follow their bill: a cancelled bill keeps no live scheme claim line.
+9. Every lot's qty = the sum of its stock movements (no stock change without a movement).
+10. **Several phones, one real server** (owner and office billing, cancelling, counting and taking returns; godown taking
+    stock in; the driver recording deliveries; each phone offline for a while, synced in random order; undo). After
+    every sync the server's qty = the sum of its movements and never below zero. **After all phones sync: every lot's
+    qty on every phone = opening + in − out = the server's qty**, and no movement made on any phone is lost (it is on the
+    server, or still held on its phone) or counted twice.
 
 If a law breaks, the test prints the seed and the last 15 actions so the exact bug can be replayed.
 Proven to work: a deliberately planted stock bug was caught within 36 actions.

@@ -1,3 +1,4 @@
+import { fillPendingValues } from '../core/credit';
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowLeft, ClipboardCheck, Route, MapPinned, IndianRupee, Banknote, Boxes, FileCheck2, Scale, BarChart3, PackageOpen, Truck, Store, ListChecks, Upload, Users, Receipt, ShoppingBag, PackagePlus, Landmark, Wallet, PieChart, Printer, ClipboardList, Target, UserPlus, CalendarCheck, Clock, TrendingUp, Download, FileWarning, Hourglass, ReceiptText } from 'lucide-react';
@@ -9,7 +10,8 @@ import { ENV_SERVER } from '../core/sync';
 import { MODULE_ICON } from './icons';
 import { Search, Send } from 'lucide-react';
 import { invoiceBalances } from '../core/ledger';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
+import { waitingRequests } from '../core/requests';
 
 export type Page = 'home'
   | 'orders-received' | 'verify' | 'billed' | 'newshops' | 'targets' | 'beat' | 'myday' | 'newshop' | 'orders-excel'
@@ -31,26 +33,26 @@ const NEED: Partial<Record<Page, ModuleKey>> = {
   'lite-delivery': 'delivery', 'lite-plan': 'delivery', 'lite-collect': 'collection',
 };
 
-const TAG: Record<string, string> = {
-  sales: 'Take orders in 30 seconds. No typing.',
-  bill: 'One click. Bill is ready.',
-  inventory: 'Take a photo of the bill. Stock is added.',
-  delivery: 'Plan, load, deliver. All easy.',
-  collection: 'Collect money with one tap.',
-  accountant: 'Accounts done in minutes.',
-  gst: 'GST file ready in one click.',
-  payroll: 'No confusion. Just a click.',
+// a module's line says what is waiting in it ("1 order to approve · 1 to verify"), never a slogan
+const WAITING: Partial<Record<Page, (n: number) => string>> = {
+  'orders-received': n => `${plural(n, 'order')} to approve`, verify: n => `${n} to verify`, newshops: n => `${plural(n, 'new shop')} to approve`,
+  inbound: n => `${plural(n, 'company bill')} to receive`, stock: n => `${plural(n, 'stock alert')}`, claims: n => `${plural(n, 'claim')} open`,
+  plan: n => `${plural(n, 'bill')} to plan`, live: n => `${plural(n, 'van')} out`, status: n => `${plural(n, 'bill')} with differences`,
+  cash: n => `${plural(n, 'person', 'people')} holding cash`, today: n => `${plural(n, 'request')} to approve`,
 };
+const waitingLine = (ts: Tile[]) => ts.filter(x => x.count && x.page && WAITING[x.page]).map(x => WAITING[x.page!]!(x.count!)).join(' · ') || 'Nothing waiting here.';
 
 // Opening screen: module icons with counts. Tap a module → its few screens. Nothing else.
 export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => void; open: string | null; onOpen: (m: string | null) => void }) {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [subs, setSubs] = useState<Record<string, Tile[]>>({});
-  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; first: Page | null } | null>(null);
+  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; leaves: number; advances: number; staffReqs: number; first: Page | null } | null>(null);
   const [q, setQ] = useState('');
   useEffect(() => {
     (async () => {
       const s = await db.settings.toCollection().first();
+      // values saved on staff phones without the buying rate are filled in here (owner's phone only)
+      if (role === 'owner') void fillPendingValues({ throttle: true }).catch(() => 0);
       const mods = (await licenceState(!!ENV_SERVER, s)).mods;
       const c = await counts();
       const me = session().userId;
@@ -115,7 +117,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         sub.accountant = [
           { page: 'bank', icon: Landmark, en: 'Bank' },
           { page: 'expenses', icon: Wallet, en: 'Expenses' },
-          { page: 'pnl', icon: PieChart, en: 'P&L' },
+          ...(owner ? [{ page: 'pnl' as Page, icon: PieChart, en: 'P&L' }] : []), // profit is the owner's only
           { page: 'cashflow', icon: Scale, en: 'Cash flow' },
           { page: 'reports', icon: BarChart3, en: 'Reports' },
           { page: 'export', icon: Download, en: 'Export' },
@@ -169,15 +171,18 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
       setTiles(t.filter(allowed)); setSubs(sub);
       if ((role === 'owner' || role === 'office') && !standalone(mods)) {
         const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
+        const leaveN = await db.leaves.where('status').equals('waiting').count();
+        const advanceN = await db.advances.where('status').equals('waiting').count();
+        const reqN = (await waitingRequests()).length;
         const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
-        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });
+        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, leaves: leaveN, advances: advanceN, staffReqs: reqN, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : (leaveN || advanceN) ? 'today' : diffs ? 'status' : null });
       } else setMorning(null);
     })();
   }, [role, open]);
 
   const list = open ? subs[open] ?? [] : tiles;
   const label = (t: Tile) => t.en;
-  const tag = open ? TAG[open] : null;
+  const tag = open ? waitingLine(subs[open] ?? []) : null;
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const all: (Tile & { mod?: string })[] = [...tiles.filter(t => t.page), ...Object.entries(subs).flatMap(([m, ts]) => ts.map(t => ({ ...t, mod: m })))];
@@ -190,7 +195,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         <div className="morning">
           <div className="grow">
             <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
-            <div className="s">{morning.orders ? `${morning.orders} order${morning.orders > 1 ? 's' : ''} waiting for your OK.` : morning.toDeliver ? `${morning.toDeliver} bill${morning.toDeliver > 1 ? 's' : ''} to plan for delivery.` : 'Nothing is waiting on you right now.'}</div>
+            <div className="s">{(() => { const w = [morning.orders ? `${plural(morning.orders, 'order')} waiting for your OK` : '', morning.toDeliver ? `${plural(morning.toDeliver, 'bill')} to plan for delivery` : '', morning.leaves ? `${plural(morning.leaves, 'leave request')}` : '', morning.advances ? `${plural(morning.advances, 'advance request')}` : '', morning.staffReqs ? `${plural(morning.staffReqs, 'staff request')} (returns, write-offs)` : ''].filter(Boolean); return w.length ? `${w.join(' · ')}.` : 'Nothing is waiting on you right now.'; })()}</div>
             <div className="kv"><div><b>{morning.orders}</b><span>{'orders'}</span></div><div><b>{morning.toDeliver}</b><span>{'to deliver'}</span></div><div><b>{inr(morning.overdue)}</b><span>{'overdue'}</span></div><div><b>{inr(morning.cash)}</b><span>{'with staff'}</span></div></div>
             {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{'Start here'} →</button>}
           </div>

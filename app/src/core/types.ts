@@ -51,6 +51,9 @@ export interface Settings extends Base {
   godownLat?: number; godownLng?: number; // check-in distance is measured from here
   kind?: 'distributor' | 'company';        // a brand's head office uses the same app as a "company"
   travel?: { bike: number; car: number; daLocal: number; daOut: number; limits: Record<string, number> }; // company: ₹ per km, daily allowance, expense limits
+  nextReceiptNo?: number;   // collection receipt counter when there is no server
+  paidLeaves?: number;      // paid leave days a month (salary sheet); 2 when not set
+  writeOffLimit?: number;   // godown damage / count write-offs above this ₹ need the owner's OK; 500 when not set
 }
 
 export interface Staff extends Base {
@@ -101,6 +104,7 @@ export interface Shop extends Base {
   owner?: string;
   phone?: string;
   gstin?: string;
+  stateCode?: string; // GST state of the shop (from its GSTIN when it has one; else chosen on the shop form; '33' Tamil Nadu)
   address?: string;
   area: string;
   beat: string;
@@ -128,8 +132,9 @@ export interface Batch extends Base {
   batch: string;
   expiry: string;
   mrp: number;
-  qty: number;
+  qty: number; // this phone's running total: the server's qty (the sum of the lot's movements) + this phone's unsent movements
   godown: string;
+  legacyQty?: boolean; // changed on this phone before stock moved as movements and not yet sent: sent once as a whole lot
 }
 
 export interface Scheme extends Base {
@@ -169,6 +174,8 @@ export interface Order extends Base {
   picked?: { productId: string; qty: number; batchId?: string; mrp?: number }[]; // what the godown actually packed
   pickedBy?: string;
   pickedAt?: string;
+  flagsPending?: boolean;      // a company rep's order just arrived: checked (stock, credit) on the distributor's phone
+  cancelledBy?: 'distributor'; cancelReason?: string; // company side: the distributor cancelled the rep's order, and why
 }
 
 export interface InvoiceLine {
@@ -189,6 +196,7 @@ export interface InvoiceLine {
   total: number;
   batches: { batchId: string; batch: string; qty: number; expiry: string }[];
   schemeNames: string[];
+  costRate?: number; // buying rate per piece when billed (P&L cost; a later rate change never rewrites a past month)
 }
 
 export interface Invoice extends Base {
@@ -213,7 +221,7 @@ export interface Invoice extends Base {
   deliveryStatus: 'pending' | 'planned' | 'out' | 'delivered' | 'partial' | 'returned' | 'undelivered';
   delivery?: {
     at: string; by: string; photo?: string; lat?: number; lng?: number;
-    shortages: { productId: string; qty: number; reason: string }[];
+    shortages: { productId: string; qty: number; reason: string; paid?: number; free?: number }[]; // qty = pieces; paid/free = how many were charged vs scheme-free
     excess?: { productId: string; qty: number }[];
     shopPhoto?: string; billPhoto?: string; distanceM?: number;
   };
@@ -221,17 +229,62 @@ export interface Invoice extends Base {
   original?: { lines: InvoiceLine[]; total: number; at: string }; // kept when a bill is revised
   printedAt?: string;
   cancelled?: { at: string; by: string; reason: string };
+  extraOf?: string; // a new bill for extra pieces given at delivery of this bill (a delivered bill is never re-written)
+  opening?: boolean; // never saved: a shop's old due shown as an open bill in balances (ledger.openingAsBill)
 }
 
+/** one credit-note line: paid pieces credited at the bill line's own taxable + tax per piece; free pieces at ₹0 */
+export interface CreditNoteLine {
+  productId: string; line?: number; // index of the bill line
+  qty: number; freeQty?: number; amount: number; restock: boolean;
+  hsn?: string; gst?: number; taxable?: number; cgst?: number; sgst?: number; igst?: number;
+}
 export interface CreditNote extends Base {
   number: string;
   invoiceId: string;
+  invoiceNumber?: string; invoiceDate?: string; // the original bill (Rule 53)
   shopId: string;
   companyId: string;
   date: string;
   reason: string;
-  lines: { productId: string; qty: number; amount: number; restock: boolean }[];
+  source?: 'delivery' | 'return';
+  lines: CreditNoteLine[];
+  taxable?: number; cgst?: number; sgst?: number; igst?: number; roundOff?: number;
   total: number;
+}
+
+/** a shop's old due from before Hanubix (loaded from the owner's Excel): shown and collected like an open bill, never a
+ *  GST bill, never in sales. Bill-wise (the old bill number) or one amount with a date. */
+export interface OpeningDue extends Base {
+  shopId: string; ref: string; date: string; amount: number; loadId?: string;
+}
+
+/** a staff member's return or stock write-off: nothing changes stock or money until the owner (or office) approves it on
+ *  their own phone. A return becomes a credit note with a server number; a write-off takes the pieces out of stock. */
+/** One change of a lot's stock (+ in, − out). Stock travels between phones and the server as these, never as an
+ *  overwritten total: ChangeSet.commit writes one for every change of a lot's qty, in the same save. Add-only. */
+export interface StockMove extends Base {
+  batchId: string;
+  productId?: string;
+  delta: number;   // whole pieces, never 0
+  reason: string;  // what the save did ('stock out', 'stock in', 'count adjust …')
+  src?: string;    // the record that caused it ('invoices:<id>')
+  by: string;
+  at: string;
+}
+
+export interface StaffRequest extends Base {
+  kind: 'return' | 'damage' | 'count';
+  by: string; role: string; date: string;
+  status: 'waiting' | 'approved' | 'rejected';
+  reason: string;
+  value: number;          // ₹ shown to the person deciding (returns: the credit; write-offs: pieces at buying or selling rate)
+  ownerOnly?: boolean;    // above the owner's limit: the owner decides, not the office
+  shopId?: string;
+  rows: Record<string, string | number>[]; // return: invoiceId, productId, qty, restock · damage: productId, qty, kind, fromStock, note · count: batchId, productId, system, counted
+  photo?: string;
+  decidedBy?: string; decidedAt?: string; rejectReason?: string;
+  result?: string;        // what approving made (credit note numbers / stock moved)
 }
 
 export interface Payment extends Base {
@@ -251,6 +304,10 @@ export interface Payment extends Base {
   correctionOf?: string; // this payment replaces a wrong one (kept, cancelled, for the audit trail)
   dupOk?: boolean;       // the owner checked: the same amount twice from this shop today is real, not a double entry
   note?: string;
+  receiptNo?: string;    // R/FY/n — the running receipt number the shop is shown (from the server; numbered at next sync when offline)
+  chequeBank?: string;   // a cheque: the bank written on it
+  chequeDate?: string;   // a cheque: the date written on it (post-dated: it clears no dues before this day)
+  bounce?: { at: string; by: string; reason: string };
 }
 
 export interface Purchase extends Base {
@@ -267,6 +324,9 @@ export interface Purchase extends Base {
   tax: number;
   total: number;
   source: 'photo' | 'excel' | 'typed' | 'company'; // 'company' = received against the linked company's own bill
+  credited?: number; // company credit notes set against this bill
+  settlements?: { date: string; amount: number; kind: 'payment' | 'credit_note'; ref?: string; mode?: string }[];
+  valuePending?: boolean; // saved on a staff phone without the buying rate: valued when the owner's phone next opens
 }
 
 export interface Expense extends Base {
@@ -279,6 +339,7 @@ export interface Expense extends Base {
   note?: string;
   photo?: string;
   status?: 'waiting' | 'approved' | 'rejected'; // company side: a field rep's expense, approved with the month's claim
+  gross?: number; // salary: the full salary (cash paid + advance/shortfall recovered) — the P&L cost
 }
 
 export interface BankLine extends Base {
@@ -304,6 +365,8 @@ export interface ClaimEntry extends Base {
   photo?: string;
   invoiceId?: string;
   refNumber?: string; irn?: string; // the company bill this line is about (GST: a credit note must point to it)
+  dropped?: string;       // why this line is not claimed (bill cancelled, all returned, owner dropped it)
+  valuePending?: boolean; // saved on a staff phone without the buying rate: valued when the owner's phone next opens
 }
 
 export interface Claim extends Base {
@@ -464,7 +527,7 @@ export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests' | 'stockMoves';
 
 /** TESRAX report: one record per staff per day (small to sync; the owner reads every staff's days).
  *  Counts every message to TESRAX: its speed on the real phone, whether it was understood, and what happened to the table it prepared. */

@@ -8,7 +8,9 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN ?? '*',
   // photo reads per month by plan (definition doc: 300 / 1,000 / 3,000)
   scanAllowance: { single: 300, triple: 1000, all: 3000 } as Record<string, number>,
+  scanTrial: 100,          // a free trial's photo reads per month
   pullLimit: 2000,
+  pullBytes: 4 * 1024 * 1024, // one pull page, by stored size (records with photos): rows and bytes both cap a page
   // payments (Razorpay subscriptions with UPI Autopay). Plans map "tier:pack" → Razorpay plan id, e.g. {"medium:complete":"plan_Nx…"}
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? '',
@@ -21,3 +23,5 @@ export const config = {
 };
 
 if (!config.jwtSecret) throw new Error('JWT_SECRET must be set in production');
+// in production only our own web app and the Android app may call the server from a browser
+if (process.env.NODE_ENV === 'production' && config.corsOrigin === '*') throw new Error('CORS_ORIGIN must be set in production');

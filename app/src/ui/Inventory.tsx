@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, Boxes, Camera, FileSpreadsheet, MessageSquareText, Split, Tag } from 'lucide-react';
 import { ChangeSet, db, localDay, session, today, monthEnd, ymd, daysFrom } from '../core/db';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showDate } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
 import { Pack } from './Pack';
 import { askText, confirmBox, notify } from './dialog';
-import { countLot } from '../core/billing';
+import { countOrRequest, damageOrRequest } from '../core/requests';
 import type { Batch, Company, Product } from '../core/types';
 
 const months = () => { const out: string[] = []; const d = new Date(); for (let i = 0; i < 36; i++) { const x = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(ymd(x).slice(0, 7)); } return out; };
@@ -23,10 +23,16 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
   const [all, setAll] = useState('');
   useEffect(() => { db.products.toArray().then(setProducts); db.companies.toArray().then(setCompanies); }, []);
   const pmap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
-  const add = (p: Product) => { if (rows.some(r => r.productId === p.id)) return; setRows(r => [...r, { productId: p.id, qty: p.caseSize, expiry: '', mrp: p.mrp, rate: p.purchaseRate, batch: '' }]); setQ(''); };
-  const bad = rows.filter(r => !r.expiry || r.qty <= 0);
+  // a staff phone has no buying rate: the box starts empty (the company bill's rate can be typed; if left empty, the owner's phone values it)
+  const add = (p: Product) => { if (rows.some(r => r.productId === p.id)) return; setRows(r => [...r, { productId: p.id, qty: p.caseSize, expiry: '', mrp: p.mrp, rate: Number.isFinite(p.purchaseRate) ? p.purchaseRate : 0, batch: '' }]); setQ(''); };
+  const bad = rows.filter(r => !r.expiry || r.qty <= 0 || !Number.isInteger(r.qty));
+  const [saving, setSaving] = useState(false);
   const save = async () => {
-    if (bad.length) return;
+    if (bad.length || saving) return; // locked while saving: a double tap never adds the stock twice
+    setSaving(true);
+    try { await saveOnce(); } catch (e) { await notify('Not saved', (e as Error).message); } finally { setSaving(false); }
+  };
+  const saveOnce = async () => {
     const cs = new ChangeSet();
     const existing = await db.batches.toArray();
     for (const r of rows) {
@@ -34,10 +40,12 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
       const same = existing.find(b => b.productId === r.productId && b.expiry === exp && b.mrp === r.mrp && (!r.batch || b.batch === r.batch));
       if (same) cs.put('batches', { ...same, qty: same.qty + r.qty }, 'stock in (merged lot)');
       else cs.put<Batch>('batches', { productId: r.productId, batch: r.batch || `L${today().replace(/-/g, '').slice(2)}`, expiry: exp, mrp: r.mrp, qty: r.qty, godown: 'Main' }, 'stock in');
-      const p = pmap.get(r.productId)!; if (r.rate !== p.purchaseRate) cs.put('products', { ...p, purchaseRate: r.rate }, 'purchase rate');
+      const p = pmap.get(r.productId)!; if (r.rate > 0 && r.rate !== p.purchaseRate) cs.put('products', { ...p, purchaseRate: r.rate }, 'purchase rate');
     }
     const companyId = pmap.get(rows[0].productId)?.companyId ?? companies[0]?.id ?? '';
-    cs.put('purchases', { companyId, billNo: billNo || `MANUAL-${Date.now().toString().slice(-5)}`, date: today(), lines: rows.map(r => ({ productId: r.productId, batch: r.batch, expiry: monthEnd(r.expiry), mrp: r.mrp, qty: r.qty, freeQty: 0, rate: r.rate, discount: 0, gst: pmap.get(r.productId)?.gst ?? 0, amount: r2(r.qty * r.rate) })), taxable: r2(rows.reduce((a, r) => a + r.qty * r.rate, 0)), total: r2(rows.reduce((a, r) => a + r.qty * r.rate * (1 + (pmap.get(r.productId)?.gst ?? 0) / 100), 0)), paid: 0 }, 'purchase');
+    const rate = (r: typeof rows[0]) => Number.isFinite(r.rate) && r.rate > 0 ? r.rate : 0;
+    const taxable = r2(rows.reduce((a, r) => a + r.qty * rate(r), 0));
+    cs.put('purchases', { companyId, billNo: billNo.trim() || `MANUAL-${Date.now().toString().slice(-5)}`, date: today(), lines: rows.map(r => ({ productId: r.productId, batch: r.batch, expiry: monthEnd(r.expiry), mrp: r.mrp, qty: r.qty, freeQty: 0, rate: rate(r), discount: 0, gst: pmap.get(r.productId)?.gst ?? 0, amount: r2(r.qty * rate(r)) })), taxable, tax: r2(rows.reduce((a, r) => a + r.qty * rate(r) * (pmap.get(r.productId)?.gst ?? 0) / 100, 0)), total: r2(rows.reduce((a, r) => a + r.qty * rate(r) * (1 + (pmap.get(r.productId)?.gst ?? 0) / 100), 0)), paid: 0, source: 'typed', valuePending: rows.some(r => !rate(r)) || undefined }, 'purchase');
     await cs.commit('Stock in');
     setMsg(`${rows.length} ${'items added to stock'}`); setRows([]); setBillNo('');
   };
@@ -47,7 +55,7 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
         <button className="btn grow" onClick={onRox}><Camera /> {'Photo of company bill'}</button>
         <button className="btn grow" onClick={onRox}><FileSpreadsheet /> {'Excel from company'}</button>
       </div>
-      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {'Both go through TESRAX: send the file, say "add this to inventory", approve the table. Or add by hand below.'}</div>
+      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {'Tap one, send the photo or Excel to TESRAX, check the products it reads and tap ✓ — the stock is added. Or add by hand below.'}</div>
       <div className="card stack">
         <div className="field"><label>{'Company bill no (optional)'}</label><input value={billNo} onChange={e => setBillNo(e.target.value)} /></div>
         <div className="field"><input placeholder={'Search product to add…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Search product" /></div>
@@ -60,11 +68,11 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
               <div className="field"><label>{'Pieces'}</label><input type="number" value={r.qty || ''} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, qty: Number(e.target.value) } : x))} style={{ width: 90 }} /></div>
               <div className="field"><label style={{ color: !r.expiry ? 'var(--bad)' : undefined }}>{'Expiry month *'}</label><select value={r.expiry} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, expiry: e.target.value } : x))}><option value="">{'pick'}</option>{months().map(m => <option key={m} value={m}>{m.slice(5)}/{m.slice(2, 4)}</option>)}</select></div>
               <div className="field"><label>MRP</label><input type="number" value={r.mrp} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, mrp: Number(e.target.value) } : x))} style={{ width: 80 }} /></div>
-              <div className="field"><label>{'Rate'}</label><input type="number" value={r.rate} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, rate: Number(e.target.value) } : x))} style={{ width: 80 }} /></div>
+              <div className="field"><label>{'Rate'}</label><input type="number" value={r.rate || ''} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, rate: Number(e.target.value) } : x))} style={{ width: 80 }} /></div>
               <div className="field"><label>{'Batch (optional)'}</label><input value={r.batch} onChange={e => setRows(rs => rs.map((x, k) => k === i ? { ...x, batch: e.target.value } : x))} style={{ width: 100 }} /></div>
             </div>
           </div>); })}
-        {rows.length > 0 && <button className="btn primary big block" disabled={bad.length > 0} onClick={save}><Check /> {bad.length ? `Fill expiry on ${plural(bad.length, 'line')}` : 'Add to stock'}</button>}
+        {rows.length > 0 && <button className="btn primary big block" disabled={bad.length > 0 || saving} onClick={save}><Check /> {bad.length ? `Fill expiry on ${plural(bad.length, 'line')}` : 'Add to stock'}</button>}
       </div>
       {msg && <div className="alert ok"><Check /><div>{msg}</div></div>}
       <RecentPurchases />
@@ -76,7 +84,7 @@ function RecentPurchases() {
   const [rows, setRows] = useState<{ billNo: string; date: string; company: string; total: number; paid: number }[]>([]);
   useEffect(() => { (async () => { const c = new Map((await db.companies.toArray()).map(x => [x.id, x.name])); setRows((await db.purchases.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(p => ({ billNo: p.billNo, date: p.date, company: c.get(p.companyId) ?? '', total: p.total, paid: p.paid ?? 0 }))); })(); }, []);
   if (!rows.length) return null;
-  return <div className="card"><div className="sechead"><h3>{'Company bills & dues'}</h3></div><div className="list">{rows.map(r => <div key={r.billNo} className="item"><div className="grow"><div className="t">{r.company} · {r.billNo}</div><div className="s">{r.date}</div></div><span className="amt num">{inr(r.total)}</span>{r.total - r.paid > 0.5 && <span className="badge warn">{'due'}</span>}</div>)}</div></div>;
+  return <div className="card"><div className="sechead"><h3>{'Company bills & dues'}</h3></div><div className="list">{rows.map(r => <div key={r.billNo} className="item"><div className="grow"><div className="t">{r.company} · {r.billNo}</div><div className="s">{showDate(r.date)}</div></div><span className="amt num">{inr(r.total)}</span>{r.total - r.paid > 0.5 && <span className="badge warn">{'due'}</span>}</div>)}</div></div>;
 }
 
 // ---------- Stock position: company → product → lots. Godown sees counts; owner also sees value. ----------
@@ -112,7 +120,7 @@ export function StockPosition() {
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small" onClick={async () => { const n = await askText('How many pieces in the second lot?'); const q = Number(n); if (!q || q >= b.qty) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - q }, 'split'); cs.put<Batch>('batches', { productId: b.productId, batch: b.batch + 'B', expiry: b.expiry, mrp: b.mrp, qty: q, godown: b.godown }, 'split lot'); await cs.commit('Lot split'); setTick(x => x + 1); }}><Split size={14} /> {'Split'}</button>
                   <button className="btn small" onClick={async () => { const m = await askText('New expiry month (MM/YY)'); if (!m || !/^\d{2}\/\d{2}$/.test(m)) return; const exp = monthEnd(`20${m.slice(3)}-${m.slice(0, 2)}`); const cs = new ChangeSet(); cs.put('batches', { ...b, expiry: exp }, `expiry changed ${b.expiry} → ${exp}`); await cs.commit('Expiry changed'); setTick(x => x + 1); }}><Tag size={14} /> {'Change expiry'}</button>
-                  <button className="btn small" onClick={async () => { const n = await askText('Counted pieces on the shelf?'); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText('Remark for the difference'); if (!why) return; const cs = new ChangeSet(); try { countLot(cs, b, q, why); } catch (e) { void notify('Count not saved', (e as Error).message); return; } await cs.commit('Stock count'); setTick(x => x + 1); }}><Boxes size={14} /> {'Count'}</button>
+                  <button className="btn small" onClick={async () => { const n = await askText('Counted pieces on the shelf?'); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText('Remark for the difference'); if (!why) return; const cs = new ChangeSet(); try { const c = await countOrRequest(cs, [{ batchId: b.id, productId: b.productId, system: b.qty, counted: q }], why); await cs.commit('Stock count'); if (c.requested) void notify('Sent to the owner', `This count writes off about ${inr(c.value)}, above the limit. Stock changes when the owner approves.`); } catch (e) { void notify('Count not saved', (e as Error).message); return; } setTick(x => x + 1); }}><Boxes size={14} /> {'Count'}</button>
                   <button className="btn small" onClick={async () => { const m = await askText('New MRP for this lot', String(b.mrp)); const v = Number(m); if (!m || !v) return; const cs = new ChangeSet(); cs.put('batches', { ...b, mrp: v }, `mrp ${b.mrp} → ${v}`); await cs.commit('MRP changed'); setTick(x => x + 1); }}><Tag size={14} /> MRP</button>
                   <button className="btn small" onClick={async () => { const m = await askText('Batch number', b.batch); if (m === null) return; const cs = new ChangeSet(); cs.put('batches', { ...b, batch: m }, `batch ${b.batch} → ${m}`); await cs.commit('Batch changed'); setTick(x => x + 1); }}><Tag size={14} /> {'Batch'}</button>
                 </div>
@@ -199,15 +207,22 @@ export function Damages() {
   const [photo, setPhoto] = useState<string>();
   const [list, setList] = useState<{ id: string; name: string; qty: number; kind: string; amount: number; date: string }[]>([]);
   const [tick, setTick] = useState(0);
-  useEffect(() => { (async () => { const ps = await db.products.toArray(); setProducts(ps); const pm = new Map(ps.map(p => [p.id, p.name])); setList((await db.claimEntries.toArray()).filter(c => c.kind !== 'scheme').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10).map(c => ({ id: c.id, name: pm.get(c.productId ?? '') ?? '', qty: c.qty, kind: c.kind, amount: c.amount, date: localDay(c.createdAt) }))); })(); }, [tick]);
+  const [saving, setSaving] = useState(false);
+  const [owner, setOwner] = useState(false); // only the owner sees buying-rate values
+  useEffect(() => { (async () => { setOwner((await db.staff.get(session().userId))?.role === 'owner'); const ps = await db.products.toArray(); setProducts(ps); const pm = new Map(ps.map(p => [p.id, p.name])); setList((await db.claimEntries.toArray()).filter(c => c.kind !== 'scheme' && !c.dropped).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10).map(c => ({ id: c.id, name: pm.get(c.productId ?? '') ?? '', qty: c.qty, kind: c.kind, amount: c.amount, date: localDay(c.createdAt) }))); })(); }, [tick]);
   const save = async () => {
-    if (!sel || qty <= 0) return;
+    if (!sel || qty <= 0 || !Number.isInteger(qty) || saving) return; // locked while saving: one tap = one entry
+    setSaving(true);
+    try { await saveOnce(sel); } catch (e) { await notify('Not saved', (e as Error).message); } finally { setSaving(false); }
+  };
+  const saveOnce = async (sel: Product) => {
     const cs = new ChangeSet();
-    cs.put('claimEntries', { companyId: sel.companyId, month: today().slice(0, 7), kind, productId: sel.id, qty, amount: r2(qty * sel.purchaseRate), note: kind, photo }, 'damage');
-    // reduce stock from the oldest lot
-    const lots = (await db.batches.toArray()).filter(b => b.productId === sel.id && b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
-    let left = qty; for (const b of lots) { if (left <= 0) break; const take = Math.min(b.qty, left); cs.put('batches', { ...b, qty: b.qty - take }, 'damaged out'); left -= take; }
-    await cs.commit('Damage entry'); setSel(null); setQty(0); setPhoto(undefined); setQ(''); setTick(x => x + 1);
+    // valued at the buying rate (on a staff phone the owner's phone fills the value in later); stock out from the oldest
+    // lot; above the owner's write-off limit it waits for the owner (core/requests.ts)
+    const d = await damageOrRequest(cs, [{ productId: sel.id, qty, kind, fromStock: true, note: kind }], photo);
+    await cs.commit('Damage entry');
+    if (d.requested) void notify('Sent to the owner', `About ${inr(d.value)} — above the write-off limit. Stock changes when the owner approves.`);
+    setSel(null); setQty(0); setPhoto(undefined); setQ(''); setTick(x => x + 1);
   };
   return (
     <div className="stack">
@@ -221,10 +236,10 @@ export function Damages() {
           <div className="segmented">{(['damage', 'expiry', 'transit'] as const).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{k === 'damage' ? 'Damaged / leak' : k === 'expiry' ? 'Expired' : 'In van'}</button>)}</div>
           <div className="field"><label>{'Pieces'}</label><input className="bigamount" type="number" value={qty || ''} onChange={e => setQty(Number(e.target.value))} /></div>
           <PhotoButton facing="environment" onPhoto={setPhoto} />
-          <button className="btn primary big block" disabled={qty <= 0} onClick={save}><Check /> {'Save → claim'}</button>
+          <button className="btn primary big block" disabled={qty <= 0 || saving} onClick={save}><Check /> {'Save → claim'}</button>
         </>}
       </div>
-      <div className="list">{list.map(x => <div key={x.id} className="item"><div className="avatar bad"><AlertTriangle size={18} /></div><div className="grow"><div className="t">{x.name}</div><div className="s">{x.qty} pcs · {x.kind} · {x.date}</div></div><span className="amt num">{inr(x.amount)}</span></div>)}</div>
+      <div className="list">{list.map(x => <div key={x.id} className="item"><div className="avatar bad"><AlertTriangle size={18} /></div><div className="grow"><div className="t">{x.name}</div><div className="s">{x.qty} pcs · {x.kind} · {showDate(x.date)}</div></div>{owner && <span className="amt num">{inr(x.amount)}</span>}</div>)}</div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { PhotoButton } from './PhotoButton';
 import { Upload, Check, Store, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
 import { ChangeSet, db, session, today, activeShops } from '../core/db';
 import { orderStops } from '../core/pipeline';
-import { inr, speak, t } from '../core/i18n';
+import { inr, speak, t, showTime } from '../core/i18n';
 import { downloadWorkbook, isSheet, readSheet, readShopRows } from '../core/readers';
 import { norm } from '../core/match';
 import type { DayPlan, LiteEntry, Shop } from '../core/types';
@@ -84,7 +84,7 @@ export function LiteDelivery() {
   const done = stops.filter(s => s.entry).length;
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done today'}</div></div>
+      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done today'}</div></div>
       <div className="route">
         {stops.map((s, k) => (
           <button key={s.id} className={`stop item tap ${s.entry ? 'done' : k === done ? 'now' : ''}`} style={{ opacity: s.entry ? .6 : 1 }} onClick={() => setOpen(s)}>
@@ -162,8 +162,8 @@ export function LiteExport() {
     const names = new Map((await activeShops()).map(s => [s.id, s]));
     const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
     await downloadWorkbook(`Hanubix-day-${today()}`, [
-      { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
-      { name: 'Collections', header: ['Shop', 'Amount', 'Mode', 'Ref', 'Time', 'By'], rows: es.filter(e => e.kind === 'payment').map(e => [names.get(e.shopId)?.name ?? '', e.amount ?? 0, e.mode ?? '', e.ref ?? '', e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
+      { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, showTime(e.createdAt), staff.get(e.by) ?? e.by]) },
+      { name: 'Collections', header: ['Shop', 'Amount', 'Mode', 'Ref', 'Time', 'By'], rows: es.filter(e => e.kind === 'payment').map(e => [names.get(e.shopId)?.name ?? '', e.amount ?? 0, e.mode ?? '', e.ref ?? '', showTime(e.createdAt), staff.get(e.by) ?? e.by]) },
     ]);
   };
   return (

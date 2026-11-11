@@ -30,6 +30,14 @@ const audit = () => {
     if (direct && (cs.overflow === 'hidden' || cs.overflowX === 'hidden') && el.scrollWidth > el.clientWidth + 2 && cs.textOverflow !== 'ellipsis' && !cs.webkitLineClamp) { const k = `CLIPPED ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
     if (r.right > de.clientWidth + 2 && !el.closest('.tablewrap, table, .chips, .cat, .segmented, [style*="overflow"]') && cs.position !== 'fixed') { const k = `OFFSCREEN ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${(el.textContent || '').trim().slice(0, 30)}" right=${Math.round(r.right)}`; if (!seen.has(k) && seen.size < 400) { seen.add(k); out.push(k); } }
   }
+  // a word (or a bill number) is never broken across two lines in a list row
+  for (const el of document.querySelectorAll('.item .s, .item .t, .billno')) {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) for (const m of n.textContent.matchAll(/\S+/g)) {
+      const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+      const lines = new Set([...rg.getClientRects()].map(q => Math.round(q.top / 4))); if (lines.size > 1) { const k = `WORD-SPLIT "${m[0]}" in "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
+    }
+  }
   // text drawn over other text (a label running into its neighbour on a wider phone)
   const texts = [];
   for (const el of document.querySelectorAll('body *')) {
@@ -56,6 +64,19 @@ const audit = () => {
   }
   return out;
 };
+// scrolled to the end, no button or box on the page sits under the TESRAX core in the tab bar (UX round 4)
+const ballCheck = async (p) => {
+  await p.evaluate(() => { const m = document.querySelector('.main'); if (m) m.scrollTo(0, m.scrollHeight); }); await p.waitForTimeout(200);
+  return p.evaluate(() => {
+    const fab = document.querySelector('.fab'); if (!fab || getComputedStyle(fab).display === 'none') return [];
+    const f = fab.getBoundingClientRect(); const out = [];
+    for (const el of document.querySelectorAll('.main button, .main a.btn, .main input, .main select')) {
+      const r = el.getBoundingClientRect(); if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') continue;
+      if (r.right > f.left + 4 && r.left < f.right - 4 && r.bottom > f.top + 4 && r.top < f.bottom) out.push(`TESRAX core covers "${(el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 30)}"`);
+    }
+    return out;
+  });
+};
 module.exports = { audit, ROLES }; // the Android check (e2e/android-sweep.cjs) uses the same rules on the real phone app
 if (require.main === module) (async () => {
   const b = await chromium.launch();
@@ -80,11 +101,12 @@ if (require.main === module) (async () => {
     const tag = who.split(' ')[0] + (width === 360 ? '' : `@${width}`);
     const check = async (name) => {
       await p.waitForTimeout(450);
-      const a = await p.evaluate(audit);
+      const a0 = await p.evaluate(audit);
+      await p.screenshot({ path: `${OUT}/sweep/${tag}-${name.replace(/[^a-z0-9]+/gi, '_')}.png` });
+      const a = [...a0, ...await ballCheck(p)];
       const e = errs.splice(0);
       if (a.length || e.length) report.push({ who: tag, page: name, issues: [...e, ...a] });
       screens++;
-      await p.screenshot({ path: `${OUT}/sweep/${tag}-${name.replace(/[^a-z0-9]+/gi, '_')}.png` });
     };
     await check('home');
     const goHome = async () => { await p.click('nav >> text=Home').catch(() => {}); await p.waitForTimeout(300); };
@@ -109,6 +131,17 @@ if (require.main === module) (async () => {
     }
     await p.click('.fab'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1200); await check('Engine help');
+    // a TESRAX table on a narrow phone: the money column is on screen, next to the product; "#" and "You said" are left out
+    if (who.startsWith('Vishnu')) {
+      await p.fill('.engine textarea', 'Murugan Stores 2 case Surf'); await p.keyboard.press('Enter'); await p.waitForTimeout(1500);
+      const t = await p.evaluate(() => { const ths = [...document.querySelectorAll('.engine .prop table.grid th')]; const a = ths.find(x => x.textContent.trim() === 'Amount'); return { heads: ths.map(x => x.textContent.trim()), right: a ? a.getBoundingClientRect().right : 1e9, vw: document.documentElement.clientWidth }; });
+      const issues = [];
+      if (t.right > t.vw) issues.push(`TESRAX order table: the Amount column is off screen (${Math.round(t.right)} > ${t.vw})`);
+      if (width <= 430 && (t.heads.includes('#') || t.heads.includes('You said'))) issues.push(`TESRAX order table at ${width} px still shows # / You said: ${t.heads.join(', ')}`);
+      if (t.heads.indexOf('Amount') !== t.heads.indexOf('Product') + 1) issues.push(`TESRAX order table: Amount should sit next to Product (${t.heads.join(', ')})`);
+      if (issues.length) report.push({ who: tag, page: 'Engine order table', issues });
+      await check('Engine order table');
+    }
     await ctx.close();
   }
   fs.writeFileSync(`${OUT}/sweep/report.json`, JSON.stringify(report, null, 1));

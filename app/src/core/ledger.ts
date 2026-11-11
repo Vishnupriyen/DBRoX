@@ -1,5 +1,5 @@
 import { db, today } from './db';
-import type { Invoice, Shop } from './types';
+import type { Invoice, OpeningDue, Payment, Shop } from './types';
 
 // Money rules. Plain code, never AI: every number must be exact and explainable.
 export const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -8,13 +8,27 @@ export interface InvoiceBalance { invoice: Invoice; paid: number; credited: numb
 
 export async function invoiceBalances(shopId?: string): Promise<InvoiceBalance[]> { return (await balancesAndAdvance(shopId)).rows; }
 
+/** a shop's old due (loaded from the owner's sheet) seen as an open bill: it shows, ages, counts against credit and is
+ *  collected exactly like one — but it is never a GST bill and never in sales (it lives in its own table) */
+export function openingAsBill(o: OpeningDue): Invoice {
+  return {
+    id: o.id, tenantId: o.tenantId, createdAt: o.createdAt, updatedAt: o.updatedAt, number: o.ref ? `Old bill ${o.ref}` : 'Old balance',
+    companyId: '', shopId: o.shopId, date: o.date, kind: 'B2C', lines: [], taxable: 0, cgst: 0, sgst: 0, igst: 0, roundOff: 0,
+    total: o.amount, schemeSaving: 0, deliveryStatus: 'delivered', opening: true,
+  };
+}
+/** does this payment clear dues today? A bounced or cancelled one never; a post-dated cheque not before its date. */
+export const paymentCounts = (p: Payment, day = today()) => p.status !== 'cancelled' && p.status !== 'bounced' && !(p.mode === 'cheque' && p.chequeDate && p.chequeDate > day);
+
 async function balancesAndAdvance(shopId?: string): Promise<{ rows: InvoiceBalance[]; advanceLeft: Map<string, number> }> {
   const invs = shopId
     ? await db.invoices.where('shopId').equals(shopId).toArray()
     : await db.invoices.toArray();
-  const live = invs.filter(i => !i.cancelled);
+  const opening = (shopId ? await db.openingDues.where('shopId').equals(shopId).toArray() : await db.openingDues.toArray()).map(openingAsBill);
+  const live = [...invs.filter(i => !i.cancelled), ...opening];
+  const t0 = today();
   const pays = (shopId ? await db.payments.where('shopId').equals(shopId).toArray() : await db.payments.toArray())
-    .filter(p => p.status !== 'cancelled' && p.status !== 'bounced');
+    .filter(p => paymentCounts(p, t0));
   const cns = shopId ? await db.creditNotes.where('shopId').equals(shopId).toArray() : await db.creditNotes.toArray();
   const paidBy = new Map<string, number>();
   for (const p of pays) for (const a of p.allocations) paidBy.set(a.invoiceId, (paidBy.get(a.invoiceId) ?? 0) + a.amount);
@@ -91,7 +105,8 @@ export async function allocateOldestFirst(shopId: string, amount: number) {
   return { allocations, advance: left > 0 ? left : 0 };
 }
 
-export function isB2B(shop: Shop) { return !!shop.gstin && shop.gstin.length === 15; }
+/** B2B only with a GSTIN that passes the format and check-digit test (a typo'd 15 characters is not a registration) */
+export function isB2B(shop: Shop) { return !!shop.gstin && validGstin(shop.gstin.trim().toUpperCase()); }
 
 // GSTIN format check (state code + PAN + entity + Z + checksum character).
 export function validGstin(g: string): boolean {

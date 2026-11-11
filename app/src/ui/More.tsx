@@ -7,8 +7,9 @@ import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { inr, t, showDate } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
-import { ENV_SERVER, syncNow } from '../core/sync';
-import { addClaimLine, decisionsFor, openLines, sendClaim } from '../core/claims';
+import { ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
+import { addClaimLine, claimable, decisionsFor, dropClaimLine, openLines, sendClaim } from '../core/claims';
+import { billChangeBlock } from '../core/gst';
 import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
 import { PrintBill } from './PrintBill';
 import { ask, askText, confirmBox, notify } from './dialog';
@@ -106,13 +107,14 @@ function SettingsPage({ editable }: { editable: boolean }) {
   if (!s) return null;
   const f = (k: keyof Settings, label: string, type = 'text') => (
     <div className="field" style={{ marginBottom: 8 }}><label>{label}</label>
-      <input type={type} readOnly={!editable} value={String(s[k] ?? '')} onChange={e => { setSaved(false); setS({ ...s, [k]: type === 'number' ? Number(e.target.value) : e.target.value }); }} /></div>
+      <input type={type} readOnly={!editable} value={String(s[k] ?? '')} onChange={e => { setSaved(false); setS({ ...s, [k]: type === 'number' ? (e.target.value === '' ? undefined : Number(e.target.value)) : e.target.value }); }} /></div>
   );
   return (
     <div className="card">
       <h3>{t('settings')}</h3>
       {f('firmName', 'Firm name')}{f('gstin', 'GSTIN')}{f('address', 'Address (with 6-digit PIN)')}{f('phone', 'Phone')}
       {f('returnApprovalLimit', 'Returns above ₹ need owner OK', 'number')}{f('discountAlertPct', 'Alert when rate is below standard by %', 'number')}
+      {f('writeOffLimit', 'Damage / stock count write-offs above ₹ need owner OK (500 if empty)', 'number')}
       <div className="field" style={{ marginBottom: 8 }}><label>Bill size</label>
         <select disabled={!editable} value={s.billFormat} onChange={e => setS({ ...s, billFormat: e.target.value as Settings['billFormat'] })}>
           <option value="A5">A5</option><option value="A4">A4</option><option value="dotmatrix">Dot-matrix</option></select></div>
@@ -122,6 +124,7 @@ function SettingsPage({ editable }: { editable: boolean }) {
       <div className="toggle"><span>Driver takes a second photo of the signed bill / GRN</span><button className={`switch ${s.grnPhoto !== false ? 'on' : ''}`} disabled={!editable} aria-label="GRN photo" onClick={() => setS({ ...s, grnPhoto: s.grnPhoto === false })} /></div>
       <h3 style={{ marginTop: 14 }}>Staff check-in</h3>
       {f('checkInBy', 'Check-in after this time is "late" (HH:MM)')}
+      {f('paidLeaves', 'Paid leave days a month (2 if empty)', 'number')}
       <div className="row" style={{ gap: 8 }}>{f('godownLat', 'Godown latitude', 'number')}{f('godownLng', 'Godown longitude', 'number')}</div>
       <button className="btn small" onClick={async () => { const { getPos } = await import('./Beat'); const p = await getPos(); if (p) setS({ ...s, godownLat: p.lat, godownLng: p.lng }); else void notify('Location', 'Could not read the phone location.'); }}>Use my location now</button>
       {f('serverUrl', 'Hanubix server address (for sync and photo reading)')}
@@ -165,6 +168,7 @@ function StaffPage({ editable }: { editable: boolean }) {
   const add = async () => {
     if (!form.name || !/^\d{10}$/.test(form.phone) || !/^\d{4}$/.test(form.pin)) { void notify('Name, 10-digit phone and 4-digit PIN needed'); return; }
     if (list.some(s => s.phone === form.phone)) { void notify('This phone number is already used'); return; }
+    if (weakPin(form.pin)) { void notify(WEAK_PIN_MSG); return; }
     const cs = new ChangeSet(); cs.put<Staff>('staff', { ...form, active: true }, 'add staff'); await cs.commit('Staff added');
     setForm({ name: '', phone: '', role: 'salesman', pin: '' }); load();
   };
@@ -239,14 +243,14 @@ function Bills({ canCancel }: { canCancel: boolean }) {
               <span className="amt num">{inr(i.total)}</span>
             </div>
             <div className="row actions">
-            {canCancel && !i.cancelled && !i.printedAt && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
+            {canCancel && !billChangeBlock(i, 'edit', today()) && <button className="btn small" onClick={() => setEditing(i)}>{t('edit')}</button>}
             <button className="btn small" onClick={() => setPrinting(i)} aria-label="Print"><Printer /></button>
-            {canCancel && !i.cancelled && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /> Cancel</button>}
+            {canCancel && !billChangeBlock(i, 'cancel', today()) && <button className="btn small ghost danger" onClick={() => cancel(i)} aria-label="Cancel bill"><X /> Cancel</button>}
             </div>
           </div>
         ))}
       </div>
-      {printing && <PrintBill invoice={printing} onClose={async () => { if (!printing.printedAt) { const cs = new ChangeSet(); cs.put('invoices', { ...printing, printedAt: new Date().toISOString() }, 'printed'); await cs.commit('Bill printed'); } setPrinting(null); load(); }} />}
+      {printing && <PrintBill invoice={printing} onClose={() => { setPrinting(null); load(); }} />}
       {editing && <BillEditor invoice={editing} onClose={saved => { setEditing(null); if (saved) load(); }} />}
     </div>
   );
@@ -255,8 +259,14 @@ function Bills({ canCancel }: { canCancel: boolean }) {
 function Claims() {
   const [list, setList] = useState<(Claim & { company: string; decision?: ClaimDecision })[]>([]);
   const [linked, setLinked] = useState<{ id: string; name: string; open: number; amount: number }[]>([]);
+  const [lines, setLines] = useState<(ClaimEntry & { company: string })[]>([]);
   const load = async () => {
     const all = await db.companies.toArray();
+    // this month's claim lines that are not sent yet: the owner sees each one and can drop it before sending
+    const cn = new Map(all.map(c => [c.id, c.name]));
+    const open: (ClaimEntry & { company: string })[] = [];
+    for (const c of all) for (const e of await openLines(c.id, thisMonth())) open.push({ ...e, company: cn.get(c.id) ?? '' });
+    setLines(open);
     const cos = new Map(all.map(c => [c.id, c.name]));
     const claims = (await db.claims.toArray()).sort((a, b) => b.month.localeCompare(a.month));
     const dec = await decisionsFor(claims.map(c => c.id));
@@ -290,11 +300,21 @@ function Claims() {
           })}>+ Line</button>
         </div>
       ))}
+      {lines.length > 0 && <div className="sechead"><h3>{'Claim lines this month'} · {inr(lines.reduce((a, e) => a + e.amount, 0))}</h3></div>}
+      {lines.length > 0 && <div className="list">
+        {lines.slice(0, 50).map(e => (
+          <div key={e.id} className="item">
+            <div className="grow"><div className="t">{e.company} · {e.kind}</div><div className="s">{e.note || ''} · {e.qty} pcs</div></div>
+            <span className="amt num">{inr(e.amount)}</span>
+            <button className="btn small ghost danger" aria-label="Drop claim line" onClick={() => tryIt(async () => { const why = await askText('Drop this line from the claim? Say why', 'Company does not pay this'); if (why) await dropClaimLine(e.id, why); })}><X /></button>
+          </div>
+        ))}
+      </div>}
       <button className="btn small" style={{ margin: '8px 0' }} onClick={async () => {
         const cos = await db.companies.toArray(); if (!cos.length) return;
         const companyId = (await ask('Which company?', { choices: cos.map(c => ({ label: c.name, value: c.id })) })) as string; if (!companyId) return;
         const month = await askText('Month (YYYY-MM)', thisMonth()); if (!month) return;
-        const open = (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month);
+        const open = (await db.claimEntries.toArray()).filter(e => e.companyId === companyId && e.month === month && claimable(e));
         const auto = open.reduce((a, e) => a + e.amount, 0);
         const amt = Number(await askText(`Claim amount ₹ (${open.length} entries this month total ${inr(auto)})`, String(auto || ''), 'number')); if (!amt) return;
         const note = await askText('Note (scheme / damage / display / other)'); if (note === null) return;

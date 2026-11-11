@@ -11,9 +11,10 @@ step '2/6 Tests (UTC)';                TZ=UTC npx vitest run
 step '3/6 Tests (Asia/Kolkata)';       TZ=Asia/Kolkata CHAOS_SEEDS="${CHAOS_SEEDS:-6}" CHAOS_STEPS="${CHAOS_STEPS:-400}" npx vitest run
 step '4/6 Build';                      npx vite build
 step '5/6 Business day, end to end';
-npx vite preview --port 4173 --strictPort >/dev/null 2>&1 & PREVIEW=$!
+PORT="${GATE_PORT:-4173}"; export E2E_URL="http://localhost:$PORT"   # GATE_PORT lets two copies run the gate side by side
+npx vite preview --port "$PORT" --strictPort >/dev/null 2>&1 & PREVIEW=$!
 trap 'kill $PREVIEW 2>/dev/null || true' EXIT
-for i in $(seq 1 40); do curl -sf http://localhost:4173 >/dev/null && break; sleep 0.5; done
+for i in $(seq 1 40); do curl -sf "$E2E_URL" >/dev/null && break; sleep 0.5; done
 TZ=Asia/Kolkata node e2e/flow.cjs "$OUT"
 TZ=Asia/Kolkata node e2e/company.cjs "$OUT"   # the company side: rep → distributor → goods receipt → claim → credit note
 step '6/6 Every screen, every role, 360 px and 412 px'

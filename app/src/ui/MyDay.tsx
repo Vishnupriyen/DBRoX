@@ -5,7 +5,7 @@ import { confirmBox, notify } from './dialog';
 import { OrderBook } from './OrderBook';
 import type { Order, Shop } from '../core/types';
 import { Check, Clock, X, Pencil } from 'lucide-react';
-import { inr } from '../core/i18n';
+import { inr, showTime } from '../core/i18n';
 
 
 // Salesman's own day: shops visited, orders booked and their value, money collected. Read-only.
@@ -36,7 +36,7 @@ export function MyDay() {
   if (!d) return null;
   // status timeline: sent → approved → picked → billed → delivered, with the time of each step
   const steps = (o: Order, delivered?: string) => {
-    const at = (iso?: string) => iso ? iso.slice(11, 16) : '';
+    const at = (iso?: string) => showTime(iso);
     const list: [string, string, string | undefined, boolean][] = [
       ['Sent', '', o.createdAt, true],
       ['Approved', '', o.approvedAt, ['approved', 'picked', 'billed'].includes(o.status)],
@@ -49,7 +49,7 @@ export function MyDay() {
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops done'}</div></div>
+        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops done'}</div></div>
         <div className="kpi navy"><div className="v">{d.orders}</div><div className="l">{'orders'} · {inr(d.value)}</div></div>
         <div className="kpi"><div className="v">{inr(d.collected)}</div><div className="l">{'collected'}</div></div>
         <div className="kpi"><div className="v">{d.byStatus.billed ?? 0}</div><div className="l">{'orders billed'}</div></div>

@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { billNo, freePort, issueNumbers, realBill } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +11,7 @@ let pgServer: EmbeddedPostgres; let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let link: typeof import('../src/link.js');
 let ar: typeof import('../src/archive.js');
-const port = 54337;
+const port = await freePort();
 beforeAll(async () => {
   process.env.RELAY_INLINE = '1'; process.env.COVER_DELAY_MS = '0';
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-archive-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
@@ -29,8 +30,9 @@ const sync = async (token: string, changes: ReturnType<typeof ch>[] = [], cursor
 const pull = async (token: string) => { let c = 0, more = true; const all: { table: string; id: string; data: Record<string, unknown> }[] = []; while (more) { const r = await sync(token, [], c); all.push(...r.changes); c = r.cursor; more = r.more; } return all; };
 const ist = (daysBack: number) => new Date(Date.now() + 5.5 * 3600e3 - daysBack * 86400e3).toISOString().slice(0, 10);
 const today = ist(0);
-const bill = (id: string, date: string, taxable: number, extra: Record<string, unknown> = {}) => ({ id, number: id, companyId: 'cK', date, shopId: 's1', kind: 'B2B', deliveryStatus: 'delivered',
-  lines: [{ productId: 'dp1', name: 'Oil', qty: 10, freeQty: 0, rate: 40, taxable, total: taxable * 1.05 }], taxable, total: taxable * 1.05, ...extra });
+const nums = new Map<string, string>(); const numOf = (id: string) => nums.get(id) ?? (nums.set(id, billNo(nums.size + 1)), nums.get(id)!);
+const bill = (id: string, date: string, taxable: number, extra: Record<string, unknown> = {}) => realBill({ id, number: numOf(id), companyId: 'cK', date, shopId: 's1', kind: 'B2B', deliveryStatus: 'delivered',
+  lines: [{ productId: 'dp1', name: 'Oil', qty: 10, freeQty: 0, rate: 40, taxable, total: taxable * 1.05 }], ...extra });
 const live = async (tenant: string, tbl: string) => (await pool.query(`SELECT id FROM docs WHERE tenant_id=$1 AND tbl=$2 ORDER BY id`, [tenant, tbl])).rows.map(r => r.id);
 
 let D = { token: '', tenantId: '' }, S = { token: '' }, CO = { token: '', tenantId: '' };
@@ -45,14 +47,15 @@ describe('archive', () => {
   });
 
   it('a distributor\'s old bills move to the archive; recent ones and master records stay live', async () => {
-    D = (await post('/v1/signup', { firmName: 'Sri Murugan', ownerName: 'O', phone: '9855500001', pin: '1234' })).body;
+    D = (await post('/v1/signup', { firmName: 'Sri Murugan', ownerName: 'O', phone: '9855500001', pin: '4826' })).body;
+    await issueNumbers(pool, D.tenantId);
     await sync(D.token, [ch('companies', { id: 'cK', name: 'Kaveri', code: 'KAV', nextBillNo: 1 }), ch('products', { id: 'dp1', companyId: 'cK', name: 'Oil', rate: 40, purchaseRate: 36, active: true }),
       ch('shops', { id: 's1', name: 'Shop', area: 'X', beat: 'Mon', approved: true, aliases: [] }),
       ch('invoices', bill('i1', old1, 400)), ch('invoices', bill('i2', old2, 800)), ch('invoices', bill('i3', keep, 1200)),
       ch('payments', { id: 'p1', shopId: 's1', date: old1, amount: 420, mode: 'cash', status: 'ok' }),
       ch('purchases', { id: 'u1', companyId: 'cK', billNo: 'X1', date: old1, lines: [], total: 5000 }),
-      ch('staff', { id: 'sm', name: 'Ravi', phone: '9855500002', role: 'salesman', pin: '4321', active: true })]);
-    S = (await post('/v1/login', { phone: '9855500002', pin: '4321' })).body;
+      ch('staff', { id: 'sm', name: 'Ravi', phone: '9855500002', role: 'salesman', pin: '7265', active: true })]);
+    S = (await post('/v1/login', { phone: '9855500002', pin: '7265' })).body;
     const r = await ar.archiveTenant(pool, D.tenantId, 'distributor', today);
     expect(r).toBe(4); // i1, i2, p1, u1
     expect(await live(D.tenantId, 'invoices')).toEqual(['i3']);
@@ -90,7 +93,7 @@ describe('archive', () => {
   });
 
   it('a brand keeps distributor bills live 120 days; a claim on an older bill still finds it; a late cancel fixes the totals', async () => {
-    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9855500009', pin: '1234', kind: 'company' })).body;
+    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9855500009', pin: '4826', kind: 'company' })).body;
     await sync(CO.token, [ch('products', { id: 'P1', name: 'Kaveri Oil', code: 'K1', rate: 40, purchaseRate: 36, mrp: 50, gst: 5, caseSize: 12, active: true }),
       ch('dbLinks', { id: 'L0', name: 'Sri Murugan', inviteCode: 'KAVA00', status: 'invited' })]);
     expect((await post('/v1/link/accept', { code: 'KAVA00', companyIdInDb: 'cK' }, D.token)).status).toBe(200);

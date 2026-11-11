@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { billNo, freePort, issueNumbers, realBill } from './fixtures.js';
 import { billingState, makeLicence, sealLicence, openLicence, publicKeySpki, isUpgrade, istToday } from '../src/licence.js';
 
 describe('billing rules (dates → status)', () => {
@@ -48,8 +49,9 @@ describe('billing rules (dates → status)', () => {
 describe('billing on the real server', () => {
   let pgServer: EmbeddedPostgres; let pool: pg.Pool;
   let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
-  const port = 54331;
+  let port = 0;
   beforeAll(async () => {
+    port = await freePort();
     process.env.ADMIN_KEY = 'admin-test-key'; process.env.CRON_KEY = 'cron-test-key'; process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
     pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'hanubix-pg-billing-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
     await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');
@@ -69,7 +71,7 @@ describe('billing on the real server', () => {
   let o = { token: '', tenantId: '' };
 
   it('a new distributor starts a 60-day trial with every module, and the licence comes with login and sync', async () => {
-    const s = await call('POST', '/v1/signup', { firmName: 'Lock Test Agencies', ownerName: 'Owner', phone: '9822222222', pin: '1234' });
+    const s = await call('POST', '/v1/signup', { firmName: 'Lock Test Agencies', ownerName: 'Owner', phone: '9822222222', pin: '4826' });
     expect(s.status).toBe(200); o = s.body;
     expect(lic(s.body.licence)).toMatchObject({ status: 'trial', pack: 'complete' });
     const sy = await call('POST', '/v1/sync', { cursor: 0, changes: [] }, as(o.token));
@@ -78,14 +80,16 @@ describe('billing on the real server', () => {
 
   it('locked: no new bill numbers, no new orders or bills — but money and existing records still sync', async () => {
     const now = new Date().toISOString();
-    await call('POST', '/v1/sync', { cursor: 0, changes: [{ table: 'invoices', id: 'inv-old', updatedAt: now, data: { id: 'inv-old', number: 'A/1', deliveryStatus: 'out' } }] }, as(o.token));
+    await issueNumbers(pool, o.tenantId);
+    const old = realBill({ id: 'inv-old', number: billNo(1), lines: [{ taxable: 100, total: 105 }], deliveryStatus: 'out' });
+    await call('POST', '/v1/sync', { cursor: 0, changes: [{ table: 'invoices', id: 'inv-old', updatedAt: now, data: old }] }, as(o.token));
     await pool.query(`UPDATE tenants SET trial_ends = current_date - 30 WHERE id=$1`, [o.tenantId]);
     expect((await call('POST', '/v1/number', { kind: 'bill' }, as(o.token))).status).toBe(402);
     const later = new Date(Date.now() + 1000).toISOString();
     const r = await call('POST', '/v1/sync', { cursor: 0, changes: [
       { table: 'orders', id: 'o-new', updatedAt: later, data: { id: 'o-new' } },
       { table: 'invoices', id: 'inv-new', updatedAt: later, data: { id: 'inv-new' } },
-      { table: 'invoices', id: 'inv-old', updatedAt: later, data: { id: 'inv-old', number: 'A/1', deliveryStatus: 'delivered' } },
+      { table: 'invoices', id: 'inv-old', updatedAt: later, data: { ...old, deliveryStatus: 'delivered' } },
       { table: 'payments', id: 'pay-1', updatedAt: later, data: { id: 'pay-1', amount: 100 } },
     ] }, as(o.token));
     expect(r.body.rejected.sort()).toEqual(['invoices|inv-new', 'orders|o-new']);

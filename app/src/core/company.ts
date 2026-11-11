@@ -2,7 +2,9 @@
 // Words used in the app: "Sales to distributors" (primary: company → distributor) and "Distributor sales to shops"
 // (secondary: distributor → shop). Every save goes through ChangeSet; numbers are computed, never typed twice.
 import { ChangeSet, daysFrom, db, getSettings, newId, thisMonth, today } from './db';
+import { GST_RATES } from './gst';
 import { bestProduct, norm } from './match';
+import { weakPin, WEAK_PIN_MSG } from './sync';
 import { mapColumns, num, toIsoDate } from './readers';
 import type { DbLink, PrimaryInvoice, PrimaryLine, Product, Scheme, Shop, Staff } from './types';
 
@@ -40,7 +42,7 @@ export async function setNorm(id: string, normDays: number) {
 export interface ProductInput { id?: string; name: string; code?: string; hsn: string; gst: number; mrp: number; rate: number; purchaseRate: number; caseSize: number; aliases?: string[]; active?: boolean; focus?: boolean }
 export function checkProduct(p: ProductInput): string | null {
   if (!p.name.trim()) return 'Product name is needed.';
-  if (![0, 5, 12, 18, 28].includes(p.gst)) return 'GST must be 0, 5, 12, 18 or 28.';
+  if (!GST_RATES.includes(p.gst)) return `GST must be ${GST_RATES.join(', ')}.`;
   if (!(p.mrp > 0)) return 'MRP must be more than 0.';
   if (!(p.rate > 0) || p.rate > p.mrp) return 'Price to shop (PTR) must be more than 0 and not above MRP.';
   if (!(p.purchaseRate > 0) || p.purchaseRate > p.rate) return 'Price to distributor (PTD) must be more than 0 and not above PTR.';
@@ -217,6 +219,7 @@ export async function saveStaff(s: StaffInput) {
   if (all.some(x => x.phone === s.phone && x.id !== s.id)) throw new Error('This mobile already has a login.');
   const cur = s.id ? all.find(x => x.id === s.id) : undefined;
   if (!cur && !/^\d{4}$/.test(s.pin ?? '')) throw new Error('Give a 4-digit PIN for the first login.');
+  if (s.pin && s.pin !== cur?.pin && weakPin(s.pin)) throw new Error(WEAK_PIN_MSG);
   if (s.role === 'manager' && !s.level) throw new Error('Choose RSM, ASM or SO.');
   const cs = new ChangeSet();
   cs.put<Staff>('staff', { ...(cur ?? {}), id: cur?.id, name: s.name.trim(), phone: s.phone, role: s.role, level: s.role === 'manager' ? s.level : undefined, managerId: s.managerId || undefined, dbLinkIds: s.dbLinkIds, hq: s.hq?.trim() || undefined, grade: s.grade || undefined, pin: s.pin || cur?.pin || '', active: s.active ?? cur?.active ?? true } as Staff, cur ? 'team member changed' : 'team member added');

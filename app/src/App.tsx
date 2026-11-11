@@ -198,7 +198,7 @@ export default function App() {
       case 'cheques': return <Cheques />;
       case 'bank': return <Bank onRox={openRox} />;
       case 'expenses': return <Expenses onRox={openRox} />;
-      case 'pnl': return <PnL />;
+      case 'pnl': return me.role === 'owner' ? <PnL /> : <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />; // profit: owner only
       case 'reports': return <Reports />;
       case 'cashflow': return <CashFlow go={go} />;
       case 'vans': return <VansPage editable={me.role === 'owner'} />;
@@ -234,7 +234,7 @@ export default function App() {
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       <DialogHost />
-      <UndoToast />
+      <UndoToast page={`${page}|${module ?? ""}`} />
 
       {rox && (
         <div className="engine" role="dialog" aria-label="TESRAX">
@@ -286,9 +286,9 @@ function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => v
   return <button className={`plan-bar ${lic.status === 'locked' ? 'bad' : ''}`} onClick={onOpen}>{text}</button>;
 }
 
-// The signature gradient as an SVG paint server, so icon accents can use fill="url(#hg)".
+// The signature colour (solid teal, no gradient) as an SVG paint server, so icon accents can use fill="url(#hg)".
 function GradDefs() {
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset=".5" stopColor="#E6E9F4" /><stop offset="1" stopColor="#F9B55B" /></linearGradient></defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset="1" stopColor="#4FE3D6" /></linearGradient></defs></svg>;
 }
 
 function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {

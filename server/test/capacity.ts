@@ -44,7 +44,7 @@ const sizes = { invoices: JSON.stringify(invoice(1)).length, orders: JSON.string
 const t0 = performance.now();
 const base = 7000000000 + Math.floor(Math.random() * 900000000);
 const tokens: string[] = [];
-for (let i = 0; i < TENANTS; i += 20) tokens.push(...await Promise.all(Array.from({ length: Math.min(20, TENANTS - i) }, (_, k) => post('/v1/signup', { firmName: `Load ${i + k}`, ownerName: 'Owner', phone: String(base + (i + k) * 10), pin: '1111' }).then(s => s.token as string))));
+for (let i = 0; i < TENANTS; i += 20) tokens.push(...await Promise.all(Array.from({ length: Math.min(20, TENANTS - i) }, (_, k) => post('/v1/signup', { firmName: `Load ${i + k}`, ownerName: 'Owner', phone: String(base + (i + k) * 10), pin: '3917' }).then(s => s.token as string))));
 console.log(`signed up ${TENANTS} distributors in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
 
 // 2) one full business day per distributor, sent by its phones in syncs of 20 records

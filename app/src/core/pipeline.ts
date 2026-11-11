@@ -1,17 +1,35 @@
-import { inr } from './i18n';
 // The order chain, one step hands to the next:
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
-import { ChangeSet, db, nowIso, session, today, daysFrom, ymd } from './db';
-import { checkOrder, creditNoteNumbers, makeInvoices, pickBatches, type BillCut } from './billing';
-import { r2 } from './ledger';
+import { ChangeSet, db, getSettings, nowIso, session, today, daysFrom, ymd } from './db';
+import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatches, refreshSchemeClaims, type BillCut } from './billing';
+import { invoiceBalances, paymentCounts, r2 } from './ledger';
 import { nextNumbers } from './sync';
-import type { Invoice, Order, OrderLine, Role, Shop, Trip, Van } from './types';
+import { billChangeBlock, isInterState } from './gst';
+import { buildCreditNote, costValue, extraBill, makeCreditNote, splitShort } from './credit';
+import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
 export async function bookOrder(cs: ChangeSet, shop: Shop, lines: OrderLine[], by: string, extra: Partial<Order> = {}) {
   const check = await checkOrder(shop, lines);
   return cs.put<Order>('orders', { shopId: shop.id, salesmanId: by, source: 'salesman', lines, date: today(), status: 'new', issues: check.issues, invoiceIds: [], ...extra }, 'order booked');
+}
+
+/** a company rep's order that just arrived through the link: the same checks as a salesman's order (stock short, low rate,
+ *  new shop, cash-only dues, credit limit, overdue), on the owner's or office phone. Safe to run again (each order once). */
+export async function flagArrivedOrders() {
+  const me = await db.staff.get(session().userId);
+  if (me && me.role !== 'owner' && me.role !== 'office') return 0;
+  const due = (await db.orders.where('status').equals('new').toArray()).filter(o => o.flagsPending);
+  if (!due.length) return 0;
+  const cs = new ChangeSet({ noAudit: true });
+  for (const o of due) {
+    const shop = await db.shops.get(o.shopId); if (!shop) continue;
+    const check = await checkOrder(shop, o.lines);
+    cs.put<Order>('orders', { ...o, issues: [...new Set([...o.issues, ...check.issues])], flagsPending: false });
+  }
+  if (cs.size) await cs.commit('Rep orders checked');
+  return cs.size;
 }
 
 export async function cancelMyOrder(orderId: string) {
@@ -51,14 +69,20 @@ export async function updateMyOrder(orderId: string, lines: OrderLine[]) {
 }
 
 // ---- 1b. owner approves the order (credit/history seen) → goes to the godown
+// The order is read again at save time: another phone may have approved or cancelled it meanwhile. A salesman's lower
+// rate is NOT a company claim (the company never agreed to it): the owner adds a rate-difference line by hand if it is.
+const approving = new Set<string>();
 export async function approveOrder(orderId: string) {
-  const o = (await db.orders.get(orderId))!;
-  const cs = new ChangeSet();
-  cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso() }, 'owner approved');
-  // every rate decrease goes to Claims automatically; the owner keeps or rejects it there (spec 15.1 Sales)
-  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
-  for (const l of o.lines) { const p = products.get(l.productId); if (p && l.rate < p.rate) cs.put('claimEntries', { companyId: p.companyId, month: today().slice(0, 7), kind: 'scheme', productId: p.id, qty: l.qty, amount: r2((p.rate - l.rate) * l.qty), note: `Rate ${inr(l.rate)} vs ${inr(p.rate)} · ${o.rateRemark ?? ''}` }, 'rate decrease → claim'); }
-  await cs.commit('Order approved');
+  if (approving.has(orderId)) throw new Error('This order is already being approved.');
+  approving.add(orderId);
+  try {
+    const o = await db.orders.get(orderId);
+    if (!o) throw new Error('Order not found.');
+    if (o.status !== 'new' && o.status !== 'needs_ok') throw new Error(o.status === 'cancelled' ? 'This order was already cancelled.' : 'This order is already approved.');
+    const cs = new ChangeSet();
+    cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso() }, 'owner approved');
+    await cs.commit('Order approved');
+  } finally { approving.delete(orderId); }
 }
 
 // Shop history strip for the approval screen: bills pending, oldest days, rupees, limit.
@@ -71,7 +95,10 @@ export async function shopHistory(shopId: string) {
 
 // ---- 2. godown picks what is actually available (qty, batch, MRP may change; never adds a product)
 export async function pickOrder(orderId: string, picked: { productId: string; qty: number; batchId?: string; mrp?: number }[]) {
-  const o = (await db.orders.get(orderId))!;
+  const o = await db.orders.get(orderId);
+  if (!o) throw new Error('Order not found.');
+  // read again: the owner may have cancelled it (or another godown phone packed it) while this phone was offline
+  if (o.status !== 'approved') throw new Error(o.status === 'cancelled' ? 'This order was already cancelled — do not pack it.' : 'This order is already packed or billed.');
   const cs = new ChangeSet();
   cs.put('orders', { ...o, status: 'picked', picked, pickedBy: session().userId, pickedAt: nowIso() }, 'picked');
   await cs.commit('Order picked');
@@ -162,6 +189,10 @@ export function orderStops<T extends { shop: Shop }>(stops: T[]): T[] {
   return out;
 }
 
+/** bills waiting to be planned: the number on the Delivery tile and on the Plan page — cancelled bills never count */
+export async function billsToPlan(): Promise<number> {
+  return (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled).length;
+}
 export async function suggestPlan(): Promise<PlanSuggestion[]> {
   const vans = (await db.vans.toArray()).sort((a, b) => a.name.localeCompare(b.name));
   const pending = (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled);
@@ -238,6 +269,22 @@ export async function endTrip(tripId: string, undelivered: Record<string, 'godow
 }
 
 // ---- 5. day close: what went out, what came back, cash per person
+/**
+ * The day's two headline figures, one definition for Day close, Home and TESRAX:
+ *  - billed = the day's bills less their credit notes; a bill that was refused or fully credited counts as ₹0, a cancelled one is not a bill;
+ *  - collected = money that clears dues today; a post-dated cheque is not collected until its date (shown apart as "cheques to clear").
+ */
+export async function dayFigures(date = today()) {
+  const bills = (await db.invoices.where('date').equals(date).toArray()).filter(i => !i.cancelled);
+  const cns = await db.creditNotes.toArray();
+  const credited = new Map<string, number>(); for (const c of cns) credited.set(c.invoiceId, r2((credited.get(c.invoiceId) ?? 0) + c.total));
+  const sales = r2(bills.reduce((a, i) => a + (i.deliveryStatus === 'returned' ? 0 : Math.max(0, i.total - (credited.get(i.id) ?? 0))), 0));
+  const pays = (await db.payments.where('date').equals(date).toArray()).filter(p => p.status === 'ok');
+  const collected = r2(pays.filter(p => paymentCounts(p, date)).reduce((a, p) => a + p.amount, 0));
+  const chequesToClear = r2((await db.payments.toArray()).filter(p => p.status === 'ok' && !paymentCounts(p, date)).reduce((a, p) => a + p.amount, 0));
+  return { sales, collected, chequesToClear, billsToday: bills.length };
+}
+
 export async function daySummary(date = today()) {
   const invs = (await db.invoices.toArray()).filter(i => !i.cancelled);
   const trips = (await db.trips.where('date').equals(date).toArray());
@@ -262,8 +309,7 @@ export async function daySummary(date = today()) {
     nonCash: nonCash.map(p => ({ id: p.id, mode: p.mode, amount: p.amount, ref: p.ref ?? '', by: staff.get(p.collectedBy) ?? p.collectedBy })),
     waiting: waiting.length,
     creditNotes: r2(cns.reduce((a, c) => a + c.total, 0)),
-    sales: r2(invs.filter(i => i.date === date).reduce((a, i) => a + i.total, 0)),
-    collected: r2(pays.filter(p => p.date === date && p.status === 'ok').reduce((a, p) => a + p.amount, 0)),
+    ...(await dayFigures(date)),
     closed: !!(await db.dayCloses.where('date').equals(date).first()),
   };
 }
@@ -286,13 +332,19 @@ export async function dayChecklist(date = today()) {
   const cashOpen = pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok' && p.date <= date);
   const unapprovedExpenses = expenses.filter(e => !(e as { approved?: boolean }).approved && e.category !== 'advance');
   const shortfallsOpen = (await db.advances.toArray()).filter(a => a.kind === 'shortfall' && a.status === 'approved' && (a.recovered ?? 0) < a.amount);
-  return { tripsOpen, noResult, diffs, refs, waitingOrders, newShops, dupes, cashOpen, unapprovedExpenses, shortfallsOpen };
+  // staff returns and write-offs waiting for a decision (they change nothing until approved)
+  const requests = await db.requests.where('status').equals('waiting').toArray();
+  return { tripsOpen, noResult, diffs, refs, waitingOrders, newShops, dupes, cashOpen, unapprovedExpenses, shortfallsOpen, requests };
 }
 
 // Owner's choice for a bill with delivery differences: re-issue the same number with delivered quantities, or a credit note.
 // Re-issue a bill with new quantities under the SAME number (allowed until it is printed, and at day close for
 // delivery differences). The original lines are kept inside the bill; stock is corrected for the change.
 /** day close: the owner checked the same amount twice from one shop — both are real collections */
+/** collections that look entered twice (same shop, same amount), grouped: one pair = one thing to check, not two */
+export function dupeGroups<T extends { id: string; shopId: string; amount: number }>(payments: T[]): T[][] {
+  return [...payments.reduce((m, p) => m.set(`${p.shopId}|${p.amount}`, [...(m.get(`${p.shopId}|${p.amount}`) ?? []), p]), new Map<string, T[]>()).values()];
+}
 export async function confirmNotDuplicate(paymentIds: string[]) {
   const cs = new ChangeSet();
   for (const id of paymentIds) { const p = await db.payments.get(id); if (p && p.status === 'ok') cs.put('payments', { ...p, dupOk: true }, 'checked: not a duplicate'); }
@@ -303,53 +355,140 @@ export async function confirmNotDuplicate(paymentIds: string[]) {
 export async function cancelPayment(paymentId: string, reason: string) {
   const p = await db.payments.get(paymentId);
   if (!p || p.status !== 'ok') throw new Error('That payment was already changed or cancelled.');
+  // only the owner or office cancel a payment; a collector may cancel only their own, before it reaches the office (the server rule)
+  const role = (await db.staff.get(session().userId))?.role;
+  if (role !== 'owner' && role !== 'office' && !(p.collectedBy === session().userId && !p.settled)) throw new Error('Only the owner or office cancels a payment.');
   if (p.bankLineId) throw new Error('This payment is matched to the bank statement. Unmatch it in Accounts → Bank first.');
   const cs = new ChangeSet();
   cs.put('payments', { ...p, status: 'cancelled', note: reason }, 'payment cancelled');
   await cs.commit('Payment cancelled');
 }
 
-export function reviseInvoice(inv: Invoice, qtyByLine: number[]): Invoice {
-  const lines = inv.lines.map((l, i) => {
-    const qty = Math.max(0, qtyByLine[i] ?? l.qty); if (qty === l.qty) return l;
-    const f = qty / (l.qty || 1);
-    const gross = r2(l.gross * f), discount = r2(l.discount * f), taxable = r2(gross - discount), tax = r2(taxable * l.gst / 100);
-    const inter = l.igst > 0;
-    return { ...l, qty, gross, discount, taxable, cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0, total: r2(taxable + tax) };
-  }).filter(l => l.qty > 0);
-  const taxable = r2(lines.reduce((a, l) => a + l.taxable, 0)), cgst = r2(lines.reduce((a, l) => a + l.cgst, 0)), sgst = r2(lines.reduce((a, l) => a + l.sgst, 0)), igst = r2(lines.reduce((a, l) => a + l.igst, 0));
-  const exact = r2(taxable + cgst + sgst + igst); const total = Math.round(exact);
-  return { ...inv, original: inv.original ?? { lines: inv.lines, total: inv.total, at: nowIso() }, lines, taxable, cgst, sgst, igst, roundOff: r2(total - exact), total };
-}
-
-export async function editInvoice(invoiceId: string, qtyByLine: number[]) {
-  const inv = (await db.invoices.get(invoiceId))!;
-  if (inv.printedAt) throw new Error('Printed bills cannot be edited — cancel with a remark or make a credit note.');
+/** a cheque bounced: asked to confirm, with the reason; it stops counting and the bills it paid are open again */
+export async function bounceCheque(paymentId: string, reason: string) {
+  const role = (await db.staff.get(session().userId))?.role;
+  if (role !== 'owner' && role !== 'office') throw new Error('Only the owner or office marks a cheque as bounced.');
+  const p = await db.payments.get(paymentId);
+  if (!p || p.mode !== 'cheque') throw new Error('That is not a cheque payment.');
+  if (p.status === 'bounced') throw new Error('This cheque is already marked bounced.');
+  if (p.status === 'cancelled') throw new Error('This payment was cancelled.');
+  if (!reason.trim()) throw new Error('Say why the cheque bounced (e.g. "funds insufficient").');
   const cs = new ChangeSet();
-  const batches = await db.batches.toArray();
-  inv.lines.forEach((l, i) => { const diff = l.qty - Math.max(0, qtyByLine[i] ?? l.qty); if (!diff) return; const b = batches.find(x => x.id === l.batches[0]?.batchId); if (b) { b.qty += diff; cs.put('batches', { ...b }, 'bill edited'); } });
-  cs.put('invoices', reviseInvoice(inv, qtyByLine), 'bill edited before print');
-  await cs.commit('Bill edited');
+  cs.put('payments', { ...p, status: 'bounced', bounce: { at: nowIso(), by: session().userId, reason: reason.trim() } }, `cheque bounced: ${reason.trim()}`);
+  return cs.commit('Cheque bounced');
 }
 
+/**
+ * Saves a changed bill under the SAME number (bill editor). Allowed only before printing, before delivery and before the
+ * month's GSTR-1 is due. Every line is priced again (schemes, free pieces, tax by the shop's state) and its pieces are
+ * taken from stock: a bill never charges a piece that is not in stock.
+ */
+export async function saveBillEdit(invoiceId: string, shopId: string, edits: { productId: string; qty: number; rate: number; mrp?: number; discount?: number }[]) {
+  const inv = await db.invoices.get(invoiceId);
+  if (!inv) throw new Error('Bill not found.');
+  const block = billChangeBlock(inv, 'edit', today()); if (block) throw new Error(block);
+  if ((await db.creditNotes.where('invoiceId').equals(inv.id).count()) > 0) throw new Error(`Bill ${inv.number} already has a credit note. Make another credit note instead.`);
+  const shop = await db.shops.get(shopId); if (!shop) throw new Error('Shop not found.');
+  const live = edits.filter(l => l.qty > 0);
+  if (!live.length) throw new Error('A bill needs at least one line. Cancel the bill instead.');
+  if (live.some(l => !Number.isInteger(l.qty) || !(l.rate > 0))) throw new Error('Quantities are whole pieces and rates are more than ₹0.');
+  if (live.some(l => (l.discount ?? 0) < 0 || (l.discount ?? 0) > r2(l.qty * l.rate))) throw new Error('A discount cannot be more than the value of the line.');
+  const settings = await getSettings();
+  const inter = isInterState(shop, settings);
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
+  const cs = new ChangeSet();
+  // stock: put the old pieces back, then take the new quantities out (the old lots first where they still fit, then oldest expiry)
+  const batches = await db.batches.toArray();
+  for (const l of inv.lines) for (const b of l.batches) { const x = batches.find(y => y.id === b.batchId); if (x) x.qty += b.qty; }
+  const lines: InvoiceLine[] = live.map(e => {
+    const p = products.get(e.productId); if (!p) throw new Error('Unknown product on the bill.');
+    const line = billLine(p, e.qty, e.rate, activeSchemes(schemes, p, inv.date), inter, { mrp: e.mrp, discount: e.discount });
+    const need = line.qty + line.freeQty;
+    const old = new Set(inv.lines.filter(l => l.productId === p.id).flatMap(l => l.batches.map(b => b.batchId)));
+    const ordered = [...batches.filter(b => old.has(b.id)), ...batches.filter(b => !old.has(b.id))];
+    const { picks, short } = pickBatches(ordered.filter(b => b.productId === p.id).sort((a, b) => Number(!old.has(a.id)) - Number(!old.has(b.id))), p.id, need, '0000-00-00');
+    if (short > 0) throw new Error(`Not enough stock for ${p.name}: ${need - short} pcs in stock, the bill needs ${need}${line.freeQty ? ` (${line.qty} + ${line.freeQty} free)` : ''}.`);
+    for (const pk of picks) { const x = batches.find(y => y.id === pk.batchId)!; x.qty -= pk.qty; }
+    return { ...line, batches: picks };
+  });
+  const touched = new Set([...inv.lines.flatMap(l => l.batches.map(b => b.batchId)), ...lines.flatMap(l => l.batches.map(b => b.batchId))]);
+  for (const id of touched) { const x = batches.find(y => y.id === id); if (x) cs.put('batches', { ...x }, 'bill edited'); }
+  const { isB2B } = await import('./ledger');
+  const upd = cs.put<Invoice>('invoices', { ...inv, shopId: shop.id, kind: isB2B(shop) ? 'B2B' : 'B2C', lines, ...billTotals(lines), original: inv.original ?? { lines: inv.lines, total: inv.total, at: nowIso() } }, 'bill edited before print');
+  if (!(upd.total > 0) || lines.some(l => !(l.total > 0))) throw new Error('A bill line cannot come to ₹0. Cancel the bill instead, or give the line a real rate.');
+  await refreshSchemeClaims(cs, upd, []);
+  return cs.commit('Bill edited');
+}
+
+/**
+ * Day close: a bill delivered with differences. A delivered bill is a supplied tax document and is never re-written:
+ * pieces short get a credit note (paid pieces only, at the bill line's own value; free pieces ₹0), pieces given extra
+ * go on a new bill. ("Modified bill, same number" is possible only while a bill is not printed or delivered.)
+ */
 export async function settleDifference(invoiceId: string, action: 'modified' | 'credit_note') {
-  const inv = (await db.invoices.get(invoiceId))!;
+  const inv = await db.invoices.get(invoiceId);
+  if (!inv) throw new Error('Bill not found.');
+  if (inv.diffAction) throw new Error('This difference is already settled.');
+  if (action === 'modified') throw new Error(billChangeBlock(inv, 'edit', today()) ?? 'A delivery difference is settled with a credit note.');
+  if (inv.cancelled) throw new Error('This bill is already cancelled.');
   const cs = new ChangeSet();
   const sh = inv.delivery?.shortages ?? []; const ex = inv.delivery?.excess ?? [];
-  if (action === 'modified') {
-    const qtys = inv.lines.map(l => { const minus = sh.find(x => x.productId === l.productId)?.qty ?? 0; const plus = ex.find(x => x.productId === l.productId)?.qty ?? 0; return Math.max(0, l.qty - minus + plus); });
-    cs.put('invoices', { ...reviseInvoice(inv, qtys), diffAction: 'modified' }, 'bill revised to delivered qty');
-  } else {
-    const cnLines = sh.map(x => { const l = inv.lines.find(y => y.productId === x.productId)!; return { productId: x.productId, qty: x.qty, amount: r2(x.qty * l.total / (l.qty || 1)), restock: true }; });
-    // extra pieces given from the van are billed: the bill is revised upward for excess; shortages get the credit note
-    if (ex.length) { const qtys = inv.lines.map(l => l.qty + (ex.find(x => x.productId === l.productId)?.qty ?? 0)); Object.assign(inv, reviseInvoice(inv, qtys)); }
-    if (cnLines.length) {
-      const [cnNo] = await creditNoteNumbers(cs, 1);
-      cs.put('creditNotes', { number: cnNo, invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'Short at delivery', lines: cnLines, total: r2(cnLines.reduce((a, l) => a + l.amount, 0)) }, 'credit note');
-    }
-    cs.put('invoices', { ...inv, diffAction: 'credit_note' }, ex.length ? 'credit note + extra billed' : 'credit note chosen');
-  }
+  const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b })) }));
+  const work: Invoice = { ...inv, lines };
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
+  if (ex.length) await extraBill(cs, work, ex);
+  const items = sh.map(x => {
+    const l = inv.lines.find(y => y.productId === x.productId);
+    const split = x.paid != null ? { paid: x.paid, free: x.free ?? 0 } : l ? splitShort(l, x.qty, products.get(x.productId), schemes, inv.date) : { paid: 0, free: 0 };
+    return { productId: x.productId, ...split, restock: !!DELIVERY_REASONS.find(r => r.label === x.reason)?.restock };
+  }).filter(x => x.paid || x.free);
+  if (items.length) await makeCreditNote(cs, work, items, { reason: 'Short at delivery', source: 'delivery', takeOffBill: false });
+  cs.put('invoices', { ...work, diffAction: 'credit_note' }, ex.length ? 'credit note + extra billed on a new bill' : 'credit note chosen');
   await cs.commit('Delivery difference settled');
+}
+
+/** what each day-close choice does to the money: the credit note gives back ₹back (the bill stays); extra pieces go on a new bill of about ₹extra */
+export async function differenceMoney(inv: Invoice) {
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
+  const cns = await db.creditNotes.where('invoiceId').equals(inv.id).toArray();
+  const items = (inv.delivery?.shortages ?? []).map(x => {
+    const l = inv.lines.find(y => y.productId === x.productId);
+    const split = x.paid != null ? { paid: x.paid, free: x.free ?? 0 } : l ? splitShort(l, x.qty, products.get(x.productId), schemes, inv.date) : { paid: 0, free: 0 };
+    return { productId: x.productId, ...split, restock: true };
+  }).filter(x => x.paid || x.free);
+  const back = items.length ? r2(buildCreditNote(inv, cns, items).total) : 0;
+  const extra = r2((inv.delivery?.excess ?? []).reduce((a, x) => { const l = inv.lines.find(y => y.productId === x.productId); return a + (l ? x.qty * l.total / (l.qty || 1) : 0); }, 0));
+  return { back, extra, becomes: r2(inv.total - back + extra) };
+}
+
+/** what a delivered bill's shortages (short, damaged, refused) will be credited — not yet a credit note, so the bill still shows its full total */
+export async function pendingShortCredit(inv: Invoice) {
+  if (inv.cancelled || inv.diffAction || !(inv.delivery?.shortages?.length)) return 0;
+  return (await differenceMoney(inv)).back;
+}
+/** the bills a shop can pay now, for the driver's and salesman's collection: each bill's balance less what the delivery already
+ *  knows will be credited (so the driver asks for the delivered value, not the full bill), with the shop's old dues as they are */
+export async function collectableBills(shopId: string) {
+  const out: { invoice: Invoice; balance: number; short: number; due: number }[] = [];
+  for (const b of (await invoiceBalances(shopId)).filter(x => x.balance > 0.5)) {
+    const short = await pendingShortCredit(b.invoice);
+    const due = r2(Math.max(0, b.balance - short));
+    if (due > 0.5) out.push({ invoice: b.invoice, balance: b.balance, short: r2(b.balance - due), due });
+  }
+  return out;
+}
+
+/** "Settle all as credit notes": every bill with a delivery difference gets its credit note (and a new bill for extras), one after the other;
+ *  a bill that cannot be settled is reported and the rest still are. Safe to tap twice (a settled bill is skipped). */
+export async function settleAllAsCreditNotes(invoiceIds: string[]) {
+  const done: string[] = []; const failed: { id: string; message: string }[] = [];
+  for (const id of invoiceIds) {
+    try { await settleDifference(id, 'credit_note'); done.push(id); } catch (e) { failed.push({ id, message: (e as Error).message }); }
+  }
+  return { done, failed };
 }
 
 export async function closeDay(date = today(), received: Record<string, number> = {}) {
@@ -387,7 +526,7 @@ export async function counts() {
     toApproveOrders: orders.filter(o => o.status === 'new' || o.status === 'needs_ok').length,
     toPick: orders.filter(o => o.status === 'approved').length,
     toApprove: orders.filter(o => o.status === 'picked').length,
-    toPlan: invs.filter(i => i.deliveryStatus === 'pending').length,
+    toPlan: invs.filter(i => i.deliveryStatus === 'pending' && !i.cancelled).length,
     toLoad: trips.filter(t => t.status === 'planned').length,
     out: trips.filter(t => t.status === 'out').length,
     tripsToday: trips.length,
@@ -418,6 +557,7 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
   const cs = new ChangeSet();
   const batches = await db.batches.toArray();
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
   let done = 0;
   for (const id of invoiceIds) {
     const inv = await db.invoices.get(id);
@@ -438,15 +578,17 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
       const qty = Math.min(s.qty, l.batches.reduce((a, b) => a + b.qty, 0));
       if (qty <= 0) continue;
       const reason = DELIVERY_REASONS.find(r => r.value === s.reason) ?? DELIVERY_REASONS[0];
-      shortages.push({ productId: l.productId, qty, reason: reason.label });
+      // paid and scheme-free pieces are kept apart: the shop keeps the most paid pieces whose free pieces still fit
+      const split = splitShort(l, qty, products.get(l.productId), schemes, inv.date);
+      shortages.push({ productId: l.productId, qty, reason: reason.label, ...split });
       // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
       let left = qty;
       for (const lb of l.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (reason.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'back to stock'); } } }
-      if (!reason.restock) cs.put('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: r2(qty * (products.get(l.productId)?.purchaseRate ?? 0)), invoiceId: inv.id, note: 'Damaged in van', photo: input.shopPhoto }, 'transit damage');
+      if (!reason.restock) { const v = costValue(products.get(l.productId), qty); cs.put<ClaimEntry>('claimEntries', { companyId: inv.companyId, month: today().slice(0, 7), kind: 'transit', productId: l.productId, qty, amount: v.amount, valuePending: v.pending || undefined, invoiceId: inv.id, note: 'Damaged in van', photo: input.shopPhoto } as ClaimEntry, 'transit damage'); }
     }
     const diff = shortages.length || excess.length;
     const pos = input.pos ?? undefined;
-    cs.put('invoices', { ...inv, lines, deliveryStatus: input.returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo: input.shopPhoto, shopPhoto: input.shopPhoto, billPhoto: input.billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM: input.distanceM, shortages, excess } }, 'delivery');
+    cs.put('invoices', { ...inv, lines, deliveryStatus: input.returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, shopPhoto: input.shopPhoto, billPhoto: input.billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM: input.distanceM, shortages, excess } }, 'delivery');
     done++;
   }
   if (!done) return null;
@@ -459,10 +601,14 @@ export async function cancelInvoice(invoiceId: string, reason: string) {
   if (!inv) throw new Error('Bill not found.');
   if (inv.cancelled) throw new Error('This bill is already cancelled.');
   if (!reason.trim()) throw new Error('A reason is needed to cancel a bill.');
+  // after supply (delivered) or once the month's GSTR-1 is due, a bill is never cancelled: credit note for less, new bill for extra
+  const block = billChangeBlock(inv, 'cancel', today()); if (block) throw new Error(block);
+  if ((await db.creditNotes.where('invoiceId').equals(inv.id).count()) > 0) throw new Error(`Bill ${inv.number} already has a credit note — it can't be cancelled now.`);
   const cs = new ChangeSet();
   const batches = await db.batches.toArray();
   for (const l of inv.lines) for (const b of l.batches) { if (b.qty <= 0) continue; const x = batches.find(y => y.id === b.batchId); if (x) { x.qty += b.qty; cs.put('batches', { ...x }, 'stock back (cancel)'); } }
   const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b, qty: 0 })) }));
-  cs.put('invoices', { ...inv, lines, cancelled: { at: nowIso(), by: session().userId, reason: reason.trim() } }, 'cancel bill');
+  const done = cs.put<Invoice>('invoices', { ...inv, lines, cancelled: { at: nowIso(), by: session().userId, reason: reason.trim() } }, 'cancel bill');
+  await refreshSchemeClaims(cs, done, []); // its company-scheme claim lines go with it, in the same save
   return cs.commit('Bill cancelled');
 }

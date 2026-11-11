@@ -17,6 +17,14 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   const logout = async () => { await p.click('nav >> text=More'); await p.waitForTimeout(300); await p.click('text=Log out'); await p.waitForTimeout(300); };
   const home = async () => { await p.click('nav >> text=Home'); await p.waitForTimeout(500); };
   const tile = async (t) => { const exact = p.locator('.tile', { hasText: new RegExp('^\\s*' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\d*\\s*$') }); if (await exact.count()) await exact.first().click(); else await p.click(`.tile:has-text("${t}")`); await p.waitForTimeout(700); };
+  // UX round 4 checks: the TESRAX core never covers the last button; the Undo bubble says what it undoes and stays on its screen
+  const must = (ok, msg) => { if (!ok) throw new Error(msg); };
+  const ballClear = async (sel, what) => {
+    await p.evaluate(() => { const m = document.querySelector('.main'); m.scrollTo(0, m.scrollHeight); }); await p.waitForTimeout(250);
+    const r = await p.locator(sel).last().boundingBox(); const f = await p.locator('.fab').boundingBox();
+    must(r && f && (r.y + r.height <= f.y + 1 || r.x + r.width <= f.x || r.x >= f.x + f.width), `the TESRAX core covers "${what}" when scrolled to the end`);
+  };
+  const backArrow = async () => { await p.click('header button[aria-label="Back"]'); await p.waitForTimeout(500); };
   const setFile = async (btnText, file) => { const [ch] = await Promise.all([p.waitForEvent('filechooser'), p.click(`button:has-text("${btnText}")`)]); await ch.setFiles(file); await p.waitForTimeout(600); };
 
   await p.goto(BASE); await p.waitForSelector('text=Demo logins'); await p.waitForTimeout(1500);
@@ -32,13 +40,35 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.locator('button:has-text("Order")').first().click(); await p.waitForTimeout(900);
   await p.click('text=Usual'); await p.waitForTimeout(400);
   const plus = p.locator('.stepper button[aria-label="more"]'); await plus.nth(0).click(); await plus.nth(1).click(); await p.waitForTimeout(300); await shot('salesman-order');
+  { const a = await p.evaluate(() => { const m = getComputedStyle(document.querySelector('.sticky-foot')).backgroundColor.match(/[\d.]+/g); return m.length > 3 ? +m[3] : 1; }); must(a === 1, 'the Send bar has a solid background (nothing shows through it)'); }
+  const orderShop = (await p.textContent('.main .h')).trim();
+  { const g = await p.evaluate(() => ({ foot: document.querySelector('.sticky-foot').getBoundingClientRect().bottom, tabs: document.querySelector('.tabs').getBoundingClientRect().top }));
+    must(Math.abs(g.foot - g.tabs) <= 2, `only the total + Approve bar is pinned, sitting on the tab bar (bar ends at ${g.foot}, tabs start at ${g.tabs})`);
+    await p.evaluate(() => document.querySelector('.main').scrollBy(0, 400)); await p.waitForTimeout(200);
+    must(await p.evaluate(() => document.querySelector('.main .h').getBoundingClientRect().bottom <= document.querySelector('.main').getBoundingClientRect().top), 'the shop name and credit box scroll away with the list');
+    await p.evaluate(() => document.querySelector('.main').scrollTo(0, 0)); }
+  await backArrow();
+  must(await p.locator('.dialog', { hasText: 'Leave this order?' }).count() && await p.locator('.dialog', { hasText: '1 line will be lost' }).count(), 'back from an order with lines asks "Leave this order? 1 line will be lost."');
+  await p.click('.dialog button:has-text("Cancel")'); await p.waitForTimeout(300);
+  must(await p.locator('.sticky-foot button', { hasText: 'Send to owner' }).count(), 'after Cancel the order is still open, and the salesman\'s button says "Send to owner"');
   await p.click('.sticky-foot button'); await p.waitForTimeout(900); await shot('salesman-order-sent');
+  must(!(await p.locator('.main .avatar.bad').count()) && await p.locator('.main .avatar.ok').count(), 'a sent order shows the green tick');
+  must(/· 1 item ·/.test(await p.textContent('.main')), 'the sent order counts its items in words ("1 item", never "1 items")');
+  must(new RegExp(`Order ${orderShop}`).test(await p.textContent('.toast').catch(() => '')), `the Undo bubble names the shop ("Order ${orderShop}")`);
   await p.click('text=Next shop'); await p.waitForTimeout(300);
+  await home(); must(!(await p.locator('.toast').count()), 'the Undo bubble goes away when the screen changes');
   await p.click('.fab'); await p.waitForTimeout(500); await p.fill('textarea', 'leave Monday fever'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-leave');
+  must(await p.locator('.engine .prop', { hasText: 'Leave' }).count() && /Mon \d{1,2} [A-Z][a-z]{2}/.test(await p.textContent('.engine')), 'a leave comes as the ✓ table with the day in words (Mon 16 Nov)');
+  must(await p.locator('.engine .prop button', { hasText: 'Send to owner' }).count() && !(await p.locator('.engine button', { hasText: 'Download Excel' }).count()), 'field staff: "Send to owner", no Download Excel');
+  // P11: sent to the owner is said as "Sent to owner", never "Approved"
+  await p.click('.engine .prop button:has-text("Send to owner")'); await p.waitForTimeout(700);
+  { const t = await p.textContent('.engine'); must(/✓ Sent to owner/.test(t) && !/✓ Approved/.test(t), 'a staff request that went to the owner says "✓ Sent to owner", not "Approved"'); }
   await p.click('.engine-x[aria-label="Close"]'); await logout();
 
   // Owner: home, Bill → Orders received (history strip) → approve
   await loginAs('Vishnu (Owner)'); await shot('owner-home');
+  // P8: the morning card counts the leave that is waiting
+  must(/leave request/.test(await p.textContent('.morning .s').catch(() => '')), 'the morning card counts the waiting leave request (not "Nothing is waiting")');
   await tile('Bill'); await shot('owner-bill-icons');
   await tile('Orders received'); await shot('owner-orders-received');
   const ap = p.locator('button:has-text("Approve → godown")'); while (await ap.count()) { await ap.first().click(); await p.waitForTimeout(500); }
@@ -50,7 +80,12 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Mani (Godown)'); await gate(); await shot('godown-home');
   await tile('Pick orders'); await shot('godown-pick-list');
   await p.locator('.item.tap').first().click(); await p.waitForTimeout(700);
+  await backArrow(); must(await p.locator('h3', { hasText: 'Orders to pick' }).count(), 'back from an order being packed goes to the list of orders, not home');
+  await p.locator('.item.tap').first().click(); await p.waitForTimeout(700);
+  must(await p.locator('button[aria-label="Packed"] svg.lucide-check').count(), 'each pick line has the same ✓ button as Load vans');
   await p.locator('.stepper button[aria-label="less"]').first().click(); await p.waitForTimeout(200); await shot('godown-pick-changed');
+  { const t = await p.textContent('.main'); must(/stock \d+ pcs/.test(t), 'the pick screen shows stock with its unit ("stock 96 pcs (8 cs)")');
+    must(await p.locator('button[aria-label="more case"]').count(), 'the pick screen has a + 1 case button besides the piece stepper'); }
   const packs = p.locator('button[aria-label="Packed"]'); const pc = await packs.count(); for (let i = 0; i < pc; i++) await packs.nth(i).click();
   await p.click('button:has-text("Packed")'); await p.waitForTimeout(700);
   // pick the rest without changes
@@ -63,8 +98,16 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Vishnu (Owner)'); await tile('Bill'); await tile('to verify'); await shot('owner-verify');
   const dn = p.locator('button:has-text("Done → bill")'); while (await dn.count()) { await dn.first().click(); await p.waitForTimeout(700); }
   await shot('owner-billed');
+  { const said = Number(((await p.textContent('.alert.ok b').catch(() => '')) || '').match(/^(\d+) bills?/)?.[1] ?? 0); const nChips = await p.locator('.alert.ok button').count();
+    must(said > 0 && nChips === said, `every bill made has its chip (${said} made, ${nChips} shown)`);
+    const t = await p.locator('.toast').boundingBox(); const first = await p.locator('.alert.ok').first().boundingBox();
+    must(!t || !first || t.y + t.height <= first.y + 1, 'the Undo bubble never covers the bill chips'); }
+  { const chips = await p.locator('.alert.ok button').allTextContents(); must(chips.length && chips.every(c => / · \S/.test(c)), `bill numbers come with the shop name: ${chips.join(' | ')}`);
+    const nums = chips.map(c => c.split(' · ')[0].trim()); must(nums.join() === [...nums].sort().join(), 'bill numbers are in order');
+    must(/^Billed .+ ₹/.test(await p.textContent('.toast').catch(() => '')), 'the Undo bubble says "Billed <shop> ₹…"'); }
   await home(); await tile('Delivery'); await shot('owner-delivery-icons'); await tile('Plan'); await shot('owner-plan-ask');
   await p.click('button:has-text("TESRAX, suggest")'); await p.waitForTimeout(900); await shot('owner-plan');
+  await ballClear('button:has-text("Confirm plan")', 'Confirm plan');
   await p.click('button:has-text("Confirm plan")'); await p.waitForTimeout(800);
   await logout();
 
@@ -76,20 +119,52 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await logout();
 
   // Driver: trip, two photos, extra, collect with bill + QR
+
+  // release polish: the Undo bubble keeps a clear gap above whatever is under it; a bill number is never split over two lines
+  const bubbleClear = async (what) => { const r = await p.evaluate(() => { const t = document.querySelector('.toast'); if (!t) return null; const tb = t.getBoundingClientRect().bottom; const main = document.querySelector('.main'); const next = [...main.querySelectorAll('*')].map(e => e.getBoundingClientRect()).filter(q => q.width && q.height && q.bottom > tb - 40 && q.top > 0 && !(q.top < tb - 40)).map(q => q.top); const first = Math.min(...next.filter(y => y >= tb - 2), 1e9); return { gap: first - tb }; });
+    if (r) must(r.gap >= 8, `${what}: the Undo bubble keeps a clear gap above the next element (${Math.round(r.gap)} px)`); };
+  const oneLineBillNos = async (what) => { const r = await p.evaluate(() => [...document.querySelectorAll('.billno')].filter(e => e.getClientRects().length).map(e => e.getClientRects().length + ':' + e.textContent)); must(r.every(x => x.startsWith('1:')), `${what}: every bill number stays on one line (${r.join(' | ')})`); };
   await loginAs('Karthik (Delivery)'); await gate(); await tile('My trip'); await shot('driver-trip');
   await p.click('button:has-text("Start trip")'); await p.waitForTimeout(700);
   await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
+  await backArrow(); must(await p.locator('.route .stop').count(), 'back from a stop goes to the trip list, not home');
+  await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
   await p.locator('button:has-text("Short")').first().click(); await p.waitForTimeout(300); await p.fill('.dialog input, dialog input, input[type=number] >> nth=-1', '4').catch(() => {}); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
   const why = p.locator('button:has-text("Not loaded")'); if (await why.count()) { await why.click(); await p.waitForTimeout(300); }
-  await shot('driver-stop-short');
+  await shot('driver-stop-short'); await bubbleClear('driver stop'); await oneLineBillNos('driver stop');
   await p.click('button:has-text("Delivered")'); await p.waitForTimeout(500); await shot('driver-photos-needed');
+  { const b = p.locator('button[aria-label="Shop confirms delivery"]');
+    must(await b.isDisabled() && /Goods received/.test(await b.textContent()) && Number(await b.evaluate(el => getComputedStyle(el).opacity)) < .6, 'before both photos the "Goods received ✓" button looks switched off'); }
+  await backArrow(); must(await p.locator('button:has-text("Delivered")').count(), 'back from the photos step goes to the items, not home');
+  await p.click('button:has-text("Delivered")'); await p.waitForTimeout(400);
   const cams = await p.locator('button:has-text("photo")').elementHandles(); for (const c of cams) { const [ch] = await Promise.all([p.waitForEvent('filechooser'), c.click()]); await ch.setFiles(`${FIX}/shop.jpg`); await p.waitForTimeout(500); } await shot('driver-photos-done');
   await p.click('button[aria-label="Shop confirms delivery"]'); await p.waitForTimeout(800); await shot('driver-collect-bills');
+  
+  // P2: at the biggest phone text size the bill number sits above the amount, never over it
+  await p.evaluate(() => { document.documentElement.style.fontSize = '28px'; }); await p.waitForTimeout(300); await shot('driver-collect-bills-large'); await bubbleClear('collect (large text)'); await oneLineBillNos('collect (large text)');
+  { const r = await p.evaluate(() => [...document.querySelectorAll('.item.tap')].map(it => { const a = it.querySelector('.t').getBoundingClientRect(), b = it.querySelector('.amt').getBoundingClientRect(); return { sw: it.scrollWidth <= it.clientWidth + 1, clear: a.bottom <= b.top + 1 || a.right <= b.left + 1 }; }));
+    must(r.length && r.every(x => x.clear && x.sw), 'large text: the bill number never overlaps the amount in the Collect bill list'); }
+  await p.evaluate(() => { document.documentElement.style.fontSize = ''; }); await p.waitForTimeout(200);
   await p.click('button:has-text("Full")'); await p.waitForTimeout(200); await p.click('.segmented button:has-text("UPI")'); await p.waitForTimeout(600); await shot('driver-collect-qr');
-  await p.fill('input:visible >> nth=-1', '4471'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700); await shot('driver-after');
+  // P13: smaller QR, and a line says what "Money paid" is waiting for
+  { const w = await p.evaluate(() => document.querySelector('.qr img').getBoundingClientRect().width); must(w <= 160, `the UPI QR is small enough to leave the ref box on screen (${w}px)`);
+    must(/UPI ref/.test(await p.textContent('[data-testid=paybox-missing]').catch(() => '')), 'under "Money paid" a line says what is missing (the UPI ref)'); }
+  must(await p.locator('input.bigamount[type=text]').count() && (await p.getAttribute('input.bigamount', 'placeholder')) && await p.locator('.card .row:has(input.bigamount) span', { hasText: '₹' }).count(), 'amount box: ₹ in front, the due amount as the hint, no spinner arrows');
+  await p.fill('input:visible >> nth=-1', '4471'); await ballClear('button[aria-label="Shop confirms payment"]', 'Money paid ✓'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700);
+  // every collection gets a numbered receipt the shop is shown (and can be sent on WhatsApp)
+  if (!(await p.locator('.card', { hasText: 'Receipt R/' }).count())) throw new Error('a collection should show its numbered receipt');
+  await shot('driver-receipt'); await p.click('button.btn.primary:has-text("Done")'); await p.waitForTimeout(500); await shot('driver-after');
+  must(/₹[\d,.]+ by UPI/.test(await p.textContent('.main')), 'the collection done screen says "₹… by UPI"');
+  must(/Delivered ₹[\d,.]+ · paid ₹/.test(await p.textContent('[data-testid=stop-summary]').catch(() => '')), 'the stop ends with a one-line summary (delivered · paid)');
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
+  // P3: the payment table keeps the Balance column on screen on a phone
+  await p.fill('textarea', 'Murugan Stores paid 500 cash'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); await shot('rox-payment-table'); await oneLineBillNos('TESRAX payment table');
+  if (await p.locator('.engine .prop table.grid').count()) {
+    const r = await p.evaluate(() => { const w = [...document.querySelectorAll('.engine .prop .tablewrap')].pop(); const th = [...w.querySelectorAll('th')].find(x => /Balance/.test(x.textContent)); const b = th.getBoundingClientRect(), wr = w.getBoundingClientRect(); return { over: w.scrollWidth - w.clientWidth, inside: b.right <= wr.right + 1 }; });
+    must(r.inside && r.over <= 1, `the payment table shows Balance on screen without sideways scroll (${JSON.stringify(r)})`);
+    await p.locator('.engine .prop button:has-text("Cancel")').last().click(); await p.waitForTimeout(400); }
   // two things in one message, then follow-ups to the table just shown
   const say = async (t) => { await p.fill('textarea', t); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); };
   await say('Kumar Mart paid 500, toll 85'); await shot('rox-two-things');
@@ -107,7 +182,11 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Delivery'); await tile('Delivery status'); await shot('owner-status');
   await home(); await tile('Day close'); await shot('owner-dayclose-checklist');
   await p.click('.check:has-text("differences")'); await p.waitForTimeout(600); await shot('owner-differences');
-  const mb = p.locator('button:has-text("Modified bill")'); while (await mb.count()) { await mb.first().click(); await p.waitForTimeout(500); }
+  must(await p.locator('.card', { hasText: 'Bill stays' }).count(), 'each day-close choice says what it does ("Bill stays; shop gets ₹… back")');
+  await backArrow(); must(await p.locator('h3', { hasText: 'Checklist' }).count(), 'back from the differences goes to the day-close checklist, not home');
+  await p.click('.check:has-text("differences")'); await p.waitForTimeout(600);
+  // delivered bills are never re-written: each difference is settled with a credit note (+ a new bill for extra pieces)
+  const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); const d = p.locator('.dialog-wrap', { hasText: 'with GST, taken off bill' }); must(await d.count() === 1 && /Reason:/.test(await d.innerText()), 'a credit note asks first: amount with GST, the bill and the reason'); await p.click('.dialog-wrap button:has-text("Make credit note")'); await p.waitForTimeout(500); }
   await p.click('button:has-text("Back to day close")').catch(() => p.click('text=← Day close')); await p.waitForTimeout(600);
   // remaining items: trips not ended → end trip is driver's; mark via Live? we end trip from owner side quickly by logging in as driver later. Approve expenses:
   const exp = p.locator('.check:has-text("Expenses")'); if (await exp.count() && !(await exp.isDisabled())) { await exp.click(); await p.waitForTimeout(500); await p.click('button:has-text("Approve all")').catch(() => {}); await p.waitForTimeout(400); await home(); await tile('Day close'); }
@@ -121,6 +200,11 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Collection'); await tile('Outstanding'); await shot('owner-outstanding');
   await home(); await tile('Sales'); await tile('Beats'); await shot('owner-beats');
   await home(); await tile('Bill'); await tile('Billed'); await shot('owner-billed-list');
+  // P3: the bill editor stacks each line on a phone: no sideways scroll
+  if (await p.locator('button:has-text("Edit")').count()) { await p.locator('button:has-text("Edit")').first().click(); await p.waitForTimeout(500); await shot('owner-bill-editor');
+    const ov = await p.evaluate(() => { const s = document.querySelector('.sheet .stack'); const tb = document.querySelector('.bill-tbl'); return { sheet: s.scrollWidth - s.clientWidth, tbl: tb.scrollWidth - tb.clientWidth }; });
+    must(ov.sheet <= 1 && ov.tbl <= 1, `the bill editor does not scroll sideways on a phone (${JSON.stringify(ov)})`);
+    await p.click('.sheet-head button[aria-label="Close"]'); await p.waitForTimeout(300); }
   await home(); await tile('Payroll'); await tile('Salary'); await shot('owner-salary');
   await logout(); await loginAs('Ravi (Salesman)'); await tile('My day'); await shot('salesman-myday');
 

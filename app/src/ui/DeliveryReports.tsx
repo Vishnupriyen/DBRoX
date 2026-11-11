@@ -2,7 +2,7 @@ import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showDate, showTime } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 
@@ -17,9 +17,10 @@ export function DeliveryStatus() {
     <div className="stack">
       <button className="link" onClick={() => setOpen(null)}>← {'back'}</button>
       <div className="card stack">
-        <div><b>{rows.find(r => r.id === open.id)?.shop}</b><div className="muted">{open.number} · {inr(open.total)} · {open.delivery?.at.slice(11, 16)}</div></div>
+        <div><b>{rows.find(r => r.id === open.id)?.shop}</b><div className="muted">{open.number} · {inr(open.total)} · {showTime(open.delivery?.at)}</div></div>
         <div className="row" style={{ gap: 8 }}>
-          {open.delivery?.shopPhoto && <img src={open.delivery.shopPhoto} alt="Shop" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
+          {/* older bills kept the shop photo twice (photo + shopPhoto): either one */}
+          {(open.delivery?.shopPhoto ?? open.delivery?.photo) && <img src={open.delivery.shopPhoto ?? open.delivery.photo} alt="Shop" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
           {open.delivery?.billPhoto && <img src={open.delivery.billPhoto} alt="Bill" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
         </div>
         <div className="muted"><MapPin size={14} style={{ verticalAlign: -2 }} /> {open.delivery?.lat ? `${open.delivery.lat.toFixed(5)}, ${open.delivery.lng?.toFixed(5)}` : 'no location'}{open.delivery?.distanceM != null && <span className={`badge ${open.delivery.distanceM > 150 ? 'bad' : 'ok'}`} style={{ marginLeft: 6 }}>{open.delivery.distanceM} m {'from shop'}</span>}</div>
@@ -60,7 +61,7 @@ export function TripReports() {
   return (
     <div className="stack">
       <table className="tbl"><thead><tr><th>{'Date'}</th><th>{'Van'}</th><th>{'Stops'}</th><th>km</th><th>{'Idle'}</th><th>{'Fuel'}</th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.t.id}><td>{r.t.date.slice(5)}</td><td>{r.van}</td><td className="num">{r.done}/{r.stops}</td><td className="num">{r.km || '—'}</td><td className="num">{r.idleMin ? `${r.idleMin} min` : '—'}</td><td className="num">{r.fuel ? inr(r.fuel) : '—'}</td></tr>)}</tbody></table>
+        <tbody>{rows.map(r => <tr key={r.t.id}><td>{showDate(r.t.date)}</td><td>{r.van}</td><td className="num">{r.done}/{r.stops}</td><td className="num">{r.km || '—'}</td><td className="num">{r.idleMin ? `${r.idleMin} min` : '—'}</td><td className="num">{r.fuel ? inr(r.fuel) : '—'}</td></tr>)}</tbody></table>
       {!rows.length && <div className="card muted">{'No trips yet.'}</div>}
       {rows.length > 0 && rows.every(r => r.t.track.length < 2) && <div className="alert warn"><AlertTriangle /><div>{'No GPS track recorded on these trips — km and idle time show "—". The driver\'s phone must keep location on during the trip.'}</div></div>}
       <div className="muted">{'km from the GPS track; fuel from expenses entered as "diesel" for that van and day.'}</div>
@@ -92,11 +93,11 @@ export function PrintLoad() {
         <button className="btn primary" onClick={() => void printPage()}><Printer /> {'Print'}</button>
       </div>
       <div className="card" style={{ background: '#fff', color: '#000' }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 18 }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{t.date} · {'Driver'}: {t.driver || '—'}</span></div>
+        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: '1.125rem' }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{showDate(t.date)} · {'Driver'}: {t.driver || '—'}</span></div>
         <div className="muted">{plural(t.invs.length, 'bill')} · {plural(stops.length, 'stop')} · {inr(t.invs.reduce((a, i) => a + i.total, 0))}</div>
         <h4 style={{ margin: '12px 0 4px' }}>A. {'By product'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>☐</th><th>{'Product'}</th><th>{'Batch · expiry'}</th><th>{'Cases'}</th><th>{'Pcs'}</th></tr></thead>
-          <tbody>{[...byProduct.values()].sort((a, b) => a.p.companyId.localeCompare(b.p.companyId) || a.p.name.localeCompare(b.p.name)).map(v => <tr key={v.p.id}><td style={{ fontSize: 18 }}>☐</td><td>{v.p.name}</td><td>{[...v.batches.entries()].map(([k, q]) => <div key={k}>{k} × {q}</div>)}</td><td className="num">{Math.floor(v.qty / v.p.caseSize) || ''}</td><td className="num">{v.qty % v.p.caseSize || (Math.floor(v.qty / v.p.caseSize) ? '' : v.qty)}</td></tr>)}</tbody></table>
+          <tbody>{[...byProduct.values()].sort((a, b) => a.p.companyId.localeCompare(b.p.companyId) || a.p.name.localeCompare(b.p.name)).map(v => <tr key={v.p.id}><td style={{ fontSize: '1.125rem' }}>☐</td><td>{v.p.name}</td><td>{[...v.batches.entries()].map(([k, q]) => <div key={k}>{k} × {q}</div>)}</td><td className="num">{Math.floor(v.qty / v.p.caseSize) || ''}</td><td className="num">{v.qty % v.p.caseSize || (Math.floor(v.qty / v.p.caseSize) ? '' : v.qty)}</td></tr>)}</tbody></table>
         <h4 style={{ margin: '14px 0 4px' }}>B. {'By stop'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>#</th><th>{'Shop'}</th><th>{'Bills'}</th><th>{'Pcs'}</th><th>₹</th><th>{'Sign'}</th></tr></thead>
           <tbody>{stops.map((sid, k) => { const si = t.invs.filter(i => i.shopId === sid); return <tr key={sid}><td>{k + 1}</td><td>{shops.get(sid)}</td><td>{si.map(i => i.number).join(', ')}</td><td className="num">{si.flatMap(i => i.lines).reduce((a, l) => a + l.qty + l.freeQty, 0)}</td><td className="num">{inr(si.reduce((a, i) => a + i.total, 0))}</td><td style={{ width: 90 }}></td></tr>; })}</tbody></table>

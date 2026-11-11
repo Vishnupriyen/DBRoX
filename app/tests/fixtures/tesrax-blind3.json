@@ -153,7 +153,7 @@
   ["any scheme this month", "t:Schemes", "salesman"],
   ["scheme list", "t:Schemes", "office"],
   ["tomorrow leave", "leave", "salesman"],
-  ["2 days leave", "leave", "godown"],
+  ["2 days leave", "ask", "godown"],
   ["advance 2000", "advance:2000", "salesman"],
   ["salary advance 3k", "advance:3000", "delivery"],
   ["need advance rs 1500", "advance:1500", "office"],

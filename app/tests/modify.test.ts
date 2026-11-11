@@ -31,6 +31,7 @@ const orderOf = async (shop: string) => (await db.orders.where('shopId').equals(
 const qtyIn = (o: Order, p: string) => o.lines.find(l => l.productId === prodId[p])?.qty ?? 0;
 const stock = async (p: string) => (await db.batches.where('productId').equals(prodId[p]).toArray()).reduce((a, b) => a + b.qty, 0);
 const field = (p: Proposal, k: string) => p.fields.find(f => f.key === k);
+const typedAgain = (r: Reply, n: number): Reply => ({ ...r, proposal: { ...r.proposal!, fields: r.proposal!.fields.map(f => f.key === 'again' ? { ...f, value: n } : f) } });
 
 describe('orders', () => {
   it('changes a quantity, removes an item and adds one, each approved', async () => {
@@ -120,13 +121,13 @@ describe('stock counts', () => {
   it('sets a counted total, shortage off the oldest lot', async () => {
     const r = await ask('physical count bingo 500');
     expect(r.proposal?.kind).toBe('stockFix');
-    await approve(r);
+    await approve(typedAgain(r, 500)); // more than 1 case off: the counted total is typed a second time (UX round 4)
     expect(await stock('bingo')).toBe(500);
     await approve(await ask('6 bingo short'));
     expect(await stock('bingo')).toBe(494);
   });
   it('the count is refused if stock moved after the table was made', async () => {
-    const r = await ask('physical count bingo 480');
+    const r = typedAgain(await ask('physical count bingo 480'), 480);
     const b = (await db.batches.where('productId').equals(prodId.bingo).toArray()).find(x => x.qty > 0)!;
     const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - 1 }); await cs.commit('sold');
     await expect(commit(r.proposal!)).rejects.toThrow(/stock moved/);

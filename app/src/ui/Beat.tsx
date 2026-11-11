@@ -1,3 +1,4 @@
+import { isCashOnly } from '../core/billing';
 import { useEffect, useState } from 'react';
 import { MapPin, ChevronRight, Phone, IndianRupee, PackageCheck, Store, AlertTriangle } from 'lucide-react';
 import { ChangeSet, db, nowIso, session, today, activeShops } from '../core/db';
@@ -6,6 +7,7 @@ import { inr, t, showDate } from '../core/i18n';
 import type { Shop, Visit } from '../core/types';
 import { OrderBook } from './OrderBook';
 import { CollectShop } from './Collect';
+import { useBack } from './useBack';
 
 interface Stop { shop: Shop; due: number; overdue: number; lastOrder?: string; visit?: Visit; billedToday: boolean }
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -17,6 +19,8 @@ export function Beat() {
   const [tick, setTick] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const dayIdx = new Date().getDay();
+  // back from a shop's collection goes to the beat (the order screen answers back itself: it may ask first)
+  useBack(() => { if (open?.mode !== 'collect') return false; setOpen(null); setTick(x => x + 1); return true; });
 
   useEffect(() => {
     (async () => {
@@ -57,7 +61,7 @@ export function Beat() {
       <div className="kpi navy">
         <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{DAYS[dayIdx]} · {"Today's beat"}</div>
         <div className="row" style={{ marginTop: 6, gap: 18 }}>
-          <div><div className="v">{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{list.length}</span></div><div className="l">{'shops done'}</div></div>
+          <div><div className="v">{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{list.length}</span></div><div className="l">{'shops done'}</div></div>
           <div><div className="v">{inr(totalDue)}</div><div className="l">{'to collect on this beat'}</div></div>
         </div>
       </div>
@@ -75,7 +79,7 @@ export function Beat() {
                 <div className="s">{s.shop.area}{s.shop.owner ? ` · ${s.shop.owner}` : ''}{s.lastOrder ? ` · last order ${showDate(s.lastOrder)}` : ''}</div>
                 <div className="row" style={{ marginTop: 4 }}>
                   {s.due > 0.5 && <span className={`badge ${s.overdue > 0 ? 'bad' : ''}`}>{inr(s.due)} {s.overdue > 0 ? `· ${s.overdue}d late` : 'due'}</span>}
-                  {s.shop.cashOnly && <span className="badge warn">Cash only</span>}
+                  {isCashOnly(s.shop) && <span className="badge warn">Cash only</span>}
                   {s.billedToday && <span className="badge ok"><PackageCheck size={14} /> billed</span>}
                   {s.visit?.farFromShop && <span className="badge warn"><AlertTriangle size={14} /> far from shop</span>}
                 </div>

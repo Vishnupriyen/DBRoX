@@ -1,20 +1,23 @@
-import { inr, showDate, plural } from './i18n';
+import { inr, showDate, showDay, plural } from './i18n';
 // TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, English). The AI is only used to
 // read photos, never to decide money.
 import { licenceState } from './licence';
-import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
+import { db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { allOutstanding, invoiceBalances, r2 } from './ledger';
-import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, closeProduct, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
 import {
   companyOptions, orderRow, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
 export { orderRow, refreshOrderRow } from './proposals';
 import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
-import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Staff } from './types';
+import { MODULES, type ModuleKey, type Product, type Role, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
+import { costValue, creditValue, openPaid } from './credit';
+import { STATES } from './gst';
 import { categoryOf, modifyIntent } from './modify';
+import { noOrderVisit } from './visitIntent';
 const ENV_SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '';
 
 export interface Reply {
@@ -26,7 +29,7 @@ export interface Reply {
   go?: string; // open this screen (Page id in the app shell)
   link?: { label: string; page: string }; // an answer given in words, with a button to the screen behind it (never jumps away)
   parts?: Reply[];          // a message that asked for several things: one reply per thing, in the order said
-  pending?: { said: string; need: 'shop' | 'amount' }; // TESRAX asked which shop; the next message may just name it
+  pending?: { said: string; need: 'shop' | 'amount' | 'date' }; // TESRAX asked which shop; the next message may just name it
   replaces?: boolean;       // a follow-up that changed the table just shown (the old one is closed)
   follow?: 'tap' | 'dropped'; // "yes" (tap ✓ to save) / "no" (table dropped)
   refused?: boolean;        // a clear no: not this role's screen or action
@@ -36,6 +39,8 @@ export { handle } from './converse';
 /** "8 cases", "8 cases + 4 pcs", "4 pcs" */
 const cases = (q: number, size: number) => { const c = Math.floor(q / (size || 1)), r = q % (size || 1); return size > 1 ? [c ? plural(c, 'case') : '', r ? `${r} pcs` : ''].filter(Boolean).join(' + ') || '0' : `${q} pcs`; };
 import { profitAndLoss, pnlTotals } from './pnl';
+import { period, salesSummary } from './reports';
+import { dayFigures } from './pipeline';
 import { handleCompany } from './companyEngine';
 
 // Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
@@ -57,7 +62,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list'] },
   { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'p l', 'pnl', 'p and l', 'profit', 'profit and loss', 'how much profit'] },
   { page: 'cashflow', name: 'Cash flow', roles: ['owner'], words: ['cash flow', 'cashflow', 'position', 'net worth', 'loans', 'who will pay', 'what do i owe', 'payables', 'receivables', 'pending cheques'] },
-  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost'] },
+  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'day book', 'daybook', 'collections by person', 'collection by person', 'collections report', 'collection report'] },
   { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van list', 'vans', 'add van', 'my vans', 'vans and drivers', 'assign driver'] },
   { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export'] },
   { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gst summary', 'gst report', 'gst status', 'gst due', 'tax summary', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
@@ -66,8 +71,8 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
   { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan route', 'plan'] },
   { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking'] },
-  { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash'] },
-  { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'stock screen'] },
+  { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'who has cash', 'who has the cash', 'who has money', 'cash with whom', 'cash with who', 'staff with cash'] },
+  { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'stock screen', 'low stock', 'stock low', 'less stock', 'stock less', 'short stock'] },
   { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'claims list', 'claim list', 'pending claims'] },
   { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'dayclose', 'close day', 'close the day', 'reconcile', 'reconciliation'] },
   { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report'] },
@@ -77,7 +82,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print'] },
   { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading'] },
   { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery'] },
-  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops'] },
+  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'next shop', 'next shops', 'which shop next', 'shops today'] },
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders'] },
 ];
 function screenFor(text: string, role: Role, exact = false): Reply | null {
@@ -97,7 +102,9 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
     return { text: `Opening ${mine.name}.`, go: mine.page };
   }
   const hit = SCREENS.filter(s => s.words.some(w => text === w || text.startsWith(w + ' ') || text.endsWith(' ' + w) || text.includes(' ' + w + ' ') || (w.length > 5 && text.includes(w))))
-    .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))[0];
+    .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))
+    // two screens matched by the same words ("target": Targets / My day): the one this person may open
+    .find((h, _i, all) => { const len = (x: typeof h) => Math.max(...x.words.filter(w => text.includes(w)).map(w => w.length)); const tie = all.filter(x => len(x) === len(all[0])); return tie.includes(h) && (h.roles.includes(role) || !tie.some(x => x.roles.includes(role))); });
   if (!hit) return null;
   if (!hit.roles.includes(role)) return { text: `${hit.name} is the ${hit.roles[0] === 'owner' ? 'owner' : hit.roles[0]}'s screen. Ask them to open it.`, tone: 'warn', refused: true };
   return { text: `Opening ${hit.name}.`, go: hit.page };
@@ -114,7 +121,7 @@ export const W = {
   newShop: ['new shop', 'new outlet', 'add outlet', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer'],
   paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer'],
   ret: ['return', 'returned', 'took back', 'sent back', 'send back', 'gave back', 'give back', 'taken back'],
-  damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled'],
+  damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'udanju', 'udanjiruchu', 'odanju', 'kizhinjiruchu'],
   order: ['order'],
   outstanding: ['outstanding', 'pending', 'owes', 'owe', 'balance', 'due', 'dues', 'has to pay', 'have to pay', 'yet to pay', 'to pay', 'not paid', 'unpaid', 'credit', 'overdue', 'late payment', 'defaulters'],
   sales: ['sales', 'sale today', 'today summary', 'summary', 'sold today', 'sold', 'sell today', 'total sales', 'billing today', 'today billing', 'today s billing', 'how much billed', 'turnover'],
@@ -127,6 +134,8 @@ export const W = {
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
   claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export'],
   needsOk: ['needs ok', 'approval', 'waiting'],
+  openingDues: ['old dues', 'old due', 'opening balance', 'opening balances', 'opening dues', 'old balance', 'old outstanding', 'old bills'],
+  openingStock: ['opening stock', 'old stock', 'stock on hand', 'closing stock'],
   scheme: ['scheme', 'offer'],
 };
 
@@ -169,6 +178,7 @@ Examples:
 • "HUL Surf 5% off till 30 Nov" · "Good Day buy 24 get 2"
 • "tally export" · "gstr1 october" · "e-invoice" · "claim file"
 • (attach product or shop list Excel) "add products" / "add shops"
+• (attach old dues or opening stock Excel) "old dues" / "opening stock"
 Several things at once: "Murugan paid 500, send 2 case surf". After a table you can just say "make it 600", "for Selvam", "add 2 vim", "no".
 Short forms, typos and numbers in words work too: "murugan 5k pd", "selvam bal", "rcvd 500 frm kumar mart".`;
 
@@ -196,6 +206,12 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
       if (!can(role, 'bank')) return deny();
       return need('accountant', mods) ?? bankProposal(file);
     }
+    // the day a distributor starts: old shop dues and opening stock from the owner's Excel (owner / office only)
+    if (isSheet(file) && (has(text, W.openingDues) || has(text, W.openingStock))) {
+      if (role !== 'owner' && role !== 'office') return deny();
+      const { openingDuesProposal, openingStockProposal } = await import('./opening');
+      return has(text, W.openingStock) ? openingStockProposal(file) : openingDuesProposal(file);
+    }
     if (has(text, W.products) && isSheet(file)) return importProducts(file);
     if (has(text, W.shops) && isSheet(file)) return importShops(file);
     if (has(text, W.expense)) return expenseFromFile(file, textIn);
@@ -207,6 +223,14 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (!can(role, 'purchase')) return deny();
     const r = need('inventory', mods); if (r) return r;
     return purchaseProposal(file);
+  }
+
+  // a minus sign is never read as a plus: "paid -500", "surf -5 damage" ask what was meant. More than 2 decimals in an amount are asked too.
+  if (!file) {
+    const neg = textIn.match(/(?<![\w/.)])-(?:₹|rs\.?\s*)?\d[\d,]*(?:\.\d+)?/i);
+    if (neg) return { text: `I see a minus sign in "${neg[0].replace(/\s+/g, '')}". Did you mean to cancel or undo something? Say it like "cancel Murugan payment" or "undo", or type the number without the minus.`, tone: 'warn' };
+    const dec = textIn.replace(/(\d),(\d{3})\b/g, '$1$2').match(/\b\d+\.\d{3,}\b/);
+    if (dec && (has(text, W.paid) || has(text, W.expense) || has(text, ['advance']))) return { text: `${dec[0]} has more than 2 decimals. Money is in rupees and paise (2 decimals at most): please type the amount again.`, tone: 'warn' };
   }
 
   // ------------------------ exports ------------------------
@@ -248,6 +272,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     return { text: `Which ${found.ties[0].name}${list ? ` — ${list}` : ''}? Say the town too, e.g. "${found.ties[0].name} ${towns[0] ?? ''}".`, tone: 'warn', pending: { said: textIn, need: 'shop' } };
   }
 
+  const noOrder = await noOrderVisit(textIn, shop, role, parseItemLines(rest).length > 0); if (noOrder) return noOrder;
   // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
   const mod = await modifyIntent({ text, textIn, shop, rest, role, products: productsAll, isExpense: has(text, W.expense) && !orderish, isDamage: has(text, W.damage) && !orderish, isOrder: orderish, fixOf: correctionIn });
   if (mod) return mod;
@@ -266,18 +291,20 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (!can(role, 'payment')) return deny();
     return paymentCorrection(shop?.id, fix.old, fix.next, role, textIn);
   }
-  const restLines = parseItemLines(rest);
+  const chq = modeIn(text) === 'cheque' ? chequeIn(rest) : { date: undefined, bank: undefined, rest };
+  const payRest = chq.rest; // the cheque's date and bank are not products or amounts
+  const restLines = parseItemLines(payRest);
   const productsActive = (await db.products.toArray()).filter(p => p.active);
   // money words are never products ("cash" is not "Cashew")
   const MONEY = new Set([...W.paid, 'rs', 'inr', 'rupees', 'amount', 'from', 'by', 'via', 'ref', 'no', 'number', 'bill', 'bills']);
   const hasProduct = restLines.some(l => { const q = l.productText.split(' ').filter(w => !MONEY.has(w)).join(' '); return !!q && !!bestProduct(productsActive, q).product; });
-  const amount = payAmount(rest);
+  const amount = payAmount(payRest);
   // "Selvam paid 450", or just "Selvam 450 rs" / "Velan 5000" (a shop and an amount, nothing else)
-  const onlyAmount = amount != null && amount >= 10 && !norm(rest).replace(/\b(\d+|rs|rupees|inr|only|please|today|from)\b/g, '').trim();
+  const onlyAmount = amount != null && amount >= 10 && !norm(payRest).replace(/\b(\d+|rs|rupees|inr|only|please|today|from)\b/g, '').trim();
   if (shop && (has(text, W.paid) || onlyAmount) && amount != null && !hasProduct) {
     const r = need('collection', mods); if (r) return r;
     if (!can(role, 'payment')) return deny();
-    return paymentProposal(shop.id, amount, modeIn(text), refIn(textIn));
+    return paymentProposal(shop.id, amount, modeIn(text), refIn(chq.rest), { chequeDate: chq.date, bank: chq.bank });
   }
   if (!shop && has(text, W.paid) && amount != null && !hasProduct && !has(text, W.expense) && !has(text, ['advance', 'salary']))
     return { text: 'Which shop paid? Say the shop name.', tone: 'warn', pending: { said: textIn, need: 'shop' } };
@@ -289,17 +316,18 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (!shop && /\b(van|vans|auto)\b/.test(text) && /\bwhere\b/.test(text)) { const sc = screenFor('live vans', role, true); if (sc) return sc; }
   if (/\b(came|come|present|absent)\b/.test(text) && (await db.staff.toArray()).some(st => has(text, [norm(st.name.split(' ')[0])]))) { const sc = screenFor('attendance', role, true); if (sc) return sc; }
   if (/\b(van|auto)\s*\d+\s*(details|info|detail)\b/.test(text)) { const sc = screenFor('vans and drivers', role, true); return sc ?? { text: 'Vans & drivers is the owner\'s screen. Ask them to open it.', tone: 'warn', refused: true }; }
-  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text)) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
+  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text) || (!shop && /\b(stock|goods|load|lorry|items|company|purchase|parcel)\b.*\bcame\b/.test(text))) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
 
   // ------------------------ questions ------------------------
   if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
+  if (role === 'owner' && !shop && /\bcash\b/.test(text) && /\b(staff|salesmen|drivers|who|whom)\b/.test(text)) { const sc = screenFor('cash with staff', role, true); if (sc) return sc; }
   if (has(text, W.cashHand) || (!shop && /\bcash\b/.test(text) && /\bhow much\b/.test(text))) return cashInHand();
   if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (!shop && has(text, W.outstanding) && /\b(pcs|pieces|stock|left|cases|qty)\b/.test(text) && bestProduct(productsActive, text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim()).product)
     return stockTable(text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim());
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
-  if (has(text, W.sales)) return salesToday();
+  if (has(text, W.sales)) return salesToday(text);
   // "how much surf", "is good day available", "how many lifebuoy left"
   if (!shop && /\b(how much|how many|available|left|in stock|stock|quantity|balance stock|do we have|have we got)\b/.test(text)) {
     const q = text.replace(/\b(how much|how many|is|are|available|left|in stock|stock of|stock|check|quantity|balance|do we have|have we got|we have|there|any|of|the|in|at|godown|warehouse|now|today|currently|pieces|pcs|cases|units|qty)\b/g, ' ').replace(/\s+/g, ' ').trim();
@@ -313,8 +341,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     const active = productsActive;
     if (!lines.some(l => bestProduct(active, l.productText).product)) {
       // say what was understood and what was not, in two lines (never a page of examples)
-      const words = lines.map(l => `"${l.productText}"`).join(', ');
-      return { text: `Found ${shop!.name}, but no product called ${words}.\nCheck the name, or say it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn', missed: true };
+      return { text: `Found ${shop!.name}, but ${notProduct(active, lines.map(l => l.productText))}\nSay it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn', missed: true };
     }
   }
   if (shop && lines.length) {
@@ -327,6 +354,9 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     return { text: 'Which shop is this order for? Say the shop name, e.g. "Murugan Stores".', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   }
   const sc = /\d/.test(text) && /\b(change|edit|update|set|make|correct|wrong)\b/.test(text) ? null : screenFor(text, role); if (sc) return sc;
+  // "Kaveri 3 case coconut oil": cases said, but no shop of ours and no product of ours → the shop is what is missing first
+  if (!shop && lines.some(l => l.unit !== 'pcs') && can(role, 'order'))
+    return { text: `Which shop is this order for? Say the shop name, e.g. "Murugan Stores".\n${cap(notProduct(productsActive, lines.map(l => l.productText)))}`, tone: 'warn', missed: true, pending: { said: textIn, need: 'shop' } };
   // not understood: a short reply with three things this person can say (the full list only when asked for "help")
   const tries = role === 'salesman' ? ['"Murugan Stores 2 case Surf"', '"Murugan Stores paid 500 cash"', '"my day"']
     : role === 'delivery' ? ['"Kumar Mart paid 1000 cash"', '"diesel 800"', '"my trip"']
@@ -436,6 +466,32 @@ function modeIn(t: string): 'cash' | 'upi' | 'cheque' {
   return 'cash';
 }
 function refIn(t: string) { return t.match(/\b(\d{6,12})\b/)?.[1] ?? ''; }
+
+const MONTHS = 'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
+const BANKS = /\b(state bank|sbi|hdfc|icici|axis|canara|indian bank|iob|indian overseas|union bank|pnb|punjab national|bob|bank of baroda|kotak|tmb|tamilnad mercantile|city union|cub|kvb|karur vysya|idbi|yes bank|federal|bandhan|central bank|uco|ubi|boi|bank of india)\b/i;
+const BANK_NAMES: Record<string, string> = { sbi: 'SBI', 'state bank': 'SBI', hdfc: 'HDFC', icici: 'ICICI', axis: 'Axis', canara: 'Canara', 'indian bank': 'Indian Bank', iob: 'IOB', 'indian overseas': 'IOB', 'union bank': 'Union Bank', pnb: 'PNB', 'punjab national': 'PNB', bob: 'Bank of Baroda', 'bank of baroda': 'Bank of Baroda', kotak: 'Kotak', tmb: 'TMB', 'tamilnad mercantile': 'TMB', 'city union': 'City Union', cub: 'City Union', kvb: 'KVB', 'karur vysya': 'KVB', idbi: 'IDBI', 'yes bank': 'Yes Bank', federal: 'Federal', bandhan: 'Bandhan', 'central bank': 'Central Bank', uco: 'UCO', ubi: 'Union Bank', boi: 'Bank of India', 'bank of india': 'Bank of India' };
+/** the cheque's own words in a payment message: its date ("25 nov", "nov 25", "25/11"), its bank ("SBI"); `rest` is the message without them
+ *  (so the date's digits are never taken as the amount). The cheque number is the 6–12 digits, read by refIn. */
+export function chequeIn(t: string): { date?: string; bank?: string; rest: string } {
+  let rest = t; let date: string | undefined;
+  const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const yearFor = (m: number, d: number, y?: number) => {
+    if (y) return iso(y < 100 ? 2000 + y : y, m, d);
+    const cand = iso(Number(today().slice(0, 4)), m, d);
+    return cand < daysFrom(-120) ? iso(Number(today().slice(0, 4)) + 1, m, d) : cand;
+  };
+  const mi = (w: string) => MONTHS.split('|').indexOf(w.slice(0, 3).toLowerCase()) + 1;
+  let m = rest.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?(${MONTHS})[a-z]*\\.?(?:\\s*,?\\s*(\\d{4}))?\\b`, 'i'));
+  if (m) date = yearFor(mi(m[2]), Number(m[1]), m[3] ? Number(m[3]) : undefined);
+  else if ((m = rest.match(new RegExp(`\\b(${MONTHS})[a-z]*\\.?\\s*(\\d{1,2})(?:st|nd|rd|th)?\\b(?!\\s*(?:rs|cases?|pcs))`, 'i')))) date = yearFor(mi(m[1]), Number(m[2]));
+  else if ((m = rest.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/))) date = yearFor(Number(m[2]), Number(m[1]), m[3] ? Number(m[3]) : undefined);
+  else if ((m = rest.match(/\b(tomorrow|tmrw|nalaiku|naalaiku|nalai|naalai|nalaikku|naalaikku)\b/i))) date = daysFrom(1);
+  if (m) rest = rest.replace(m[0], ' ');
+  if (date && !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date)) date = undefined;
+  const b = rest.match(BANKS); const bank = b ? BANK_NAMES[b[1].toLowerCase()] : undefined;
+  if (b) rest = rest.replace(b[0], ' ');
+  return { date, bank, rest };
+}
 
 // ---------------------------------------------------------------------------------------------
 async function purchaseProposal(file: File): Promise<Reply> {
@@ -569,6 +625,11 @@ async function bankProposal(file: File): Promise<Reply> {
 }
 
 // ---------------------------------------------------------------------------------------------
+/** a typo ("sarf") gets "did you mean Surf…?"; a product we never stocked ("lux") is plainly "not in your product list" */
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+function notProduct(products: Product[], words: string[]): string {
+  return words.map(w => { const c = closeProduct(products, w); return c ? `no product like "${w}" — did you mean ${c.name}?` : `"${w}" is not in your product list.`; }).join(' ');
+}
 async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
   const products = (await db.products.toArray()).filter(p => p.active);
   const parsed = parseItemLines(itemText);
@@ -590,7 +651,7 @@ async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
     rows.push(await orderRow(product, qty, l.text, schemes));
   }
   return {
-    text: [unsure.length ? `Which one did you mean for: ${unsure.join(', ')}? Pick it in the table.` : '', unknown.length ? `I couldn't find: ${unknown.join(', ')}. Pick them in the table.` : ''].filter(Boolean).join(' ') || 'Order ready. Check and tap ✓.',
+    text: [unsure.length ? `Which one did you mean for: ${unsure.join(', ')}? Pick it in the table.` : '', unknown.length ? `${cap(notProduct(products, unknown))} Pick the product in the table.` : ''].filter(Boolean).join(' ') || 'Order ready. Check and tap ✓.',
     proposal: {
       id: newId(), kind: 'order', title: 'New order',
       fields: [{ key: 'shopId', label: 'Shop', type: 'select', options: await shopOptions(), value: shopId }],
@@ -624,7 +685,8 @@ async function orderFromPhoto(file: File, _text: string): Promise<Reply> {
 }
 
 // ---------------------------------------------------------------------------------------------
-async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'upi' | 'cheque', ref: string): Promise<Reply> {
+async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'upi' | 'cheque', ref: string, chequeWords: { chequeDate?: string; bank?: string } = {}): Promise<Reply> {
+  const chequeDate = mode === 'cheque' ? chequeWords.chequeDate ?? today() : undefined;
   const bills = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
   let left = amount;
   const rows: Row[] = bills.map(b => {
@@ -633,7 +695,7 @@ async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'u
     return { invoiceId: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: b.balance, overdue: b.overdueDays ? `${b.overdueDays} days` : '', pay };
   });
   return {
-    text: rows.length ? 'Applied to oldest bills first. Change the amounts if the shop wants different bills.' : 'This shop has no pending bills; the money will be kept as advance.',
+    text: (rows.length ? 'Applied to oldest bills first. Change the amounts if the shop wants different bills.' : 'This shop has no pending bills; the money will be kept as advance.') + (chequeDate && chequeDate > today() ? ` Cheque dated ${showDate(chequeDate)}: the bills stay open until then (shown as "cheque to clear").` : ''),
     proposal: {
       id: newId(), kind: 'payment', title: 'Record payment',
       fields: [
@@ -641,6 +703,7 @@ async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'u
         { key: 'amount', label: 'Amount ₹', type: 'number', value: amount },
         { key: 'mode', label: 'Mode', type: 'select', value: mode, options: [{ value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' }, { value: 'cheque', label: 'Cheque' }] },
         { key: 'ref', label: 'UPI / cheque no', value: ref },
+        ...(mode === 'cheque' ? CHEQUE_FIELDS(chequeDate!, chequeWords.bank ?? '') : []),
       ],
       columns: [
         { key: 'number', label: 'Bill', readonly: true, width: 150 },
@@ -653,6 +716,11 @@ async function paymentProposal(shopId: string, amount: number, mode: 'cash' | 'u
     },
   };
 }
+/** the cheque's own header fields (date written on it, bank) */
+export const CHEQUE_FIELDS = (date: string, bank: string) => [
+  { key: 'chequeDate', label: 'Cheque date', type: 'date' as const, value: date },
+  { key: 'chequeBank', label: 'Bank', value: bank },
+];
 
 // ---------------------------------------------------------------------------------------------
 async function expenseFromText(textIn: string): Promise<Reply> {
@@ -708,12 +776,12 @@ async function damageProposal(textIn: string, file?: File): Promise<Reply> {
   const products = await db.products.toArray();
   const t = norm(textIn);
   const kind = /expir/.test(t) ? 'expiry' : /transit|van/.test(t) ? 'transit' : 'damage';
-  const cleaned = textIn.replace(/damaged|damage|expired|expiry|claim|add to|leak|broken/gi, ' ');
+  const cleaned = textIn.replace(/damaged|damage|expired|expiry|claim|add to|leak|broken|udanjiruchu|udanju|odanju|kizhinjiruchu/gi, ' ');
   const lines = parseItemLines(cleaned);
   const rows: Row[] = lines.map(l => {
     const p = bestProduct(products, l.productText).product;
     const qty = p ? toPieces(l.qty, l.unit, p) : l.qty;
-    return { said: l.text, productId: p?.id ?? '', qty, kind, amount: p ? r2(qty * p.purchaseRate) : 0, fromStock: 'yes', note: '' };
+    return { said: l.text, productId: p?.id ?? '', qty, kind, amount: costValue(p, qty).amount, fromStock: 'yes', note: '' }; // 0 on a staff phone: valued by the owner's phone
   });
   if (!rows.length) rows.push({ said: '', productId: '', qty: 0, kind, amount: 0, fromStock: 'yes', note: '' });
   const photo = file && file.type.startsWith('image/') ? await fileToDataUrl(file, 1000, 0.6) : undefined;
@@ -737,29 +805,39 @@ async function damageProposal(textIn: string, file?: File): Promise<Reply> {
 
 async function returnProposal(shopId: string, itemText: string): Promise<Reply> {
   const products = await db.products.toArray();
-  const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled).sort((a, b) => b.date.localeCompare(a.date));
-  const rows: Row[] = parseItemLines(itemText.replace(/return(ed)?/gi, ' ')).map(l => {
+  const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled).sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number));
+  const cns = await db.creditNotes.where('shopId').equals(shopId).toArray();
+  const rows: Row[] = [];
+  // "return 2 surf damaged", "1 vim broken": a damaged word marks that item as not going back to stock (and takes the word out of the product name)
+  const DAMAGED = /\b(damaged?|damge|broken|breakage|torn|leak(?:ed|ing|age)?|spoil(?:t|ed)?|crushed|wet|expired|rat\s*bite|chewed|ud[a-z]*nj[a-z]*|od[a-z]*nj[a-z]*|kizhinj[a-z]*)\b/gi;
+  const segs = itemText.replace(/return(ed)?/gi, ' ').split(/[,;\n]|\band\b/i);
+  const flagged = new Map<string, boolean>();
+  const lineList = segs.flatMap(seg => { const bad = new RegExp(DAMAGED.source, 'i').test(seg); return parseItemLines(seg.replace(DAMAGED, ' ')).map(l => { flagged.set(l.text, bad); return l; }); });
+  const anyDamaged = [...flagged.values()].some(Boolean);
+  for (const l of lineList) {
     const p = bestProduct(products, l.productText).product;
     const qty = p ? toPieces(l.qty, l.unit, p) : l.qty;
-    const inv = p ? invs.find(i => i.lines.some(x => x.productId === p.id)) : undefined;
-    const line = inv?.lines.find(x => x.productId === p?.id);
-    const perPc = line ? line.total / (line.qty || 1) : 0;
-    return { said: l.text, productId: p?.id ?? '', qty, invoiceId: inv?.id ?? '', bill: inv?.number ?? '', amount: r2(qty * perPc), restock: 'yes' };
-  });
+    // the latest bill that still has these pieces open (billed minus already returned)
+    const open = (i: typeof invs[0]) => p ? openPaid(i, cns.filter(c => c.invoiceId === i.id), p.id) : 0;
+    const inv = p ? invs.find(i => open(i) >= qty) ?? invs.find(i => open(i) > 0) : undefined;
+    // credit = the bill line's own value of these pieces (taxable + GST), never more than it charged
+    let amount = 0; try { amount = inv && p ? await creditValue(inv.id, [{ productId: p.id, paid: Math.min(qty, open(inv)), free: 0, restock: true }]) : 0; } catch { amount = 0; }
+    rows.push({ said: l.text, productId: p?.id ?? '', qty, invoiceId: inv?.id ?? '', bill: inv?.number ?? '', amount, restock: flagged.get(l.text) ? 'no' : 'yes' });
+  }
   return {
-    text: rows.length ? 'Return ready. A credit note will be made against the latest bill with that item.' : 'Say the items, e.g. "Selvam return 2 Surf".',
+    text: rows.length ? 'Return ready. A credit note will be made against the latest bill with that item.' + (anyDamaged ? ' Damaged pieces do not go back to stock: they go to the claim register.' : '') : 'Say the items, e.g. "Selvam return 2 Surf".',
     proposal: {
       id: newId(), kind: 'return', title: 'Shop return → credit note',
       fields: [
         { key: 'shopId', label: 'Shop', type: 'select', options: await shopOptions(), value: shopId, readonly: true },
-        { key: 'reason', label: 'Reason', value: 'Return' },
+        { key: 'reason', label: 'Reason', value: anyDamaged ? 'Return - damaged' : 'Return' },
       ],
       columns: [
         { key: 'said', label: 'You said', readonly: true, width: 110 },
         { key: 'productId', label: 'Product', type: 'select', options: (await productOptions()).filter(o => o.value !== '__new'), width: 160 },
         { key: 'qty', label: 'Qty (pcs)', type: 'number', width: 70 },
         { key: 'bill', label: 'Against bill', readonly: true, width: 140 },
-        { key: 'amount', label: 'Credit ₹', type: 'number', width: 85 },
+        { key: 'amount', label: 'Credit ₹', type: 'number', width: 85, readonly: true },
         { key: 'restock', label: 'Back to stock', type: 'select', width: 90, options: [{ value: 'yes', label: 'Yes (good)' }, { value: 'no', label: 'No (damaged)' }] },
       ],
       rows, meta: {},
@@ -774,7 +852,7 @@ async function newShopProposal(textIn: string): Promise<Reply> {
     proposal: {
       id: newId(), kind: 'newshop', title: 'New shop', fields: [],
       columns: shopColumns(),
-      rows: [{ name, owner: '', phone: '', gstin: '', area: '', beat: '', creditLimit: 0, creditDays: 7, cashOnly: 'no', type: 'retail' }],
+      rows: [{ name, owner: '', phone: '', gstin: '', stateCode: '33', area: '', beat: '', creditLimit: 0, creditDays: 7, cashOnly: 'yes', type: 'retail' }], // cash only until the owner sets a limit
       meta: {},
     },
   };
@@ -826,6 +904,7 @@ function shopColumns(): Col[] {
     { key: 'owner', label: 'Owner', width: 100 },
     { key: 'phone', label: 'Mobile', width: 110 },
     { key: 'gstin', label: 'GSTIN (if B2B)', width: 150 },
+    { key: 'stateCode', label: 'State', type: 'select', width: 120, options: Object.entries(STATES).map(([value, label]) => ({ value, label: `${value} ${label}` })) },
     { key: 'area', label: 'Area', width: 100 },
     { key: 'beat', label: 'Beat (day)', width: 90 },
     { key: 'creditLimit', label: 'Credit limit ₹', type: 'number', width: 90 },
@@ -874,7 +953,7 @@ async function importShops(file: File): Promise<Reply> {
     text: `${plural(rows.length, 'shop')} read. Check GSTIN and credit terms.`,
     proposal: {
       id: newId(), kind: 'shops', title: 'Import shops', fields: [], columns: shopColumns(),
-      rows: rows.map(r => ({ ...r, cashOnly: 'no', type: 'retail' })), meta: {},
+      rows: rows.map(r => ({ ...r, stateCode: '33', cashOnly: Number(r.creditLimit) > 0 ? 'no' : 'yes', type: 'retail' })), meta: {},
     },
   };
 }
@@ -897,7 +976,17 @@ async function outstandingTable(shopId?: string, above?: number): Promise<Reply>
   };
 }
 
-async function salesToday(): Promise<Reply> {
+async function salesToday(text = ''): Promise<Reply> {
+  // "last month sales", "sales october", "this month sales": the figures of that period (net of returns, before GST), the Reports screen one tap away
+  const wantsMonth = /\blast month\b|\bthis month\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/.test(text) && !/\btoday\b/.test(text);
+  if (wantsMonth) {
+    const per = /\blast month\b/.test(text) ? period('last') : /\bthis month\b/.test(text) ? period('month') : period('pick', monthIn(text));
+    const sm = await salesSummary(per);
+    return {
+      text: `${/\blast month\b/.test(text) ? `Last month (${per.label})` : per.label}: ${plural(sm.bills, 'bill')}, net sales ${inr(sm.net.taxable)} before GST, after returns (${inr(sm.net.total)} with GST)` + (sm.notes ? `; ${plural(sm.notes, 'credit note')} ${inr(sm.credited.total)} taken off.` : '.'),
+      link: { label: 'Open Reports', page: 'reports' },
+    };
+  }
   const d = today();
   const invs = (await db.invoices.where('date').equals(d).toArray()).filter(i => !i.cancelled);
   const pays = (await db.payments.where('date').equals(d).toArray()).filter(p => p.status === 'ok');
@@ -912,10 +1001,10 @@ async function salesToday(): Promise<Reply> {
     v.bills++; v.amount = r2(v.amount + i.total); byKey.set(k, v);
   }
   const rows = [...byKey.entries()].map(([k, v]) => [...k.split('|'), v.bills, v.amount]);
-  const sales = r2(invs.reduce((a, i) => a + i.total, 0));
-  const coll = r2(pays.reduce((a, p) => a + p.amount, 0));
+  const fig = await dayFigures(d); // the same billed / collected figures as Day close
+  void pays;
   return {
-    text: `Today: ${plural(invs.length, 'bill')}, sales ${inr(sales)}, collected ${inr(coll)}.`,
+    text: `Today: ${plural(invs.length, 'bill')}, sales ${inr(fig.sales)} (after cancelled and credited bills), collected ${inr(fig.collected)}` + (fig.chequesToClear > 0 ? `, cheques to clear ${inr(fig.chequesToClear)}.` : '.'),
     table: { name: `Sales ${d}`, columns: ['Company', 'Salesman', 'Bills', 'Amount ₹'], rows },
   };
 }
@@ -988,45 +1077,80 @@ async function needsOkTable(): Promise<Reply> {
 
 
 // ---------------- Payroll by chat ----------------
-// while a message with several requests is being split, each part is tried without saving anything
-let DRY = false;
-export function setDry(v: boolean) { DRY = v; }
+// while a message with several requests is being split, each part is tried without saving anything: nothing in TESRAX saves
+// before ✓ any more (an advance is a table too), so there is nothing to hold back; kept so the splitter's call stays valid
+export function setDry(_dry: boolean) { /* nothing is saved before ✓ */ }
 function parseDate(t: string): string | null {
   const m = t.match(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
   if (m) { const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : today().slice(0, 4); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  if (t.includes('tomorrow')) return daysFrom(1);
-  if (t.includes('today')) return today();
-  for (let i = 0; i < 7; i++) if (t.includes(days[i])) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return daysFrom(diff); }
+  if (TOMORROW.test(t)) return daysFrom(1);
+  if (TODAY.test(t)) return today();
+  for (let i = 0; i < 7; i++) if (new RegExp(`\\b${days[i]}\\b`).test(t)) { const d = new Date(); const diff = (i - d.getDay() + 7) % 7 || 7; return daysFrom(diff); }
   return null;
 }
+// "nalaiku leave" is tomorrow, "inniku" today (it used to be read as today with the reason "nalaiku")
+const TOMORROW = /\b(tomorrow|tmrw|tmr|nalaiku|naalaiku|nalai|naalai|nalaikku|naalaikku)\b/;
+const TODAY = /\b(today|inniku|innaiku|indru|innikku)\b/;
+/** a day is said in this message (the answer to "Which day?") */
+export function dayIn(t: string) { return /\d{1,2}[\/-]\d{1,2}/.test(t) ? parseDate(t) : parseDate(norm(t)); }
 async function whom(t: string, role: Role): Promise<Staff | undefined> {
   const staff = (await db.staff.toArray()).filter(s => s.active);
   if (role === 'owner' || role === 'office') { const hit = staff.find(s => s.role !== 'owner' && t.includes(norm(s.name.split(' ')[0]))); if (hit) return hit; }
   return staff.find(s => s.id === session().userId);
 }
+// Leave always comes as the check-and-✓ table with the day in words. Nothing is saved before ✓, a day is never guessed.
 async function leaveRequest(textIn: string, role: Role): Promise<Reply> {
   const t = norm(textIn);
+  // "Ravi leave approve", "ok Ravi leave": the owner wants to approve a request, not to make a new leave
+  if ((role === 'owner' || role === 'office') && /\b(approve|approved|ok|okay|accept|sanction)\b/.test(t)) return { text: 'Opening Payroll → Today. Leave requests are approved there.', go: 'today' };
   const who = await whom(t, role); if (!who) return { text: 'Who is the leave for?', tone: 'warn' };
-  const dates = [...t.matchAll(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/g)].map(m => parseDate(m[0])!);
-  const from = dates[0] ?? parseDate(t) ?? today(); const to = dates[1] ?? from;
-  const reason = textIn.replace(/leave|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|to|for|on/gi, '').replace(new RegExp(who.name.split(' ')[0], 'i'), '').trim() || 'personal';
+  // dates read before the words are normalised (norm() turns "12/11" into "12 11": the day was lost and today taken)
+  const dates = [...textIn.matchAll(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/g)].map(m => parseDate(m[0])!);
+  const from = dates[0] ?? parseDate(t);
+  if (!from) return { text: `Which day is the leave${who.id === session().userId ? '' : ` for ${who.name.split(' ')[0]}`}? Say e.g. "tomorrow", "Monday" or "16/11".`, tone: 'warn', pending: { said: textIn, need: 'date' } };
+  const to = dates[1] && dates[1] >= from ? dates[1] : from;
+  const first = norm(who.name.split(' ')[0]);
+  const reason = norm(textIn.replace(/\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, ' '))
+    .replace(new RegExp(`\\b(${first}|leave|leaves|i|want|need|am|on|is|for|to|from|till|until|day|days|please|pls|plz|sir|madam|give|apply|take|taking|and|${TOMORROW.source.slice(3, -3)}|${TODAY.source.slice(3, -3)}|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\\b`, 'g'), ' ')
+    .replace(/\s+/g, ' ').trim() || 'personal';
   const self = who.id === session().userId;
-  if (DRY) return { text: 'leave', tone: 'ok' };
-  const cs = new ChangeSet();
-  cs.put<LeaveRequest>('leaves', { staffId: who.id, from, to, reason, status: self && role !== 'owner' ? 'waiting' : 'approved' }, 'leave');
-  await cs.commit('Leave');
-  return { text: self && role !== 'owner' ? `Leave request ${from}${to !== from ? ' to ' + to : ''} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${from}${to !== from ? ' to ' + to : ''} recorded (${reason}).`, tone: 'ok' };
+  const status = self && role !== 'owner' ? 'waiting' : 'approved';
+  const staff = (await db.staff.toArray()).filter(s => s.active && s.role !== 'owner');
+  const when = `${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''}`;
+  return {
+    text: status === 'waiting' ? `Leave ${when} (${reason}). Check and tap ✓ to send it to the owner.` : `${who.name.split(' ')[0]}: leave ${when} (${reason}). Check and tap ✓.`,
+    proposal: {
+      id: newId(), kind: 'leave', title: 'Leave',
+      fields: [
+        { key: 'staffId', label: 'Who', type: 'select', readonly: self, options: (self ? [who] : staff).map(s => ({ value: s.id, label: s.name })), value: who.id },
+        { key: 'reason', label: 'Reason', value: reason },
+      ],
+      columns: [{ key: 'from', label: 'From', type: 'date', width: 140 }, { key: 'to', label: 'To', type: 'date', width: 140 }],
+      rows: [{ from, to }],
+      meta: { status },
+    },
+  };
 }
 async function advanceRequest(textIn: string, role: Role): Promise<Reply> {
   const t = norm(textIn);
   const who = await whom(t, role); if (!who) return { text: 'Who is the advance for?', tone: 'warn' };
   const amount = findAmount(t)!;
   const self = who.id === session().userId;
-  if (DRY) return { text: `advance ${inr(amount)}`, tone: 'ok' };
-  const cs = new ChangeSet();
-  cs.put<Advance>('advances', { staffId: who.id, amount, reason: textIn, status: self && role !== 'owner' ? 'waiting' : 'approved', instalments: 1, recovered: 0 }, 'advance');
-  if (!(self && role !== 'owner')) cs.put('expenses', { date: today(), category: 'advance', amount, note: `Advance to ${who.name}` }, 'advance paid');
-  await cs.commit('Advance');
-  return { text: self && role !== 'owner' ? `Advance request ${inr(amount)} sent to the owner.` : `Advance ${inr(amount)} to ${who.name.split(' ')[0]} recorded; recovered from next salary.`, tone: 'ok' };
+  const waiting = self && role !== 'owner';
+  // always the check-and-✓ table: an advance moves money, so it is never recorded the moment it is said
+  const staff = (await db.staff.toArray()).filter(x => x.active && x.role !== 'owner');
+  return {
+    text: waiting ? `Advance ${inr(amount)}. Check and tap ✓ to send the request to the owner.` : `Advance ${inr(amount)} to ${who.name.split(' ')[0]}. Check and tap ✓.`,
+    proposal: {
+      id: newId(), kind: 'advance', title: 'Advance',
+      fields: [
+        { key: 'staffId', label: 'Who', type: 'select', readonly: self, options: (self ? [who] : staff).map(x => ({ value: x.id, label: x.name })), value: who.id },
+        { key: 'reason', label: 'Reason', value: textIn },
+      ],
+      columns: [{ key: 'amount', label: 'Amount ₹', type: 'number', width: 120 }],
+      rows: [{ amount }],
+      meta: { status: waiting ? 'waiting' : 'approved' },
+    },
+  };
 }

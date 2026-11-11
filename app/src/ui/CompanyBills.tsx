@@ -38,7 +38,7 @@ export function CompanyBills() {
       <div className="muted">{'Bills from companies that use Hanubix arrive here with every line filled in. Check the goods, type anything short or damaged, and receive.'}</div>
       <div className="list">{list.map(i => (
         <button key={i.id} className="item tap" onClick={() => setOpen(i.id)}>
-          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{`${i.company} · ${i.number}`}</div><div className="s">{[day(i.date), `${plural(i.lines.length, 'line')}`, i.cancelled ? (i.got ? 'Cancelled by the company after you received it — talk to them' : 'Cancelled by the company') : !i.got ? 'To receive' : i.got.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
+          <div className="grow" style={{ textAlign: 'left' }}><div className="t">{i.company} · <span className="billno">{i.number}</span></div><div className="s">{[day(i.date), `${plural(i.lines.length, 'line')}`, i.cancelled ? (i.got ? 'Cancelled by the company after you received it — talk to them' : 'Cancelled by the company') : !i.got ? 'To receive' : i.got.status === 'disputed' ? 'Received with differences (claimed)' : 'Received'].join(' · ')}</div></div>
           <div className="num">{inr(i.total)}</div><ChevronRight size={18} />
         </button>
       ))}</div>
@@ -62,7 +62,7 @@ function ReceiveBill({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <div className="stack">
       <button className="btn small" onClick={onBack}>← {'Company bills'}</button>
-      <div className="card"><h3>{inb.number}</h3><div className="muted">{[day(inb.date), inr(inb.total), inb.irn ? `IRN …${inb.irn.slice(-8)}` : 'no IRN on the bill'].join(' · ')}</div></div>
+      <div className="card"><h3 className="billno">{inb.number}</h3><div className="muted">{[day(inb.date), inr(inb.total), inb.irn ? `IRN …${inb.irn.slice(-8)}` : 'no IRN on the bill'].join(' · ')}</div></div>
       {pending && (
         <div className="card">
           <h3><QrCode size={16} /> {'Check the bill (optional)'}</h3>

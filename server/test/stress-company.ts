@@ -44,8 +44,8 @@ const R: Record<string, unknown> = { companies: COMPANIES, distributors: DBS, br
 // ---- 1. sign up brands and distributors
 let t = performance.now();
 const base = 6000000000 + Math.floor(Math.random() * 300000000);
-const cos = await run(Array.from({ length: COMPANIES }, (_, i) => () => post('/v1/signup', { firmName: `Brand ${i}`, ownerName: 'HO', phone: String(base + i), pin: '1111', kind: 'company' })), 10);
-const dbs = await run(Array.from({ length: DBS }, (_, i) => () => post('/v1/signup', { firmName: `Distributor ${i}`, ownerName: 'O', phone: String(base + 100000 + i), pin: '1111', gstin: `33D${String(i).padStart(7, '0')}A1Z5` })), 20);
+const cos = await run(Array.from({ length: COMPANIES }, (_, i) => () => post('/v1/signup', { firmName: `Brand ${i}`, ownerName: 'HO', phone: String(base + i), pin: '3917', kind: 'company' })), 10);
+const dbs = await run(Array.from({ length: DBS }, (_, i) => () => post('/v1/signup', { firmName: `Distributor ${i}`, ownerName: 'O', phone: String(base + 100000 + i), pin: '3917', gstin: `33D${String(i).padStart(7, '0')}A1Z5` })), 20);
 log(`signed up ${COMPANIES} brands + ${DBS} distributors in ${((performance.now() - t) / 1000).toFixed(1)} s`);
 
 // which brands each distributor carries: brand 0 is the giant (GIANT distributors); the rest spread evenly

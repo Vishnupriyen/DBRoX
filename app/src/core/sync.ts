@@ -1,7 +1,7 @@
 // Our own sync layer (scale plan): phone ⇄ Hanubix server. Phones work offline; this runs when
 // there is signal. Server is swappable because the app only knows this small protocol.
 import { saveLicence } from './licence';
-import { db, getSettings } from './db';
+import { ChangeSet, db, getSettings } from './db';
 import type { Base, TableName } from './types';
 
 import shared from '../../../shared/tables.json';
@@ -60,9 +60,47 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
   return await r.json();
 }
 
+/** PINs anyone would try first (the server refuses them too): 0000, 1111 … 9999, 1234, 4321, 1212, years 1950–2030 */
+export const WEAK_PIN_MSG = 'This PIN is too easy to guess (like 1234, 1111 or a year). Choose another 4-digit PIN.';
+export function weakPin(pin: string): boolean {
+  if (!/^\d{4}$/.test(pin)) return false;
+  if (/^(\d)\1{3}$/.test(pin) || ['1234', '4321', '1212'].includes(pin)) return true;
+  return Number(pin) >= 1950 && Number(pin) <= 2030;
+}
+
+// a credit note made without signal waits for its number (owner decision: with a server, numbers come from it only)
+export const PENDING_MARK = '/PENDING-';
+export const isPendingNumber = (n: unknown) => typeof n === 'string' && n.includes(PENDING_MARK);
+/** give every waiting credit note its number from the server (before it is sent). Without signal they keep waiting. */
+async function numberPendingCreditNotes() {
+  const cns = (await db.creditNotes.toArray()).filter(c => isPendingNumber(c.number));
+  const decisions = (await db.claimDecisions.toArray()).filter(d => isPendingNumber(d.creditNoteNo));
+  const n = cns.length + decisions.length;
+  if (!n) return;
+  let got: { first: number } | null;
+  try { got = await nextNumbers('cn', Math.min(n, 20)); } catch { return; }
+  if (!got) return;
+  let next = got.first, left = Math.min(n, 20);
+  const real = (pending: string) => `${pending.slice(0, pending.indexOf(PENDING_MARK))}/${String(next++).padStart(5, '0')}`;
+  const cs = new ChangeSet();
+  for (const c of cns) { if (!left--) break; cs.put('creditNotes', { ...c, number: real(c.number) }, 'credit note numbered'); }
+  for (const d of decisions) { if (left-- <= 0) break; cs.put('claimDecisions', { ...d, creditNoteNo: real(String(d.creditNoteNo)) }, 'credit note numbered'); }
+  await cs.commit('Credit note numbers from the server');
+}
+
+/** "Access removed" (staff removed by the owner): nothing of the firm's data stays on this phone */
+async function wipeLocal() {
+  await Promise.all(db.tables.map(t => t.clear()));
+  for (const k of ['dbrox.token', 'dbrox.session']) localStorage.removeItem(k);
+}
+
+const PUSH_BYTES = 2 * 1024 * 1024; // one request carries at most ~2 MB (photos): a big backlog goes in several
+const held = new Set<string>();     // refused NEW records: kept unsent on this phone, tried again at the next "Sync now"
+
 let running = false;
 export async function syncNow(): Promise<string> {
   let msg = '';
+  held.clear(); // every run tries the held ones once more (a renewed plan, a fixed record)
   // a phone starting from nothing (new phone, reinstall) also needs the records the server has moved to its archive
   // (bills older than last financial year): without them a shop's old dues and last year's reports would be missing
   if (!(await db.meta.get('archiveDone')) && Number((await db.meta.get('cursor'))?.value ?? 0) === 0) await db.meta.put({ key: 'archiveDone', value: 'pending' });
@@ -74,6 +112,8 @@ export async function syncNow(): Promise<string> {
     if (!r.more) break;
   }
   if ((await db.meta.get('archiveDone'))?.value === 'pending' && msg.startsWith('Synced')) await fetchArchive();
+  // company reps' orders that came in: stock and credit flags, like a salesman's order (owner / office phone only)
+  try { const { flagArrivedOrders } = await import('./pipeline'); await flagArrivedOrders(); } catch { /* tried again next sync */ }
   return msg;
 }
 
@@ -121,39 +161,85 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
   try {
     const token = localStorage.getItem('dbrox.token') ?? '';
     const cursor = Number((await db.meta.get('cursor'))?.value ?? 0);
+    await numberPendingCreditNotes();
+    try { const { numberPendingReceipts } = await import('./receipts'); await numberPendingReceipts(); } catch { /* numbered at a later sync */ }
     const changes: Change[] = [];
+    let bytes = 0, full = false;
     for (const t of SYNC_TABLES) {
-      const dirty = await db.table(t).where('dirty').equals(1).limit(500).toArray();
-      for (const d of dirty) changes.push({ table: t, id: d.id, updatedAt: d.updatedAt, data: { ...d, dirty: undefined } });
+      if (full) break;
+      const dirty = await db.table(t).where('dirty').equals(1).limit(500 + held.size).toArray();
+      let n = 0;
+      for (const d of dirty) {
+        if (held.has(`${t}|${d.id}`)) continue;
+        if ((t === 'creditNotes' && isPendingNumber(d.number)) || (t === 'claimDecisions' && isPendingNumber(d.creditNoteNo))) continue; // waits for its number
+        const c = { table: t, id: d.id, updatedAt: d.updatedAt, data: { ...d, dirty: undefined } };
+        const size = JSON.stringify(c).length;
+        if (changes.length && bytes + size > PUSH_BYTES) { full = true; break; }
+        changes.push(c); bytes += size;
+        if (++n >= 500) { full = true; break; }
+      }
     }
-    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
-    if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Your access was removed or expired. Please log in again.'); }
+    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes, moves: 1 }) }); // moves: this phone sends stock as movements
+    if (r.status === 403 && (await r.clone().json().catch(() => ({}))).error === 'Access removed') {
+      await wipeLocal(); window.dispatchEvent(new Event('dbrox:logout'));
+      return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.');
+    }
+    if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Please log in again. Anything not yet sent stays on this phone.'); }
     if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);
-    const res: { cursor: number; changes: Change[]; accepted: string[]; rejected?: string[]; more?: boolean; licence?: string } = await r.json();
+    const res: { cursor: number; changes: Change[]; accepted: string[]; rejected?: string[]; current?: Change[]; more?: boolean; licence?: string; token?: string } = await r.json();
+    if (res.token) localStorage.setItem('dbrox.token', res.token); // renewed before it runs out
     await saveLicence(res.licence); // every sync renews the licence
     const accepted = new Set(res.accepted);
+    const refused = new Set(res.rejected ?? []);
+    const theirs = new Map((res.current ?? []).map(c => [`${c.table}|${c.id}`, c]));
     await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
-      // refused by the server (not this role's to write, or already decided): marked clean, so the server's own copy
-      // replaces it on the next pull instead of this phone holding a version nobody else has
-      const refused = new Set(res.rejected ?? []);
-      for (const c of changes) if (refused.has(`${c.table}|${c.id}`)) { const cur = await db.table(c.table).get(c.id); if (cur && cur.updatedAt === c.updatedAt) await db.table(c.table).put({ ...cur, dirty: 0, updatedAt: '1970-01-01T00:00:00.000Z' }); }
       for (const c of changes) {
-        if (!accepted.has(`${c.table}|${c.id}`)) continue;
+        const k = `${c.table}|${c.id}`;
         const cur = await db.table(c.table).get(c.id);
-        if (cur && cur.updatedAt === c.updatedAt) await db.table(c.table).put({ ...cur, dirty: 0 });
+        if (!cur || cur.updatedAt !== c.updatedAt) continue; // changed again meanwhile: goes in the next sync
+        const server = theirs.get(k);
+        // refused, or older than what the server holds: the server's copy replaces this phone's
+        if (server && (refused.has(k) || accepted.has(k))) { await db.table(c.table).put({ ...server.data, updatedAt: server.updatedAt, dirty: 0 }); continue; }
+        if (accepted.has(k)) { await db.table(c.table).put({ ...cur, dirty: 0 }); continue; }
+        // refused and the server has no copy (a new record): never marked sent — kept unsent and shown as held
+        if (refused.has(k)) held.add(k);
       }
       for (const c of res.changes) {
         const cur = await db.table(c.table).get(c.id);
         if (!cur || (!cur.dirty && cur.updatedAt <= c.updatedAt)) await db.table(c.table).put({ ...c.data, dirty: 0 });
       }
+      await trueStock([...(res.current ?? []), ...res.changes]);
     });
     await db.meta.put({ key: 'cursor', value: res.cursor });
-    // keep going while the server has more for us, or a table had more waiting than one batch carries
-    const morePush = accepted.size > 0 && SYNC_TABLES.some(t => changes.filter(c => c.table === t).length >= 500);
-    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.`, !!res.more || morePush);
+    await db.meta.put({ key: 'held', value: [...held] });
+    // keep going while the server has more for us, or this phone had more waiting than one request carries
+    const morePush = full && accepted.size > 0;
+    const heldMsg = held.size ? ` ${held.size} held: not accepted by the server, kept on this phone.` : '';
+    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.${heldMsg}`, !!res.more || morePush);
   } catch (e) {
     return done(`Sync paused: ${(e as Error).message}. Data is safe on this phone.`);
   } finally { running = false; }
+}
+
+/**
+ * STOCK: every lot the server sent takes the server's qty (the sum of all phones' movements) + this phone's own
+ * movements not yet counted there (unsent, or sent and held). A refused movement (it would take the lot below zero) is
+ * held — kept and tried again — and not counted, so the phone shows the server's qty. Nothing else of the lot changes,
+ * and it is not marked unsent (this is the server's word, not a change). Runs inside the sync's transaction.
+ */
+async function trueStock(fromServer: Change[]) {
+  const lots = new Map<string, Change>();
+  for (const c of fromServer) if (c.table === 'batches') lots.set(c.id, c); // the pull comes after the push: the later copy wins
+  if (!lots.size) return;
+  const mine = new Map<string, number>();
+  for (const m of await db.stockMoves.where('dirty').equals(1).toArray()) if (!held.has(`stockMoves|${m.id}`)) mine.set(m.batchId, (mine.get(m.batchId) ?? 0) + m.delta);
+  for (const [id, c] of lots) {
+    const cur = await db.batches.get(id);
+    const q = Number((c.data as unknown as { qty: unknown }).qty);
+    if (!cur || cur.legacyQty || !Number.isFinite(q)) continue; // a lot still to be sent whole keeps its own count once more
+    const want = q + (mine.get(id) ?? 0);
+    if (cur.qty !== want) await db.batches.put({ ...cur, qty: want });
+  }
 }
 
 export function startAutoSync() {

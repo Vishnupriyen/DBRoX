@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ChangeSet, db, setSession, undoBatch, today, daysFrom, monthEnd } from '../src/core/db';
 import { seedDemo } from '../src/core/seed';
-import { bookOrder, approveOrder, suggestPick, pickOrder, approvePicked, settleDifference } from '../src/core/pipeline';
+import { bookOrder, approveOrder, suggestPick, pickOrder, approvePicked, settleDifference, recordDelivery } from '../src/core/pipeline';
 import { creditNoteNumbers, finYear } from '../src/core/billing';
 import { shopOutstanding } from '../src/core/ledger';
 import type { Product, Shop } from '../src/core/types';
@@ -25,6 +25,17 @@ async function pickedOrder(shop: Shop, p: Product, qty: number, extra = {}) {
 }
 
 describe('review fixes', () => {
+  it('a delivery keeps the shop photo once on the bill, and no copy in the history log (pre-pilot, 11 Nov 2026)', async () => {
+    const p = products[2]; const id = await pickedOrder(shops[2], p, 2);
+    const { invoices } = await approvePicked(id);
+    const photo = 'data:image/jpeg;base64,' + 'C'.repeat(40000);
+    const batch = await recordDelivery([invoices[0].id], { shopPhoto: photo });
+    const inv = (await db.invoices.get(invoices[0].id))!;
+    expect(inv.delivery?.shopPhoto).toBe(photo);
+    expect(inv.delivery?.photo).toBeUndefined();
+    expect(JSON.stringify(await db.audit.where('batchId').equals(batch!).toArray())).not.toContain('CCCCCCCC');
+  });
+
   it('a double tap on Done → bill makes one bill and takes stock once', async () => {
     const p = products[0]; const id = await pickedOrder(shops[0], p, 6);
     const s0 = await stock(p.id);
@@ -89,9 +100,35 @@ describe('review fixes', () => {
     await expect(cs3.commit('over')).rejects.toThrow(/more than its amount/);
   });
 
+  it('new guards (Nov 2026 money review): credit notes never beyond the bill, money is a number, a company bill once, short bill prefix', async () => {
+    const inv = (await db.invoices.toArray()).find(i => !i.cancelled)!;
+    const cn = new ChangeSet(); cn.put('creditNotes', { number: 'CN/G/1', invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'x', lines: [], total: inv.total + 5 });
+    await expect(cn.commit('too big')).rejects.toThrow(/more than/);
+    const nan = new ChangeSet(); nan.put('claimEntries', { companyId: inv.companyId, month: '2026-11', kind: 'damage', qty: 1, amount: NaN }); await expect(nan.commit('nan')).rejects.toThrow(/not a valid number/);
+    const p1 = new ChangeSet(); p1.put('purchases', { companyId: inv.companyId, billNo: 'GRD-1', date: today(), lines: [], taxable: 1, tax: 0, total: 1, source: 'typed' }); await p1.commit('p1');
+    const p2 = new ChangeSet(); p2.put('purchases', { companyId: inv.companyId, billNo: 'grd-1', date: today(), lines: [], taxable: 1, tax: 0, total: 1, source: 'typed' }); await expect(p2.commit('p2')).rejects.toThrow(/already entered/);
+    const st = new ChangeSet(); st.put('settings', { ...(await db.settings.toArray())[0], billPrefix: 'TOOLONG' }); await expect(st.commit('prefix')).rejects.toThrow(/prefix/);
+  });
+
   it('month end is the real last day of the month (no UTC shift)', () => {
     expect(monthEnd('2027-03')).toBe('2027-03-31');
     expect(monthEnd('2026-12')).toBe('2026-12-31');
     expect(monthEnd('2028-02')).toBe('2028-02-29');
+  });
+});
+
+// Round 3 (11 Nov 2026): the guard's new rules (QUALITY.md table)
+describe('round 3 guard rules', () => {
+  it('a bill line without its stock lots is refused with a plain message (not a crash)', async () => {
+    const inv = (await db.invoices.toArray()).find(i => !i.cancelled && i.lines.length)!;
+    const cs = new ChangeSet(); cs.put('invoices', { ...inv, lines: inv.lines.map(l => ({ ...l, batches: undefined })) });
+    await expect(cs.commit('x')).rejects.toThrow(/has no stock lots/);
+  });
+  it('an old due of ₹0 (or a NaN one) is refused', async () => {
+    const shop = (await db.shops.toArray())[0];
+    for (const amount of [0, Number.NaN]) {
+      const cs = new ChangeSet(); cs.put('openingDues', { shopId: shop.id, ref: 'X', date: today(), amount });
+      await expect(cs.commit('x')).rejects.toThrow(/old due|Money amount/);
+    }
   });
 });

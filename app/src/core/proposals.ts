@@ -1,12 +1,19 @@
-import { inr, showMonth, plural } from './i18n';
+import { inr, showDate, showDay, showMonth, plural } from './i18n';
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
-import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
-import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, makeInvoices, pickBatches, stockOf } from './billing';
+import { ChangeSet, db, getSettings, nowIso, session, today, undoBatch, UNDO_SYNCED, UNDO_SYNCED_MSG } from './db';
+import { NO_ORDER_REASONS } from './field';
+import { activeSchemes, applySchemes, checkOrder, stockOf } from './billing';
 import { bookOrder, cancelInvoice, changeOrder } from './pipeline';
+import { buildCreditNote, collectionCheck, openPaid } from './credit';
+import { applyReturn, countOrRequest, countValue, damageOrRequest, damageValue, makeRequest, needsRequest, type CountRow, type DamageRow } from './requests';
+import { receiptNumber } from './receipts';
+import { isPendingNumber } from './sync';
+import { commitOpeningDues, commitOpeningStock, validateOpeningDues, validateOpeningStock } from './opening';
+import { billChangeBlock, creditNoteDeadline, GST_RATES, shopStateCode } from './gst';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, Company, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Scheme, Shop } from './types';
+import type { Advance, Batch, Company, Expense, Invoice, LeaveRequest, Payment, Product, Purchase, Scheme, Shop, Visit } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -23,7 +30,11 @@ export type ProposalKind =
   | 'purchase' | 'expense' | 'bank' | 'order' | 'payment' | 'claim' | 'return'
   | 'products' | 'shops' | 'newshop' | 'schemes' | 'view' | 'paymentFix'
   | 'orderEdit' | 'orderCancel' | 'billCancel' | 'paymentCancel' | 'expenseFix' | 'stockFix' | 'productEdit' | 'shopEdit' | 'undo'
-  | 'fieldOrder'; // company rep: an order sent to the shop's distributor
+  | 'advance' // an advance to a staff member: asked by staff (waits for the owner) or given by the owner
+  | 'leave' // a leave: asked by staff (waits for the owner) or given by the owner
+  | 'visit' // a shop visited with no order, and why (TESRAX: "no order ganapathi shop closed")
+  | 'fieldOrder' // company rep: an order sent to the shop's distributor
+  | 'openingDues' | 'openingStock'; // the day a distributor starts: old shop dues and opening stock from Excel
 
 export interface Proposal {
   id: string;
@@ -45,6 +56,13 @@ export interface Validation {
   summary: string;
 }
 
+/** a stock count more than 1 case off the system needs the counted total typed again ('again' field) */
+function stockRetype(p: Proposal, caseSize: number, diff: number, counted: number): string | null {
+  if (Math.abs(diff) <= Math.max(1, caseSize)) return null;
+  const again = p.fields.find(f => f.key === 'again');
+  if (again && String(again.value ?? '').trim() !== '' && Number(again.value) === counted) return null;
+  return again && String(again.value ?? '').trim() !== '' ? 'Does not match the count — type the counted total again' : `More than 1 case different: type the counted total again to confirm`;
+}
 export const fieldValue = (p: Proposal, key: string) => p.fields.find(f => f.key === key)?.value ?? '';
 const n = (v: CellValue | undefined) => Number(v) || 0;
 const s = (v: CellValue | undefined) => String(v ?? '').trim();
@@ -103,6 +121,8 @@ export async function validate(p: Proposal): Promise<Validation> {
     case 'purchase': {
       if (!s(fieldValue(p, 'companyId'))) v.fieldErrors.companyId = 'Pick the company';
       if (!s(fieldValue(p, 'billNo'))) v.fieldErrors.billNo = 'Bill number needed';
+      else if ((await db.purchases.where('companyId').equals(s(fieldValue(p, 'companyId'))).toArray()).some(x => String(x.billNo ?? '').trim().toUpperCase() === s(fieldValue(p, 'billNo')).trim().toUpperCase()))
+        v.fieldErrors.billNo = 'This company bill is already entered';
       const gstin = s(fieldValue(p, 'supplierGstin')).toUpperCase();
       if (gstin && !validGstin(gstin)) v.fieldErrors.supplierGstin = 'GSTIN looks wrong';
       let sumTaxable = 0, sumTax = 0;
@@ -161,14 +181,17 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (!shop) { v.fieldErrors.shopId = 'Pick the shop'; }
       p.rows.forEach((r, i) => {
         if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
-        if (n(r.qty) <= 0) err(v, i, 'qty', 'Quantity must be more than 0');
+        if (!Number.isInteger(n(r.qty)) || n(r.qty) <= 0) err(v, i, 'qty', 'Whole pieces, more than 0');
+        if (products.get(s(r.productId)) && !(n(r.rate) > 0)) err(v, i, 'rate', 'Rate must be more than 0');
       });
       if (shop && !Object.keys(v.errors).length) {
         const lines = p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) }));
         const c = await checkOrder(shop, lines);
         v.warnings.push(...c.issues);
         const me = await db.staff.get(session().userId);
-        v.summary = `${plural(lines.length, 'item')} · about ${inr(c.total)} with GST` + (c.issues.length ? (me?.role === 'owner' ? ' · your ✓ approves and bills it' : ' · will wait for owner OK') : ' · ready to bill');
+        // the owner's or office's own order goes straight to the godown; a salesman's waits for the owner
+        const own = me?.role === 'owner' || me?.role === 'office';
+        v.summary = `${plural(lines.length, 'item')} · about ${inr(c.total)} with GST · ` + (own ? 'your ✓ sends it to the godown for packing' : 'goes to the owner to approve');
       }
       break;
     }
@@ -178,6 +201,10 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (total <= 0) v.fieldErrors.amount = 'Amount missing';
       const mode = s(fieldValue(p, 'mode'));
       if ((mode === 'upi' || mode === 'cheque') && !s(fieldValue(p, 'ref'))) v.warnings.push('Add the UPI / cheque number to match the bank later');
+      const cd = mode === 'cheque' ? s(fieldValue(p, 'chequeDate')) : '';
+      if (cd && !toIsoDate(cd)) v.fieldErrors.chequeDate = 'Cheque date looks wrong';
+      const postDated = cd && toIsoDate(cd) && toIsoDate(cd)! > today() ? toIsoDate(cd)! : '';
+      if (p.kind === 'payment' && total > 0 && s(fieldValue(p, 'shopId'))) { const big = await collectionCheck(s(fieldValue(p, 'shopId')), total); if (big) v.warnings.push(big); }
       let alloc = 0;
       p.rows.forEach((r, i) => {
         if (n(r.pay) > n(r.balance) + 0.5) err(v, i, 'pay', `More than balance ${inr(r.balance)}`);
@@ -185,33 +212,40 @@ export async function validate(p: Proposal): Promise<Validation> {
       });
       if (alloc > total + 0.5) v.fieldErrors.amount = `Bills add up to ${inr(r2(alloc))}, more than amount`;
       const extra = r2(total - alloc);
-      v.summary = `${inr(total)} · to bills ${inr(r2(alloc))}` + (extra > 0.5 ? ` · ${inr(extra)} kept as advance` : '');
+      v.summary = `${inr(total)} · to bills ${inr(r2(alloc))}` + (extra > 0.5 ? ` · ${inr(extra)} kept as advance` : '') + (postDated ? ` · cheque to clear on ${showDate(postDated)}: the bills stay open until then` : '');
       break;
     }
     case 'claim': {
       p.rows.forEach((r, i) => {
         if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
-        if (n(r.qty) <= 0) err(v, i, 'qty', 'Quantity must be more than 0');
+        if (!Number.isInteger(n(r.qty)) || n(r.qty) <= 0) err(v, i, 'qty', 'Whole pieces, more than 0');
       });
+      // the stock is checked before the line can become a request (an owner ✓ on pieces that are not there would fail)
+      {
+        const want = new Map<string, number>();
+        p.rows.forEach((r, i) => { if (s(r.fromStock) !== 'no' && products.get(s(r.productId)) && n(r.qty) > 0) want.set(s(r.productId), (want.get(s(r.productId)) ?? 0) + n(r.qty)); void i; });
+        for (const [pid, q] of want) {
+          const have = (await db.batches.where('productId').equals(pid).toArray()).reduce((a, b) => a + b.qty, 0); // expired lots too: an expiry claim writes those off
+          if (q > have) p.rows.forEach((r, i) => { if (s(r.productId) === pid && s(r.fromStock) !== 'no' && !v.errors[i]?.qty) err(v, i, 'qty', `Only ${have} pcs in stock`); });
+        }
+      }
       v.summary = `${plural(p.rows.length, 'line')} · ${inr(r2(p.rows.reduce((a, r) => a + n(r.amount), 0)))}`;
+      const wo = await needsRequest('damage', await damageValue(damageRows(p)));
+      if (wo.request) v.summary += ' · above the write-off limit: sent to the owner to approve';
       break;
     }
+    case 'openingDues': await validateOpeningDues(p, v); break;
+    case 'openingStock': await validateOpeningStock(p, v); break;
     case 'return': {
       const shopId = s(fieldValue(p, 'shopId'));
       if (!shopId) v.fieldErrors.shopId = 'Pick the shop';
-      const settings = await getSettings();
-      let total = 0;
-      p.rows.forEach((r, i) => {
-        if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
-        if (n(r.qty) <= 0) err(v, i, 'qty', 'Quantity must be more than 0');
-        if (!s(r.invoiceId)) err(v, i, 'invoiceId', 'No bill found for this item at this shop');
-        total += n(r.amount);
-      });
-      if (total > settings.returnApprovalLimit && session().userId !== 'owner') {
-        const me = await db.staff.get(session().userId);
-        if (me?.role !== 'owner') v.warnings.push(`Above ${inr(settings.returnApprovalLimit)}: owner must approve`);
-      }
-      v.summary = `Credit note ${inr(r2(total))}`;
+      const chk = await checkReturn(p);
+      for (const e of chk.errors) err(v, e.row, e.key, e.msg);
+      v.warnings.push(...chk.warnings);
+      const asked = await needsRequest('return', chk.total);
+      v.summary = asked.request
+        ? `Return ${inr(chk.total)} → sent to the ${asked.ownerOnly ? 'owner' : 'owner or office'} to approve; the credit note is made on their phone`
+        : `Credit note ${inr(chk.total)} (the bill's own value of these pieces, with GST)`;
       break;
     }
     case 'products': {
@@ -219,7 +253,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!s(r.name)) err(v, i, 'name', 'Name missing');
         if (!s(r.companyId) && !s(r.companyName)) err(v, i, 'companyId', 'Pick company');
         if (n(r.rate) <= 0) err(v, i, 'rate', 'Selling rate missing');
-        if (![0, 5, 12, 18, 28, 40].includes(n(r.gst))) err(v, i, 'gst', 'GST % should be 0/5/12/18/28/40');
+        if (!GST_RATES.includes(n(r.gst))) err(v, i, 'gst', `GST % should be ${GST_RATES.join('/')}`);
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
         else if (!/^(\d{6}|\d{8})$/.test(s(r.hsn))) v.warnings.push(`Row ${i + 1}: e-invoice needs a 6 or 8 digit HSN`);
       });
@@ -279,7 +313,9 @@ export async function validate(p: Proposal): Promise<Validation> {
       else {
         const paid = (await db.payments.where('shopId').equals(inv.shopId).toArray()).filter(x => x.status === 'ok').reduce((a, x) => a + x.allocations.filter(al => al.invoiceId === inv.id).reduce((b, al) => b + al.amount, 0), 0);
         if (paid > 0.5) v.warnings.push(`${inr(r2(paid))} already paid against this bill will stay with the shop as advance`);
-        if (inv.deliveryStatus === 'delivered') v.warnings.push('This bill was delivered: make sure the goods came back, the stock is added back to the godown');
+        // a delivered bill (or one already in the GST return) can't be cancelled: say so now, before the tick, not after it
+        const block = billChangeBlock(inv, 'cancel', today());
+        if (block) v.fieldErrors.number = `${block.replace(/^Bill \S+ is already delivered\./, 'Delivered —')}`;
       }
       v.summary = `Bill ${s(fieldValue(p, 'number'))} · ${inr(n(fieldValue(p, 'total')))} will be cancelled and its stock put back`;
       break;
@@ -309,8 +345,38 @@ export async function validate(p: Proposal): Promise<Validation> {
       });
       const prod = products.get(s(fieldValue(p, 'productId')));
       const d = cnt - sys;
+      // a count more than 1 case off the system is typed a second time before Approve (a slip must not wipe stock)
+      const retype = stockRetype(p, prod?.caseSize ?? 1, d, cnt);
+      if (retype) { if (p.fields.some(f => f.key === 'again')) v.fieldErrors.again = retype; else err(v, 0, 'counted', retype); }
       if (prod && Math.abs(d) > prod.caseSize * 5) v.warnings.push(`Big difference: ${d > 0 ? '+' : ''}${d} pcs (${r2(Math.abs(d) / prod.caseSize)} cases). Count again before saving.`);
-      v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod ? ` · ${inr(r2(Math.abs(d) * prod.purchaseRate))}` : ''})`;
+      v.summary = `System ${sys} → counted ${cnt} (${d >= 0 ? '+' : ''}${d} pcs${prod && Number.isFinite(prod.purchaseRate) ? ` · ${inr(r2(Math.abs(d) * prod.purchaseRate))}` : ''})`;
+      if ((await needsRequest('count', await countValue(countRows(p)))).request) v.summary += ' · above the write-off limit: sent to the owner to approve';
+      break;
+    }
+    case 'leave': {
+      const who = await db.staff.get(s(fieldValue(p, 'staffId')));
+      if (!who) v.fieldErrors.staffId = 'Pick the person';
+      const r = p.rows[0] ?? {};
+      const from = toIsoDate(s(r.from)), to = toIsoDate(s(r.to)) || from;
+      if (!from) err(v, 0, 'from', 'Pick the day');
+      if (from && to < from) err(v, 0, 'to', 'Ends before it starts');
+      if (from && to >= from) { const days = Math.round((Date.parse(`${to}T12:00:00`) - Date.parse(`${from}T12:00:00`)) / 86400000) + 1; v.summary = `${who?.name.split(' ')[0] ?? ''}: leave ${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''} · ${plural(days, 'day')}${p.meta.status === 'waiting' ? ' · goes to the owner' : ''}`; }
+      break;
+    }
+    case 'advance': {
+      const who = await db.staff.get(s(fieldValue(p, 'staffId')));
+      if (!who) v.fieldErrors.staffId = 'Pick the person';
+      const amt = n(p.rows[0]?.amount);
+      if (!(amt > 0)) err(v, 0, 'amount', 'Amount must be more than 0');
+      else if (amt !== Math.round(amt * 100) / 100) err(v, 0, 'amount', 'Rupees and paise only');
+      if (who && amt > 0) v.summary = `Advance ${inr(amt)} ${p.meta.status === 'waiting' ? '· goes to the owner' : `to ${who.name.split(' ')[0]} · recovered from the next salary`}`;
+      break;
+    }
+    case 'visit': {
+      const shop = await db.shops.get(s(fieldValue(p, 'shopId')));
+      if (!shop) v.fieldErrors.shopId = 'Pick the shop';
+      if (!NO_ORDER_REASONS.includes(s(fieldValue(p, 'reason')))) v.fieldErrors.reason = 'Pick why there was no order';
+      if (shop) v.summary = `${shop.name}: no order · ${s(fieldValue(p, 'reason'))}`;
       break;
     }
     case 'productEdit': {
@@ -319,7 +385,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       const get = (k: string, d: number) => { const r = p.rows.find(x => s(x.key) === k); return r ? n(r.value) : d; };
       p.rows.forEach((r, i) => {
         const k = s(r.key), val = n(r.value);
-        if (k === 'gst') { if (![0, 5, 12, 18, 28, 40].includes(val)) err(v, i, 'value', 'GST % should be 0/5/12/18/28/40'); return; }
+        if (k === 'gst') { if (!GST_RATES.includes(val)) err(v, i, 'value', `GST % should be ${GST_RATES.join('/')}`); return; }
         if (val <= 0) err(v, i, 'value', 'Must be more than 0');
         if (k === 'caseSize' && !Number.isInteger(val)) err(v, i, 'value', 'Whole pieces');
       });
@@ -362,9 +428,24 @@ export const hasErrors = (v: Validation) => Object.keys(v.errors).length > 0 || 
 // ---------------------------------------------------------------------------------------------
 // COMMIT — the only place data is written. One ChangeSet = one undo.
 // ---------------------------------------------------------------------------------------------
-export async function commit(p: Proposal): Promise<{ message: string; batchId: string; invoices?: Invoice[]; orderId?: string }> {
+type Committed = { message: string; batchId: string; invoices?: Invoice[]; orderId?: string };
+// a proposal is saved once: the same proposal (same id and same content) committed again — a double tap, a retry after a slow
+// screen — is refused and writes nothing more. A save that failed is forgotten, so it can be tried again.
+// kinds that already answer a second tap themselves (a visit is updated, a leave already there, "already loaded", "already cancelled" …)
+const SELF_GUARDED = new Set<ProposalKind>(['visit', 'leave', 'openingDues', 'openingStock', 'undo', 'billCancel', 'paymentCancel', 'paymentFix', 'orderEdit', 'orderCancel', 'expenseFix', 'productEdit', 'shopEdit']);
+const committing = new Map<string, Promise<Committed>>();
+export function commit(p: Proposal): Promise<Committed> {
+  const key = `${p.id}|${JSON.stringify([p.kind, p.fields.map(f => f.value), p.rows, p.meta])}`;
+  if (committing.has(key) && !SELF_GUARDED.has(p.kind)) return Promise.reject(new Error('This was already saved.'));
+  const run = commitProposal(p);
+  committing.set(key, run);
+  run.catch(() => { if (committing.get(key) === run) committing.delete(key); });
+  return run;
+}
+async function commitProposal(p: Proposal): Promise<Committed> {
   if (p.kind === 'undo') {
     const k = await undoBatch(String(p.meta.batchId ?? ''));
+    if (k === UNDO_SYNCED) throw new Error(UNDO_SYNCED_MSG);
     if (k < 0) throw new Error("Can't undo this: something changed after it (for example a later bill used the same stock). Change or cancel it instead.");
     if (k === 0) throw new Error('This was already undone.');
     return { message: `Undone: ${s(fieldValue(p, 'label'))} (${k} change${k > 1 ? 's' : ''} put back).`, batchId: '' };
@@ -464,9 +545,13 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       const lines = p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), rate: n(r.rate) }));
       // a salesman typing his order is his order (the owner is not asked how it came)
       const by = await db.staff.get(session().userId);
-      const order = await bookOrder(cs, shop, lines, session().userId, { source: by?.role === 'salesman' ? 'salesman' : 'office' });
+      // the owner's or office's own order is approved as it is booked: it goes straight to the godown. A salesman's waits.
+      const own = by?.role === 'owner' || by?.role === 'office';
+      const order = await bookOrder(cs, shop, lines, session().userId, { source: by?.role === 'salesman' ? 'salesman' : 'office', ...(own ? { status: 'approved' as const, approvedBy: session().userId, approvedAt: new Date().toISOString() } : {}) });
       orderId = order.id;
-      message = `Order for ${shop.name} sent to the godown for picking.` + (order.issues.length ? ` Flagged for you: ${order.issues.join('; ')}.` : '');
+      message = own
+        ? `Order for ${shop.name} approved and sent to the godown for packing. When it is packed, it waits in Bill → Picked for your ✓ to make the bill.` + (order.issues.length ? ` Note: ${order.issues.join('; ')}.` : '')
+        : `Order for ${shop.name} sent to the owner to approve. Once approved, the godown packs it.` + (order.issues.length ? ` The owner will see: ${order.issues.join('; ')}.` : '');
       break;
     }
     case 'payment': {
@@ -475,13 +560,16 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       const advance = r2(amount - allocations.reduce((a, x) => a + x.amount, 0));
       const me = await db.staff.get(session().userId);
       const inOffice = me?.role === 'owner' || me?.role === 'office';
+      const receiptNo = await receiptNumber(cs);
+      const isCheque = s(fieldValue(p, 'mode')) === 'cheque';
       cs.put<Payment>('payments', {
         shopId: s(fieldValue(p, 'shopId')), amount, mode: s(fieldValue(p, 'mode')) as Payment['mode'], ref: s(fieldValue(p, 'ref')),
+        ...(isCheque ? { chequeDate: toIsoDate(s(fieldValue(p, 'chequeDate'))) || today(), ...(s(fieldValue(p, 'chequeBank')) ? { chequeBank: s(fieldValue(p, 'chequeBank')) } : {}) } : {}),
         date: today(), collectedBy: session().userId, shopConfirmed: inOffice || !!p.meta.shopConfirmed,
         confirmPhoto: p.meta.photo as string | undefined, allocations, advance: advance > 0.5 ? advance : 0,
-        settled: inOffice, status: 'ok',
+        settled: inOffice, status: 'ok', receiptNo,
       }, 'payment');
-      message = `Payment ${inr(amount)} recorded.`;
+      message = `Payment ${inr(amount)} recorded. Receipt ${isPendingNumber(receiptNo) ? '(numbered at next sync)' : receiptNo}.`;
       break;
     }
     case 'paymentFix': {
@@ -495,53 +583,42 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       cs.put<Payment>('payments', {
         shopId: old.shopId, amount, mode: s(fieldValue(p, 'mode')) as Payment['mode'], ref: s(fieldValue(p, 'ref')), date: old.date,
         collectedBy: old.collectedBy, shopConfirmed: old.shopConfirmed, confirmPhoto: old.confirmPhoto, allocations,
-        advance: advance > 0.5 ? advance : 0, settled: old.settled, status: 'ok', correctionOf: old.id,
+        advance: advance > 0.5 ? advance : 0, settled: old.settled, status: 'ok', correctionOf: old.id, receiptNo: await receiptNumber(cs),
       }, 'payment corrected (new)');
       message = `Payment corrected: ${inr(old.amount)} → ${inr(amount)}.`;
       break;
     }
     case 'claim': {
-      const month = today().slice(0, 7);
-      const batches = await db.batches.toArray();
-      for (const r of p.rows) {
-        const prod = products.get(s(r.productId))!;
-        cs.put('claimEntries', { companyId: prod.companyId, month, kind: s(r.kind) || 'damage', productId: prod.id, qty: n(r.qty), amount: n(r.amount), note: s(r.note), photo: p.meta.photo as string | undefined }, 'damage entry');
-        if (s(r.fromStock) !== 'no') {
-          const { picks } = pickBatches(batches, prod.id, n(r.qty), '0000-00-00');
-          for (const pk of picks) {
-            const b = batches.find(x => x.id === pk.batchId)!;
-            b.qty -= pk.qty;
-            cs.put('batches', { ...b }, 'damaged out of stock');
-          }
-        }
-      }
-      message = `Added to claim register for ${showMonth(month)}.`;
+      // a write-off above the owner's limit (godown, office) waits for the owner: nothing leaves stock until then
+      const d = await damageOrRequest(cs, damageRows(p), p.meta.photo as string | undefined);
+      message = d.requested ? `Damage write-off of about ${inr(d.value)} is above the limit: sent to the owner to approve. Stock changes when the owner approves.`
+        : `Added to claim register for ${showMonth(today().slice(0, 7))}.`;
       break;
     }
+    case 'openingDues': { const r = await commitOpeningDues(cs, p); message = r.message; break; }
+    case 'openingStock': {
+      const r = await commitOpeningStock(cs, p);
+      const batchId = await cs.commit(p.title);
+      p.meta.loaded = true; // a second ✓ on the same table loads nothing again
+      return { message: r.message, batchId };
+    }
     case 'return': {
-      const shopId = s(fieldValue(p, 'shopId'));
-      const byInvoice = new Map<string, Row[]>();
-      for (const r of p.rows) byInvoice.set(s(r.invoiceId), [...(byInvoice.get(s(r.invoiceId)) ?? []), r]);
-      const batches = await db.batches.toArray();
-      const cnNos = await creditNoteNumbers(cs, byInvoice.size);
-      let i = 0;
-      for (const [invoiceId, rows] of byInvoice) {
-        const inv = (await db.invoices.get(invoiceId))!;
-        const lines = rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), amount: n(r.amount), restock: s(r.restock) !== 'no' }));
-        // returned pieces come off the bill's batches (so a later cancel can't restock them again); good ones go back to stock
-        for (const l of lines) {
-          const line = inv.lines.find(x => x.productId === l.productId); if (!line) continue;
-          let left = l.qty;
-          for (const lb of line.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (l.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'return to stock'); } } }
-        }
-        cs.put('invoices', { ...inv }, 'returned pieces off the bill');
-        const companyId = inv.companyId;
-        cs.put<CreditNote>('creditNotes', {
-          number: cnNos[i++], invoiceId, shopId, companyId,
-          date: today(), reason: s(fieldValue(p, 'reason')) || 'Return', lines, total: r2(lines.reduce((a, l) => a + l.amount, 0)),
-        }, 'credit note');
+      const chk = await checkReturn(p);
+      if (chk.errors.length) throw new Error(chk.errors[0].msg);
+      const rows = p.rows.map(r => ({ invoiceId: s(r.invoiceId), productId: s(r.productId), qty: n(r.qty), restock: s(r.restock) !== 'no' }));
+      const reason = s(fieldValue(p, 'reason')) || 'Return';
+      // salesman, godown, delivery (and office above the owner's limit): a request; the credit note is made on the
+      // owner's or office's phone when they approve it, with a server number
+      const asked = await needsRequest('return', chk.total);
+      if (asked.request) {
+        await makeRequest(cs, { kind: 'return', shopId: s(fieldValue(p, 'shopId')), reason, value: chk.total, rows: rows.map(r => ({ ...r, restock: r.restock ? 'yes' : 'no' })), ownerOnly: asked.ownerOnly });
+        message = `Return of ${inr(chk.total)} sent to the ${asked.ownerOnly ? 'owner' : 'owner / office'} to approve. The shop's balance changes when it is approved.`;
+        break;
       }
-      message = `Credit note made. Shop balance reduced.`;
+      // returned pieces come off the bill's lots (so a later cancel can't restock them again); good ones go back to stock;
+      // the credit is the bill line's own value of those pieces, never a typed amount
+      await applyReturn(cs, rows, reason);
+      message = `Credit note made (${inr(chk.total)}). Shop balance reduced.`;
       break;
     }
     case 'products': {
@@ -586,10 +663,12 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'newshop': {
       const me = await db.staff.get(session().userId);
       for (const r of p.rows) {
+        const gstin = s(r.gstin).toUpperCase() || undefined;
         cs.put<Shop>('shops', {
-          name: s(r.name), owner: s(r.owner), phone: s(r.phone), gstin: s(r.gstin).toUpperCase() || undefined,
+          name: s(r.name), owner: s(r.owner), phone: s(r.phone), gstin, stateCode: shopStateCode({ gstin, stateCode: s(r.stateCode) || undefined }),
           area: s(r.area), beat: s(r.beat), creditLimit: n(r.creditLimit), creditDays: n(r.creditDays) || 7,
-          cashOnly: s(r.cashOnly) === 'yes', type: (s(r.type) || 'retail') as Shop['type'],
+          // credit limit 0 = cash only until the owner sets a limit (owner decision, 11 Nov 2026)
+          cashOnly: s(r.cashOnly) === 'yes' || !(n(r.creditLimit) > 0), type: (s(r.type) || 'retail') as Shop['type'],
           approved: me?.role === 'owner' || p.kind === 'shops', aliases: [], address: s(r.address),
           salesmanId: me?.role === 'salesman' ? me.id : undefined,
         }, 'shop');
@@ -635,17 +714,50 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       break;
     }
     case 'stockFix': {
-      const why = s(fieldValue(p, 'reason'));
-      let sys = 0, cnt = 0;
-      for (const r of p.rows) {
-        const b = await db.batches.get(s(r.batchId));
-        if (!b) continue;
-        if (b.qty !== n(r.system)) throw new Error('The stock moved while you were counting (a bill or delivery). Ask again for a fresh count table.');
-        countLot(cs, b, n(r.counted), why);
-        sys += b.qty; cnt += n(r.counted);
-      }
-      if (!cs.size) throw new Error('Nothing changed: the count is the same as the system.');
-      message = `Stock count saved: ${sys} → ${cnt} pcs.`;
+      // a count more than 1 case off the system must be typed again (r4) before it is saved or sent to the owner (r3)
+      { const prod = products.get(s(fieldValue(p, 'productId'))); const c0 = p.rows.reduce((a, r) => a + n(r.counted), 0), s0 = p.rows.reduce((a, r) => a + n(r.system), 0); const rt = stockRetype(p, prod?.caseSize ?? 1, c0 - s0, c0); if (rt) throw new Error(rt); }
+      const c = await countOrRequest(cs, countRows(p), s(fieldValue(p, 'reason')));
+      message = c.requested ? `Count writes off about ${inr(c.value)} — above the limit: sent to the owner to approve. Stock changes when the owner approves.`
+        : `Stock count saved: ${c.sys} → ${c.cnt} pcs.`;
+      break;
+    }
+    case 'leave': {
+      const staffId = s(fieldValue(p, 'staffId')); const who = await db.staff.get(staffId);
+      if (!who) throw new Error('Pick the person.');
+      const r = p.rows[0] ?? {}; const from = toIsoDate(s(r.from)); const to = toIsoDate(s(r.to)) || from;
+      if (!from || to < from) throw new Error('Pick the day of the leave.');
+      const status = p.meta.status === 'waiting' ? 'waiting' : 'approved';
+      // a second tap (or the same leave said twice) saves nothing more
+      if ((await db.leaves.where('staffId').equals(staffId).toArray()).some(l => l.status !== 'rejected' && l.from === from && l.to === to)) throw new Error(`${who.name.split(' ')[0]}'s leave on ${showDay(from)} is already there.`);
+      const reason = s(fieldValue(p, 'reason')) || 'personal';
+      cs.put<LeaveRequest>('leaves', { staffId, from, to, reason, status }, 'leave');
+      const when = `${showDay(from)}${to !== from ? ` to ${showDay(to)}` : ''}`;
+      message = status === 'waiting' ? `Leave request ${when} (${reason}) sent to the owner.` : `${who.name.split(' ')[0]}: leave ${when} recorded (${reason}).`;
+      break;
+    }
+    case 'advance': {
+      const who = await db.staff.get(s(fieldValue(p, 'staffId')));
+      if (!who) throw new Error('Pick the person.');
+      const amount = n(p.rows[0]?.amount);
+      if (!(amount > 0)) throw new Error('Amount must be more than 0.');
+      const waiting = p.meta.status === 'waiting';
+      cs.put<Advance>('advances', { staffId: who.id, amount, reason: s(fieldValue(p, 'reason')), status: waiting ? 'waiting' : 'approved', instalments: 1, recovered: 0 }, 'advance');
+      if (!waiting) cs.put('expenses', { date: today(), category: 'advance', amount, note: `Advance to ${who.name}` }, 'advance paid');
+      message = waiting ? `Advance request ${inr(amount)} sent to the owner.` : `Advance ${inr(amount)} to ${who.name.split(' ')[0]} recorded; recovered from next salary.`;
+      break;
+    }
+    case 'visit': {
+      // one visit per shop, per person, per day: a second tap (or saying it twice) updates the same visit
+      const shopId = s(fieldValue(p, 'shopId'));
+      const shop = await db.shops.get(shopId);
+      if (!shop) throw new Error('Pick the shop.');
+      const reason = s(fieldValue(p, 'reason'));
+      if (!NO_ORDER_REASONS.includes(reason)) throw new Error('Pick why there was no order.');
+      const me = session().userId;
+      const cur = (await db.visits.where('date').equals(today()).toArray()).find(v => v.staffId === me && v.shopId === shopId);
+      if (cur?.outcome === 'order') throw new Error(`${shop.name} already has an order from you today.`);
+      cs.put<Visit>('visits', { ...(cur ?? { shopId, staffId: me, date: today(), at: nowIso() }), outcome: 'no_order', reason } as Visit, cur ? 'visit updated' : 'visit');
+      message = `${shop.name}: visit saved — no order (${reason.toLowerCase()}).`;
       break;
     }
     case 'productEdit': {
@@ -669,6 +781,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         else if (k === 'gstin') upd.gstin = val.toUpperCase() || undefined;
         else (upd as unknown as Record<string, string>)[k] = val;
       }
+      // a credit limit decides cash-only unless cash-only was set in the same change
+      if (p.rows.some(r => s(r.key) === 'creditLimit') && !p.rows.some(r => s(r.key) === 'cashOnly')) upd.cashOnly = !(upd.creditLimit > 0);
+      if (p.rows.some(r => s(r.key) === 'gstin' || s(r.key) === 'stateCode')) upd.stateCode = shopStateCode(upd);
       cs.put<Shop>('shops', upd, 'shop details changed');
       message = `${upd.name} updated.`;
       break;
@@ -680,18 +795,56 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
   return { message, batchId, invoices, orderId };
 }
 
-// Bill an order that was waiting for the owner's OK.
-export async function approveOrder(orderId: string) {
-  const order = (await db.orders.get(orderId))!;
-  const shop = (await db.shops.get(order.shopId))!;
-  const cs = new ChangeSet();
-  const o = cs.put<Order>('orders', { ...order, status: 'billed', issues: order.issues }, 'owner OK');
-  const invs = await makeInvoices(cs, o, shop);
-  o.invoiceIds = invs.map(i => i.id);
-  const batchId = await cs.commit('Owner approved order');
-  return { invoices: invs, batchId };
-}
-
 export async function balancesForShop(shopId: string) {
   return (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
+}
+
+/**
+ * A shop return, checked against its bill: pieces never more than billed minus already returned, credit = the bill line's
+ * own value (taxable + GST) of those pieces (a typed amount can only match it), and above the owner's limit only the
+ * owner can make it — on any other phone nothing is saved. Also the 30 November GST date for last year's bills.
+ */
+async function checkReturn(p: Proposal) {
+  const errors: { row: number; key: string; msg: string }[] = []; const warnings: string[] = [];
+  const shopId = s(fieldValue(p, 'shopId'));
+  const byInv = new Map<string, { rows: number[]; items: { productId: string; paid: number; free: number; restock: boolean }[] }>();
+  p.rows.forEach((r, i) => {
+    if (!s(r.productId)) errors.push({ row: i, key: 'productId', msg: 'Pick the product' });
+    if (!Number.isInteger(n(r.qty)) || n(r.qty) <= 0) errors.push({ row: i, key: 'qty', msg: 'Whole pieces, more than 0' });
+    if (!s(r.invoiceId)) errors.push({ row: i, key: 'invoiceId', msg: 'No bill found for this item at this shop' });
+    const g = byInv.get(s(r.invoiceId)) ?? { rows: [], items: [] }; g.rows.push(i); g.items.push({ productId: s(r.productId), paid: Math.max(0, n(r.qty)), free: 0, restock: s(r.restock) !== 'no' }); byInv.set(s(r.invoiceId), g);
+  });
+  let total = 0;
+  for (const [invoiceId, g] of byInv) {
+    if (!invoiceId) continue;
+    const inv = await db.invoices.get(invoiceId);
+    if (!inv || inv.shopId !== shopId || inv.cancelled) { for (const i of g.rows) errors.push({ row: i, key: 'invoiceId', msg: inv?.cancelled ? 'That bill is cancelled' : 'Not a bill of this shop' }); continue; }
+    const cns = await db.creditNotes.where('invoiceId').equals(invoiceId).toArray();
+    const asked = new Map<string, number>();
+    g.items.forEach((it, k) => {
+      asked.set(it.productId, (asked.get(it.productId) ?? 0) + it.paid);
+      const left = openPaid(inv, cns, it.productId);
+      if ((asked.get(it.productId) ?? 0) > left) errors.push({ row: g.rows[k], key: 'qty', msg: `Only ${left} pcs left on bill ${inv.number} (billed minus already returned)` });
+    });
+    try {
+      const built = buildCreditNote(inv, cns, g.items);
+      total = r2(total + built.total);
+      // a typed amount can never be more than the bill's own value of these pieces
+      g.rows.forEach((i, k) => { const r = p.rows[i]; const v = built.lines.filter(l => l.productId === g.items[k].productId).reduce((a, l) => a + l.amount, 0); if (n(r.amount) > r2(v) + 0.51) errors.push({ row: i, key: 'amount', msg: `Most is ${inr(r2(v))} for these pieces` }); });
+    } catch { /* the qty error above says why */ }
+    const deadline = creditNoteDeadline(inv.date);
+    if (today() > deadline) warnings.push(`Bill ${inv.number} is from an earlier GST year: after ${deadline} a credit note no longer reduces GST (s.34(2)). The shop's account is still credited.`);
+    else if (today() >= `${deadline.slice(0, 4)}-10-01`) warnings.push(`Bill ${inv.number}: make this credit note before ${deadline} for it to reduce GST (s.34(2)).`);
+  }
+  return { errors, warnings, total };
+}
+
+/** the damage table's rows as write-off lines */
+function damageRows(p: Proposal): DamageRow[] {
+  return p.rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), kind: s(r.kind) || 'damage', fromStock: s(r.fromStock) !== 'no', note: s(r.note), amount: n(r.amount) }));
+}
+/** the count table's rows (the product comes with the table's header) */
+function countRows(p: Proposal): CountRow[] {
+  const productId = s(fieldValue(p, 'productId')) || undefined;
+  return p.rows.map(r => ({ batchId: s(r.batchId), productId, system: n(r.system), counted: n(r.counted) }));
 }

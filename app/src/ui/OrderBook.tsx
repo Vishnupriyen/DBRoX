@@ -3,11 +3,12 @@ import { ArrowLeft, Repeat, Search, Flame, Gift, AlertTriangle, Check } from 'lu
 import { ChangeSet, db, session, today, daysFrom } from '../core/db';
 import { activeSchemes, applySchemes, allStock } from '../core/billing';
 import { bookOrder, updateMyOrder } from '../core/pipeline';
-import { askText } from './dialog';
+import { askText, confirmBox } from './dialog';
+import { useBack } from './useBack';
 import { r2, shopOutstanding } from '../core/ledger';
 import { norm } from '../core/match';
 import { inr, t, plural } from '../core/i18n';
-import type { Order, Company, Product, Scheme, Shop, Visit, Invoice } from '../core/types';
+import type { Order, Company, Product, Role, Scheme, Shop, Visit, Invoice } from '../core/types';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
 
@@ -31,6 +32,16 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
   const [remark, setRemark] = useState('');
   const [printing, setPrinting] = useState<Invoice | null>(null);
   const [busy, setBusy] = useState(false);
+  const [role, setRole] = useState<Role | null>(null);
+  useEffect(() => { db.staff.get(session().userId).then(s => setRole(s?.role ?? null)); }, []);
+  // back (arrow or phone) goes to the beat; an order with lines asks first, so a half-typed order is never lost silently
+  const leave = async () => {
+    const n = Object.keys(lines).length;
+    if (!result && n && !(await confirmBox('Leave this order?', `${plural(n, 'line')} will be lost.`, 'Leave'))) return;
+    onClose();
+  };
+  useBack(() => { void leave(); return true; });
+  const field = role === 'salesman' || role === 'rep'; // field staff send the order; the owner and office approve it
 
   useEffect(() => {
     (async () => {
@@ -89,7 +100,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
       const order = await bookOrder(cs, shop, ls, session().userId, { visitId: visit?.id, offRoute: shop.salesmanId !== session().userId, rateRemark: lowered.length ? `${lowered.map(l => `${l.product.name} @${l.rate} (std ${l.product.rate})`).join(', ')} — ${remark}` : undefined });
       if (visit) cs.put('visits', { ...visit, outcome: 'order' }, 'visit outcome');
       await cs.commit('Salesman order');
-      setIssuesText(order.issues.join('; '));
+      setIssuesText(order.issues.map(x => x.replace(/^Overdue (\d+) days \(.*\)$/, 'overdue $1 days')).join('; '));
       setResult({
         text: 'Order sent to the owner',
         invoices: [], needsOk: order.issues.length > 0,
@@ -99,11 +110,12 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
 
   if (result) return (
     <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
-      <div className={`avatar ${result.needsOk ? 'bad' : 'ok'}`} style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}>{result.needsOk ? <AlertTriangle size={48} /> : <Check size={56} />}</div>
+      {/* sent is sent: always the green tick; what the owner will look at is the yellow line under it */}
+      <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
       <h2>{result.text}</h2>
-      <div className="muted">{shop.name} · {totals.items} items · {inr(totals.amount)}</div>
-      {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{'The owner will see: '}{issuesText}</div></div>}
-      {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}>{i.number} · {inr(i.total)}</button>)}</div>}
+      <div className="muted">{shop.name} · {plural(totals.items, 'item')} · {inr(totals.amount)}</div>
+      {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{'Owner will check: '}{issuesText}</div></div>}
+      {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><span className="billno">{i.number}</span> · {inr(i.total)}</button>)}</div>}
       <button className="btn big primary block" onClick={onClose}>{'Next shop'} →</button>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
     </div>
@@ -112,7 +124,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
   return (
     <div className="stack" style={{ paddingBottom: 0 }}>
       <div className="row" style={{ flexWrap: 'nowrap' }}>
-        <button className="icon-btn" onClick={onClose} aria-label="Back"><ArrowLeft /></button>
+        <button className="icon-btn" onClick={() => void leave()} aria-label="Back"><ArrowLeft /></button>
         <div className="grow"><div className="h">{shop.name}</div><div className="muted">{shop.area}{shop.owner ? ` · ${shop.owner}` : ''}</div></div>
         {lastOrder.length > 0 && <button className="btn small" onClick={repeatLast}><Repeat /> {'Repeat last'}</button>}
       </div>
@@ -159,7 +171,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
                   <div><div className="eyebrow">{'Cases'}</div><Stepper value={l?.cases ?? 0} onChange={v => setQty(p, v, l?.pcs ?? 0)} /></div>
                   <div><div className="eyebrow">{'Pcs'}</div><Stepper value={l?.pcs ?? 0} onChange={v => setQty(p, l?.cases ?? 0, v)} /></div>
                 </div>
-                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: 12 }} onClick={async () => { const r = await askText(`${p.name}: ${'rate per piece'} (std ${inr(p.rate)})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>{inr(l.rate ?? p.rate)}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
+                {l && pieces(l) > 0 && <button className="link" style={{ fontSize: '0.75rem' }} onClick={async () => { const r = await askText(`${p.name}: ${'rate per piece'} (std ${inr(p.rate)})`, String(l.rate ?? p.rate), 'number'); if (r === null) return; const v = Number(r); if (!v) return; setLines(ls => ({ ...ls, [p.id]: { ...ls[p.id], rate: v } })); }}>{inr(l.rate ?? p.rate)}{l.rate != null && l.rate < p.rate ? ' ↓' : ''}</button>}
                 {info && <div className="row" style={{ gap: 6, marginLeft: 'auto' }}>
                   {info.free > 0 && <span className="badge ok">+{info.free} free</span>}
                   {info.short > 0 && <span className="badge bad">{info.short} short</span>}
@@ -172,8 +184,8 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
         {!shown.length && <div className="card muted">{'Nothing here'}</div>}
       </div>
       <div className="sticky-foot">
-        <div className="grow"><div className="eyebrow">{plural(totals.items, 'item')}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: 22 }}>{inr(totals.amount)}</div></div>
-        <button className="btn primary big" disabled={!totals.items || busy} onClick={confirm}><Check /> {t('approve').replace(' ✓', '')}</button>
+        <div className="grow"><div className="eyebrow">{plural(totals.items, 'item')}{totals.free ? ` · ${totals.free} free` : ''}</div><div className="amt num" style={{ fontSize: '1.375rem' }}>{inr(totals.amount)}</div></div>
+        <button className="btn primary big" disabled={!totals.items || busy} onClick={confirm}><Check /> {field ? 'Send to owner' : t('approve').replace(' ✓', '')}</button>
       </div>
     </div>
   );

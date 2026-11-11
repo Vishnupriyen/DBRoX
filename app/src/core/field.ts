@@ -87,7 +87,7 @@ export async function endDay(pos: Pos | null) {
   const towns = new Set(visits.map(v => (shops.get(v.shopId)?.area ?? '').toLowerCase()).filter(Boolean));
   const { sameTown } = await import('./travel');
   const outstation = !!me?.hq && [...towns].some(t => !sameTown(t, me.hq!));
-  if (!visits.length) flags.push('No shop visited');
+  if (!visits.some(countedVisit)) flags.push('No shop visited');
   if (track.length < 2) flags.push('Too few location readings to measure km');
   const cs = new ChangeSet(); cs.put<WorkDay>('workDays', { ...d, track, km, flags: [...new Set([...d.flags.filter(f => f === 'Started without location'), ...flags])], outstation, endAt: at }, 'end day'); await cs.commit('End day');
   return { km, flags, outstation };
@@ -99,11 +99,13 @@ export async function myShops(staffId = session().userId): Promise<Shop[]> {
   const ids = new Set(me?.dbLinkIds ?? []);
   return (await db.shops.toArray()).filter(s => s.active !== false && s.dbLinkId && ids.has(s.dbLinkId));
 }
+/** a visit counts only when something was done at the shop: an order, a no-order reason or a shelf photo (opening the shop is not a visit) */
+export const countedVisit = (v?: Visit) => !!v && (!!v.outcome || !!(v as Visit & { photo?: string }).photo);
 export async function todaysBeat(staffId = session().userId) {
   const d = dayName();
   const shops = (await myShops(staffId)).filter(s => s.beat === d || s.aliases?.includes(`beat:${d}`));
   const visits = (await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === staffId);
-  return shops.map(s => ({ shop: s, visit: visits.find(v => v.shopId === s.id) })).sort((a, b) => Number(!!a.visit) - Number(!!b.visit) || a.shop.name.localeCompare(b.shop.name));
+  return shops.map(s => ({ shop: s, visit: visits.find(v => v.shopId === s.id && countedVisit(v)) })).sort((a, b) => Number(!!a.visit) - Number(!!b.visit) || a.shop.name.localeCompare(b.shop.name));
 }
 export const FAR_M = 300;
 export const NO_ORDER_REASONS = ['Shop closed', 'Stock is enough', 'Owner not there', 'No money now', 'Buys from elsewhere', 'Other'];
@@ -159,12 +161,18 @@ export async function placeFieldOrder(shopId: string, lines: FieldLine[], visitI
   return o;
 }
 export const orderValue = (o: Order) => r2(o.lines.reduce((a, l) => a + l.qty * l.rate, 0));
-/** sent → billed by the distributor (its bill reached us through the link) */
-export async function fieldOrderStatus(orders: Order[]) {
+export type FieldOrderStatus = { status: 'sent' | 'billed' | 'cancelled'; value: number; reason?: string };
+/** sent → billed by the distributor (its bill reached us through the link), or cancelled by the distributor (with why) */
+export async function fieldOrderStatus(orders: Order[]): Promise<Map<string, FieldOrderStatus>> {
   const billed = new Map<string, number>();
   for (const s of await db.secondary.toArray()) if (s.orderId && !s.cancelled) billed.set(s.orderId, (billed.get(s.orderId) ?? 0) + s.taxable);
-  return new Map(orders.map(o => [o.id, billed.has(o.id) ? { status: 'billed' as const, value: r2(billed.get(o.id)!) } : { status: 'sent' as const, value: orderValue(o) }]));
+  return new Map(orders.map(o => [o.id, billed.has(o.id) ? { status: 'billed' as const, value: r2(billed.get(o.id)!) }
+    : o.status === 'cancelled' ? { status: 'cancelled' as const, value: orderValue(o), reason: o.cancelReason }
+    : { status: 'sent' as const, value: orderValue(o) }]));
 }
+/** how a rep reads the status of an order */
+export const fieldOrderWords = (st: FieldOrderStatus) => st.status === 'billed' ? 'Billed by distributor'
+  : st.status === 'cancelled' ? `Cancelled by distributor${st.reason ? `: ${st.reason}` : ''}` : 'Sent to distributor';
 
 // ---------------------------------------------------------------- new shop request (the distributor approves it)
 export async function requestShop(input: { name: string; area: string; beat: string; dbLinkId: string; photo?: string; pos?: Pos | null }) {
@@ -212,7 +220,7 @@ export async function teamToday(team: Staff[], day = today()): Promise<RepRow[]>
   const targets = (await db.targets.where('month').equals(day.slice(0, 7)).toArray());
   return team.filter(s => s.role === 'rep').map(s => {
     const w = wd.find(x => x.staffId === s.id);
-    const v = vs.filter(x => x.staffId === s.id), o = os.filter(x => x.repId === s.id);
+    const v = vs.filter(x => x.staffId === s.id && countedVisit(x)), o = os.filter(x => x.repId === s.id);
     const m = w ? measure(w.track) : { km: 0, flags: [] }; // worked out from the readings, never the phone's own km figure
     return {
       staff: s, started: w?.startAt, ended: w?.endAt, km: m.km, flags: w ? [...new Set([...w.flags, ...m.flags])] : [], visits: v.length,

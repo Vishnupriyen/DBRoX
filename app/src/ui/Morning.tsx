@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Banknote, Boxes, CalendarClock, Target, TrendingUp, Undo2, Truck } from 'lucide-react';
-import { ChangeSet, db, today, undoBatch, daysFrom } from '../core/db';
+import { ChangeSet, db, today, undoBatch, undoRefusal, daysFrom } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { inr, plural, inrR } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
@@ -108,7 +108,7 @@ export function Morning({ only }: { only?: 'cash' | 'stock' } = {}) {
           {d.recent.map(a => (
             <div key={a.id} className="row" style={{ flexWrap: 'nowrap', minHeight: 40 }}>
               <span className="grow"><b>{a.action.split(':')[0]}</b> <span className="muted">· {new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })} · {a.by === 'owner' ? 'owner' : ''}</span></span>
-              <button className="btn small" onClick={async () => { if (await confirmBox('Undo this whole action?', 'Everything this approval changed goes back.', 'Undo')) { const n = await undoBatch(a.batchId); if (n < 0) await notify("Can't undo", "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead."); refresh(); } }}><Undo2 /> {'Undo'}</button>
+              <button className="btn small" onClick={async () => { if (await confirmBox('Undo this whole action?', 'Everything this approval changed goes back.', 'Undo')) { const n = await undoBatch(a.batchId); if (n < 0) await notify("Can't undo", undoRefusal(n)); refresh(); } }}><Undo2 /> {'Undo'}</button>
             </div>
           ))}
         </div>

@@ -1,3 +1,4 @@
+import { DEFAULT_STATE, shopStateCode, STATES } from '../core/gst';
 import { useEffect, useState } from 'react';
 import { Check, X, MapPin, Phone, Store, AlertTriangle, Target as TargetIcon } from 'lucide-react';
 import { ChangeSet, db, session, today } from '../core/db';
@@ -14,7 +15,7 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 // ---------- Shop onboarding at the counter: six fields, photo captures the location ----------
 export function NewShop({ onDone }: { onDone: () => void }) {
   const [shops, setShops] = useState<Shop[]>([]);
-  const [f, setF] = useState({ name: '', owner: '', phone: '', area: '', beat: DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1], gstin: '' });
+  const [f, setF] = useState({ name: '', owner: '', phone: '', area: '', beat: DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1], gstin: '', stateCode: DEFAULT_STATE });
   const [photo, setPhoto] = useState<string>();
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [role, setRole] = useState('salesman');
@@ -29,7 +30,7 @@ export function NewShop({ onDone }: { onDone: () => void }) {
   const save = async () => {
     const owner = role === 'owner' || role === 'office';
     const cs = new ChangeSet();
-    cs.put<Shop>('shops', { name: f.name.trim(), owner: f.owner, phone: f.phone, area: f.area.trim(), beat: f.beat, gstin: f.gstin || undefined, creditLimit: 0, creditDays: 0, cashOnly: true, type: 'retail', approved: owner, aliases: [], photo, lat: pos?.lat, lng: pos?.lng, salesmanId: owner ? undefined : session().userId }, 'new shop');
+    cs.put<Shop>('shops', { name: f.name.trim(), owner: f.owner, phone: f.phone, area: f.area.trim(), beat: f.beat, gstin: f.gstin || undefined, stateCode: shopStateCode({ gstin: f.gstin || undefined, stateCode: f.stateCode }), creditLimit: 0, creditDays: 0, cashOnly: true, type: 'retail', approved: owner, aliases: [], photo, lat: pos?.lat, lng: pos?.lng, salesmanId: owner ? undefined : session().userId }, 'new shop');
     await cs.commit('New shop'); setSaved(true);
   };
   if (saved) return <div className="card stack" style={{ textAlign: 'center' }}><div className="avatar ok" style={{ margin: '0 auto' }}><Check /></div><b>{f.name}</b><div className="muted">{role === 'salesman' ? 'Sent to the owner for approval. You can book orders; they wait for his OK.' : 'Shop added.'}</div><button className="btn primary" onClick={onDone}>{'Done'}</button></div>;
@@ -45,6 +46,7 @@ export function NewShop({ onDone }: { onDone: () => void }) {
           <div className="field"><label>{'Beat day'}</label><select value={f.beat} onChange={e => setF({ ...f, beat: e.target.value })}>{DAYS.map(d => <option key={d}>{d}</option>)}</select></div>
         </div>
         <div className="field"><label>GSTIN ({'optional'})</label><input value={f.gstin} onChange={e => setF({ ...f, gstin: e.target.value.toUpperCase().slice(0, 15) })} />{gstBad && <div style={{ color: 'var(--bad)' }}>{'GSTIN check failed — verify the number'}</div>}{f.gstin.length === 15 && !gstBad && <span className="badge ok">{'B2B billing on'}</span>}</div>
+        {!f.gstin && <div className="field"><label>{'State (for GST)'}</label><select value={f.stateCode} onChange={e => setF({ ...f, stateCode: e.target.value })}>{Object.entries(STATES).map(([c, n]) => <option key={c} value={c}>{c} {n}</option>)}</select></div>}
         <button className="btn primary big block" disabled={!ok || !!dupPhone} onClick={save}><Check /> {'Add shop'}</button>
         <div className="muted">{'Credit: cash-only until the owner sets a limit.'}</div>
       </div>
@@ -70,7 +72,7 @@ export function NewShops() {
         <div key={s.id} className="card stack" style={{ gap: 8 }}>
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             {s.photo ? <img src={s.photo} alt="" style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover' }} /> : <div className="avatar" style={{ width: 72, height: 72 }}><Store /></div>}
-            <div className="grow"><div className="t" style={{ fontSize: 17, fontWeight: 700 }}>{s.name}</div><div className="s">{s.owner} · {s.area} · {s.beat}</div><div className="s">{'added by'} {staff.get(s.salesmanId ?? '') ?? '—'}{s.lat ? ` · ${s.lat.toFixed(4)}, ${s.lng?.toFixed(4)}` : ` · ${'no location yet'}`}</div></div>
+            <div className="grow"><div className="t" style={{ fontSize: '1.0625rem', fontWeight: 700 }}>{s.name}</div><div className="s">{s.owner} · {s.area} · {s.beat}</div><div className="s">{'added by'} {staff.get(s.salesmanId ?? '') ?? '—'}{s.lat ? ` · ${s.lat.toFixed(4)}, ${s.lng?.toFixed(4)}` : ` · ${'no location yet'}`}</div></div>
           </div>
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <button className="btn primary grow" onClick={() => approve(s)}><Check /> {'Approve & set credit'}</button>

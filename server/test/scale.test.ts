@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { billNo, freePort, issueNumbers, realBill } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +11,7 @@ let pgServer: EmbeddedPostgres; let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let link: typeof import('../src/link.js');
 let reports: typeof import('../src/reports.js');
-const port = 54335;
+const port = await freePort();
 beforeAll(async () => {
   process.env.RELAY_INLINE = '0'; process.env.COVER_DELAY_MS = '0'; // the real thing: the relay runs in the background
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-scale-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
@@ -30,20 +31,22 @@ const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const pull = async (token: string) => { let c = 0, more = true; const all: { table: string; id: string }[] = []; while (more) { const r = await sync(token, [], c); all.push(...r.changes); c = r.cursor; more = r.more; } return all; };
 
 let CO = { token: '', tenantId: '' }; const D: { token: string; tenantId: string }[] = []; let rep = { token: '' };
-const bill = (id: string, shop: string, qty: number, taxable: number, extra: Record<string, unknown> = {}) => ({ id, number: id, companyId: 'cK', date: today, shopId: shop, lines: [{ productId: 'dp1', name: 'Oil', qty, freeQty: 0, rate: 40, taxable, total: taxable * 1.05 }], taxable, total: taxable * 1.05, ...extra });
+const nums = new Map<string, string>(); const numOf = (id: string) => nums.get(id) ?? (nums.set(id, billNo(nums.size + 1)), nums.get(id)!);
+const bill = (id: string, shop: string, qty: number, taxable: number, extra: Record<string, unknown> = {}) => realBill({ id, number: numOf(id), companyId: 'cK', date: today, shopId: shop, lines: [{ productId: 'dp1', name: 'Oil', qty, freeQty: 0, rate: 40, taxable, total: taxable * 1.05 }], ...extra });
 
 describe('scale design', () => {
   it('setup: a brand, two linked distributors, a rep who works only the first', async () => {
-    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9844400001', pin: '1234', kind: 'company' })).body;
-    for (let i = 0; i < 2; i++) D.push((await post('/v1/signup', { firmName: `Dist ${i}`, ownerName: 'O', phone: `98444001${i}0`, pin: '1234' })).body);
+    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9844400001', pin: '4826', kind: 'company' })).body;
+    for (let i = 0; i < 2; i++) D.push((await post('/v1/signup', { firmName: `Dist ${i}`, ownerName: 'O', phone: `98444001${i}0`, pin: '4826' })).body);
+    for (const d of D) await issueNumbers(pool, d.tenantId);
     await sync(CO.token, [ch('products', { id: 'P1', name: 'Kaveri Oil', code: 'K1', rate: 40, purchaseRate: 36, mrp: 50, gst: 5, caseSize: 12, active: true }),
       ch('dbLinks', { id: 'L0', name: 'Dist 0', inviteCode: 'KAVS00', status: 'invited' }), ch('dbLinks', { id: 'L1', name: 'Dist 1', inviteCode: 'KAVS01', status: 'invited' }),
-      ch('staff', { id: 'r1', name: 'Rep', phone: '9844400099', role: 'rep', pin: '1234', active: true, dbLinkIds: ['L0'] })]);
+      ch('staff', { id: 'r1', name: 'Rep', phone: '9844400099', role: 'rep', pin: '4826', active: true, dbLinkIds: ['L0'] })]);
     for (let i = 0; i < 2; i++) {
       await sync(D[i].token, [ch('companies', { id: 'cK', name: 'Kaveri', code: 'KAV', nextBillNo: 1 }), ch('products', { id: 'dp1', companyId: 'cK', name: 'Kaveri Oil', code: 'K1', rate: 40, active: true }), ch('shops', { id: `s${i}`, name: `Shop ${i}`, area: 'X', beat: 'Monday', approved: true, aliases: [], phone: '9443000000' })]);
       expect((await post('/v1/link/accept', { code: `KAVS0${i}`, companyIdInDb: 'cK' }, D[i].token)).status).toBe(200);
     }
-    rep = (await post('/v1/login', { phone: '9844400099', pin: '1234' })).body;
+    rep = (await post('/v1/login', { phone: '9844400099', pin: '4826' })).body;
   });
 
   it('a sync only notes the change; the relay hands it over in the background', async () => {

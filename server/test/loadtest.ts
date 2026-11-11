@@ -19,7 +19,7 @@ const base = 7000000000 + Math.floor(Math.random() * 900000000);
 
 async function tenant(i: number) {
   const phone = String(base + i * 100);
-  const s = await post('/v1/signup', { firmName: `Load ${i}`, ownerName: 'Owner', phone, pin: '1111' });
+  const s = await post('/v1/signup', { firmName: `Load ${i}`, ownerName: 'Owner', phone, pin: '3917' });
   const cursors = new Array(PHONES).fill(0);
   for (let round = 0; round < ROUNDS; round++) {
     await Promise.all(cursors.map(async (cur, ph) => {
