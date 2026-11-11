@@ -104,6 +104,24 @@ export function protectNames(t: string): string {
 // Generic words in shop names. "Lakshmi" finds "Sri Lakshmi Traders"; "stores" alone finds nothing.
 const SHOP_GENERIC = new Set(['sri', 'shree', 'shri', 'new', 'the', 'stores', 'store', 'traders', 'trader', 'mart', 'super', 'market', 'supermarket', 'agency', 'agencies', 'provision', 'provisions', 'kirana', 'wholesale', 'shop', 'enterprises', 'general', 'and', 'co', 'company', 'centre', 'center', 'bros', 'brothers']);
 
+// Tamil forms of address ("anna" = brother, "akka" = sister): people call out to each other with them, they are never a shop
+const CALLS = new Set(['anna', 'annan', 'akka', 'thambi', 'thangai', 'anne', 'ayya', 'amma', 'appa', 'macha', 'machan', 'bhai', 'sir', 'madam']);
+// words of a shop's name that the person types around it ("stores", "mart") are never a product
+const SHOP_TAIL = ['store', 'stores', 'shop', 'traders', 'trader', 'agency', 'agencies', 'provision', 'provisions', 'kirana', 'wholesale', 'enterprises', 'mart'];
+
+/** the product a mistyped word was probably meant to be ("sarf" → Surf Excel…), or none when nothing is close */
+export function closeProduct(products: Product[], word: string): Product | undefined {
+  const ws = norm(word).split(' ').filter(w => w.length >= 4 && !/\d/.test(w));
+  let best: { p: Product; d: number } | undefined;
+  for (const p of products) {
+    for (const n of [p.name, ...p.aliases]) for (const t of norm(n).split(' ')) {
+      if (t.length < 4) continue;
+      for (const w of ws) { const d = lev(w, t); if (d <= (w.length >= 6 && t.length >= 6 ? 2 : 1) && (!best || d < best.d)) best = { p, d }; }
+    }
+  }
+  return best?.p;
+}
+
 export interface ShopPrefer { salesmanId?: string; day?: string }
 export function findShopInText(shops: Shop[], text: string, prefer?: ShopPrefer): { shop?: Shop; rest: string; ties?: Shop[] } {
   const n = ` ${norm(text)} `;
@@ -119,12 +137,12 @@ export function findShopInText(shops: Shop[], text: string, prefer?: ShopPrefer)
       for (let k = words.length - 1; k >= 2 && !hit; k--) { const pre = words.slice(0, k).join(' '); if (n.includes(` ${pre} `)) { scored.push({ shop: s, score: 50 + pre.length, phrase: pre }); hit = true; } }
       if (hit) continue;
       let found = false;
-      for (const w of words) if (w.length >= 4 && !SHOP_GENERIC.has(w) && !areas.has(w) && n.includes(` ${w} `)) { scored.push({ shop: s, score: 10 + w.length, phrase: w }); found = true; break; }
+      for (const w of words) if (w.length >= 4 && !SHOP_GENERIC.has(w) && !CALLS.has(w) && !areas.has(w) && n.includes(` ${w} `)) { scored.push({ shop: s, score: 10 + w.length, phrase: w }); found = true; break; }
       if (found) continue;
       // one-letter typo in the distinctive word ("murgan" → Murugan): weaker than an exact hit
       for (const w of words) {
-        if (w.length < 5 || SHOP_GENERIC.has(w) || areas.has(w)) continue;
-        const typo = n.trim().split(' ').find(x => x.length >= 4 && lev(x, w) === 1);
+        if (w.length < 5 || SHOP_GENERIC.has(w) || CALLS.has(w) || areas.has(w)) continue;
+        const typo = n.trim().split(' ').find(x => x.length >= 5 && !CALLS.has(x) && lev(x, w) === 1);
         if (typo) { scored.push({ shop: s, score: 5 + w.length, phrase: typo }); break; }
       }
     }
@@ -163,6 +181,8 @@ export function findShopInText(shops: Shop[], text: string, prefer?: ShopPrefer)
   // a slip in another word of the shop's name ("velan provison") is still the shop's name, never a product
   const nameWords = norm(best.name).split(' ').filter(w => w.length >= 5);
   rest = rest.replace(/[a-z]{5,}/gi, x => nameWords.some(w => lev(x.toLowerCase(), w) === 1) ? ' ' : x);
+  // "velan stores ku 5 box…": the shop's own tail word typed after its name is not a product
+  rest = rest.replace(/[a-z]+/gi, x => SHOP_TAIL.includes(x.toLowerCase()) && !VOCAB.has(x.toLowerCase()) ? ' ' : x);
   return { shop: best, rest: rest.replace(/^[\s,;:-]+/, '').replace(/\s+/g, ' ') };
 }
 

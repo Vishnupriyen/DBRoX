@@ -16,6 +16,8 @@ type What = { verb: string; shopIds: string[]; amount?: number; count: number } 
 export function UndoToast({ page }: { page?: string }) {
   const [cur, setCur] = useState<{ label: string; batchId: string } | null>(null);
   useEffect(() => { setCur(null); }, [page]);
+  // while the bubble is up the screen below it makes room, so it never covers a header or the first row
+  useEffect(() => { document.body.toggleAttribute('data-toast', !!cur); return () => document.body.removeAttribute('data-toast'); }, [cur]);
   useEffect(() => {
     let timer = 0;
     const on = (e: Event) => { const d = (e as CustomEvent).detail as { label: string; batchId: string }; if ((e as CustomEvent).detail.quiet || /^(undo|sync|location|shop visit)/i.test(d.label)) return; /* a quiet save (a GPS reading) has nothing to undo */ const tables = ((e as CustomEvent).detail.tables as string[] | undefined) ?? [];

@@ -68,7 +68,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
     setBusy(true);
     try {
       const res = await commit(p);
-      setClosed('Approved'); // the result itself follows as TESRAX's next message (said once, with Undo)
+      setClosed(role && FIELD.includes(role) && (p.kind === 'order' || p.kind === 'leave') ? 'Sent to owner' : role && FIELD.includes(role) && p.kind === 'fieldOrder' ? 'Sent to distributor' : 'Approved'); // the result itself follows as TESRAX's next message (said once, with Undo)
       const edited = JSON.stringify([p.rows, p.fields]) !== JSON.stringify([proposal.rows, proposal.fields]);
       onDone({ ...res, edited });
     } catch (e) {
@@ -82,7 +82,8 @@ export function ApproveTable({ proposal, onDone }: Props) {
   const bad = v ? hasErrors(v) : true;
   const field = !!role && FIELD.includes(role);
   const cols = !narrow ? p.columns : (() => {
-    const cs = p.columns.filter(c => c.key !== 'said');
+    // the payment table keeps Bill · Balance · Pay now on a 360 px screen: date and overdue days are left out
+    const cs = p.columns.filter(c => c.key !== 'said' && !((p.kind === 'payment' || p.kind === 'paymentFix') && (c.key === 'date' || c.key === 'overdue')));
     const amt = cs.find(c => c.key === 'amount'); const at = cs.findIndex(c => c.key === 'productId');
     return amt && at >= 0 ? [...cs.slice(0, at + 1).filter(c => c !== amt), amt, ...cs.slice(at + 1).filter(c => c !== amt)] : cs;
   })();
@@ -113,7 +114,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
           <thead>
             <tr>
               {!narrow && <th>#</th>}
-              {cols.map(c => <th key={c.key} className={c.type === 'number' ? 'num' : ''} style={{ minWidth: c.width }}>{c.label}</th>)}
+              {cols.map(c => <th key={c.key} className={c.type === 'number' ? 'num' : ''} style={{ minWidth: narrow && (p.kind === 'payment' || p.kind === 'paymentFix') && c.width ? Math.min(c.width, c.key === 'number' ? 135 : 78) : c.width }}>{c.label}</th>)}
               {!fixedRows && <th></th>}
             </tr>
           </thead>

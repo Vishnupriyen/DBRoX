@@ -53,7 +53,7 @@ export function Delivery() {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{stops.length ? <>{done}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{stops.length}</span></> : '—'}</div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
+          <div><div className="v">{stops.length ? <>{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{stops.length}</span></> : '—'}</div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
           {trip && trip.status === 'out' && <span className="badge gold"><Navigation size={12} /> live</span>}
         </div>
       </div>
@@ -106,6 +106,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   const [extra, setExtra] = useState<Record<string, number>>({});
   const [step, setStep] = useState<'items' | 'confirm' | 'pay' | 'done'>('items');
   const [paid, setPaid] = useState<{ amount: number; mode: string } | null>(null);
+  const [outcome, setOutcome] = useState<'returned' | 'unpaid' | null>(null);
   const [shopPhoto, setShopPhoto] = useState<string>();
   const [billPhoto, setBillPhoto] = useState<string>();
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -131,7 +132,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
     // shop location fills itself from the first delivery
     if (pos && !stop.shop.lat) { const cs = new ChangeSet(); cs.put('shops', { ...stop.shop, lat: pos.lat, lng: pos.lng }, 'location from delivery'); await cs.commit('Shop location'); }
     await recordDelivery(stop.invoices.map(i => i.id), { returnAll, short, extra, shopPhoto, billPhoto, pos, distanceM });
-    if (returnAll) { setStep('done'); return; }
+    if (returnAll) { setOutcome('returned'); setStep('done'); return; }
     setStep('pay');
   };
 
@@ -139,7 +140,10 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
     <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
       <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
       <h2>{stop.shop.name}</h2>
-      {paid && <div className="amt num" style={{ fontSize: 22 }}>{inr(paid.amount)} {'by'} {paid.mode === 'upi' ? 'UPI' : paid.mode === 'cheque' ? 'cheque' : 'cash'}</div>}
+      {paid && <div className="amt num" style={{ fontSize: '1.375rem' }}>{inr(paid.amount)} {'by'} {paid.mode === 'upi' ? 'UPI' : paid.mode === 'cheque' ? 'cheque' : 'cash'}</div>}
+      {outcome === 'returned' && <div className="muted" data-testid="stop-summary">{'Shop refused everything'} · {inr(billTotal)} {'goes back to the godown — the owner decides the bill at day close.'}</div>}
+      {outcome === 'unpaid' && <div className="muted" data-testid="stop-summary">{'Delivered'} {inr(delivered)} · {'no payment today — the money stays due.'}</div>}
+      {paid && <div className="muted" data-testid="stop-summary">{'Delivered'} {inr(delivered)} · {'paid'} {inr(paid.amount)}{paid.amount < delivered ? ` · ${inr(r2(delivered - paid.amount))} ${'still due'}` : ''}</div>}
       <button className="btn big primary block" onClick={onClose}>{'Next shop →'}</button>
     </div>
   );
@@ -147,7 +151,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   if (step === 'pay') return (
     <div className="stack">
       <div className="sechead"><h3>{t('collect')} · {stop.shop.name}</h3></div>
-      <PayBox shop={stop.shop} preferInvoiceIds={stop.invoices.map(i => i.id)} onDone={p => { setPaid(p ?? null); setStep('done'); }} onSkip={() => setStep('done')} />
+      <PayBox shop={stop.shop} preferInvoiceIds={stop.invoices.map(i => i.id)} onDone={p => { setPaid(p ?? null); setStep('done'); }} onSkip={() => { setOutcome('unpaid'); setStep('done'); }} />
     </div>
   );
 
@@ -158,16 +162,16 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         <div className="sechead"><h3>{stop.shop.name}</h3></div>
         <div className="card stack" style={{ textAlign: 'center' }}>
           <div className="eyebrow">{'Goods delivered'}</div>
-          <div className="num" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
+          <div className="num" style={{ fontSize: '2.75rem', fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
           {shortValue > 0 && <div><span className="badge warn">{'Short'} {inr(shortValue)}</span></div>}
           {extraValue > 0 && <div><span className="badge warn">{'Extra'} {inr(extraValue)}</span></div>}
           <div className="row" style={{ justifyContent: 'center', gap: 8 }}>
-            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label={'1. Shop photo'} />{shopPhoto && <span className="muted" style={{ fontSize: 12 }}>{pos ? (distanceM != null ? `${distanceM} m ${'from shop'}` : 'location saved') : 'no GPS — marked'}</span>}</div>
+            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label={'1. Shop photo'} />{shopPhoto && <span className="muted" style={{ fontSize: '0.75rem' }}>{pos ? (distanceM != null ? `${distanceM} m ${'from shop'}` : 'location saved') : 'no GPS — marked'}</span>}</div>
             {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label={'2. Signed bill / GRN'} />}
           </div>
           <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
           <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery">{'Goods received'} <Check size={40} /></button>
-          {!ready && <div className="muted" style={{ fontSize: 12 }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
+          {!ready && <div className="muted" style={{ fontSize: '0.75rem' }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
           <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> {'Back'}</button>
         </div>
       </div>

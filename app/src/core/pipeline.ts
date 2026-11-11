@@ -189,6 +189,10 @@ export function orderStops<T extends { shop: Shop }>(stops: T[]): T[] {
   return out;
 }
 
+/** bills waiting to be planned: the number on the Delivery tile and on the Plan page — cancelled bills never count */
+export async function billsToPlan(): Promise<number> {
+  return (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled).length;
+}
 export async function suggestPlan(): Promise<PlanSuggestion[]> {
   const vans = (await db.vans.toArray()).sort((a, b) => a.name.localeCompare(b.name));
   const pending = (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled);
@@ -322,6 +326,10 @@ export async function dayChecklist(date = today()) {
 // Re-issue a bill with new quantities under the SAME number (allowed until it is printed, and at day close for
 // delivery differences). The original lines are kept inside the bill; stock is corrected for the change.
 /** day close: the owner checked the same amount twice from one shop — both are real collections */
+/** collections that look entered twice (same shop, same amount), grouped: one pair = one thing to check, not two */
+export function dupeGroups<T extends { id: string; shopId: string; amount: number }>(payments: T[]): T[][] {
+  return [...payments.reduce((m, p) => m.set(`${p.shopId}|${p.amount}`, [...(m.get(`${p.shopId}|${p.amount}`) ?? []), p]), new Map<string, T[]>()).values()];
+}
 export async function confirmNotDuplicate(paymentIds: string[]) {
   const cs = new ChangeSet();
   for (const id of paymentIds) { const p = await db.payments.get(id); if (p && p.status === 'ok') cs.put('payments', { ...p, dupOk: true }, 'checked: not a duplicate'); }
@@ -469,7 +477,7 @@ export async function counts() {
     toApproveOrders: orders.filter(o => o.status === 'new' || o.status === 'needs_ok').length,
     toPick: orders.filter(o => o.status === 'approved').length,
     toApprove: orders.filter(o => o.status === 'picked').length,
-    toPlan: invs.filter(i => i.deliveryStatus === 'pending').length,
+    toPlan: invs.filter(i => i.deliveryStatus === 'pending' && !i.cancelled).length,
     toLoad: trips.filter(t => t.status === 'planned').length,
     out: trips.filter(t => t.status === 'out').length,
     tripsToday: trips.length,

@@ -66,11 +66,11 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
               {lines.map((l, i) => (
                 <tr key={i}>
                   <td><b>{l.name}</b><div className="muted">MRP <input type="number" value={l.mrp} onChange={e => set(i, { mrp: Number(e.target.value) })} style={{ width: 64 }} aria-label="MRP" />{l.freeQty ? ` · +${l.freeQty} free` : ''}</div></td>
-                  <td><input type="number" value={l.qty} onChange={e => set(i, { qty: Math.max(0, Number(e.target.value)) })} style={{ width: 64 }} aria-label="Quantity" /></td>
-                  <td><input type="number" value={l.rate} onChange={e => set(i, { rate: Number(e.target.value) })} style={{ width: 76 }} aria-label="Rate" /></td>
-                  <td><input type="number" value={l.discount} onChange={e => set(i, { discount: Number(e.target.value) })} style={{ width: 70 }} aria-label="Discount" /></td>
-                  <td className="muted">{l.gst}%</td>
-                  <td className="num">{inr(l.total)}</td>
+                  <td data-label="Qty"><input type="number" value={l.qty} onChange={e => set(i, { qty: Math.max(0, Number(e.target.value)) })} style={{ width: 64 }} aria-label="Quantity" /></td>
+                  <td data-label="Rate"><input type="number" value={l.rate} onChange={e => set(i, { rate: Number(e.target.value) })} style={{ width: 76 }} aria-label="Rate" /></td>
+                  <td data-label="Disc ₹"><input type="number" value={l.discount} onChange={e => set(i, { discount: Number(e.target.value) })} style={{ width: 70 }} aria-label="Discount" /></td>
+                  <td className="muted" data-label="GST">{l.gst}%</td>
+                  <td className="num" data-label="Amount">{inr(l.total)}</td>
                   <td><button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => setEdits(es => es.filter((_, k) => k !== i))} aria-label="Remove line"><Trash2 size={16} /></button></td>
                 </tr>
               ))}

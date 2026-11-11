@@ -59,10 +59,15 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('.fab'); await p.waitForTimeout(500); await p.fill('textarea', 'leave Monday fever'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-leave');
   must(await p.locator('.engine .prop', { hasText: 'Leave' }).count() && /Mon \d{1,2} [A-Z][a-z]{2}/.test(await p.textContent('.engine')), 'a leave comes as the ✓ table with the day in words (Mon 16 Nov)');
   must(await p.locator('.engine .prop button', { hasText: 'Send to owner' }).count() && !(await p.locator('.engine button', { hasText: 'Download Excel' }).count()), 'field staff: "Send to owner", no Download Excel');
+  // P11: sent to the owner is said as "Sent to owner", never "Approved"
+  await p.click('.engine .prop button:has-text("Send to owner")'); await p.waitForTimeout(700);
+  { const t = await p.textContent('.engine'); must(/✓ Sent to owner/.test(t) && !/✓ Approved/.test(t), 'a staff request that went to the owner says "✓ Sent to owner", not "Approved"'); }
   await p.click('.engine-x[aria-label="Close"]'); await logout();
 
   // Owner: home, Bill → Orders received (history strip) → approve
   await loginAs('Vishnu (Owner)'); await shot('owner-home');
+  // P8: the morning card counts the leave that is waiting
+  must(/leave request/.test(await p.textContent('.morning .s').catch(() => '')), 'the morning card counts the waiting leave request (not "Nothing is waiting")');
   await tile('Bill'); await shot('owner-bill-icons');
   await tile('Orders received'); await shot('owner-orders-received');
   const ap = p.locator('button:has-text("Approve → godown")'); while (await ap.count()) { await ap.first().click(); await p.waitForTimeout(500); }
@@ -78,6 +83,8 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.locator('.item.tap').first().click(); await p.waitForTimeout(700);
   must(await p.locator('button[aria-label="Packed"] svg.lucide-check').count(), 'each pick line has the same ✓ button as Load vans');
   await p.locator('.stepper button[aria-label="less"]').first().click(); await p.waitForTimeout(200); await shot('godown-pick-changed');
+  { const t = await p.textContent('.main'); must(/stock \d+ pcs/.test(t), 'the pick screen shows stock with its unit ("stock 96 pcs (8 cs)")');
+    must(await p.locator('button[aria-label="more case"]').count(), 'the pick screen has a + 1 case button besides the piece stepper'); }
   const packs = p.locator('button[aria-label="Packed"]'); const pc = await packs.count(); for (let i = 0; i < pc; i++) await packs.nth(i).click();
   await p.click('button:has-text("Packed")'); await p.waitForTimeout(700);
   // pick the rest without changes
@@ -90,6 +97,10 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await loginAs('Vishnu (Owner)'); await tile('Bill'); await tile('to verify'); await shot('owner-verify');
   const dn = p.locator('button:has-text("Done → bill")'); while (await dn.count()) { await dn.first().click(); await p.waitForTimeout(700); }
   await shot('owner-billed');
+  { const said = Number(((await p.textContent('.alert.ok b').catch(() => '')) || '').match(/^(\d+) bills?/)?.[1] ?? 0); const nChips = await p.locator('.alert.ok button').count();
+    must(said > 0 && nChips === said, `every bill made has its chip (${said} made, ${nChips} shown)`);
+    const t = await p.locator('.toast').boundingBox(); const first = await p.locator('.alert.ok').first().boundingBox();
+    must(!t || !first || t.y + t.height <= first.y + 1, 'the Undo bubble never covers the bill chips'); }
   { const chips = await p.locator('.alert.ok button').allTextContents(); must(chips.length && chips.every(c => / · \S/.test(c)), `bill numbers come with the shop name: ${chips.join(' | ')}`);
     const nums = chips.map(c => c.split(' · ')[0].trim()); must(nums.join() === [...nums].sort().join(), 'bill numbers are in order');
     must(/^Billed .+ ₹/.test(await p.textContent('.toast').catch(() => '')), 'the Undo bubble says "Billed <shop> ₹…"'); }
@@ -122,16 +133,32 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('button:has-text("Delivered")'); await p.waitForTimeout(400);
   const cams = await p.locator('button:has-text("photo")').elementHandles(); for (const c of cams) { const [ch] = await Promise.all([p.waitForEvent('filechooser'), c.click()]); await ch.setFiles(`${FIX}/shop.jpg`); await p.waitForTimeout(500); } await shot('driver-photos-done');
   await p.click('button[aria-label="Shop confirms delivery"]'); await p.waitForTimeout(800); await shot('driver-collect-bills');
+  
+  // P2: at the biggest phone text size the bill number sits above the amount, never over it
+  await p.evaluate(() => { document.documentElement.style.fontSize = '28px'; }); await p.waitForTimeout(300); await shot('driver-collect-bills-large');
+  { const r = await p.evaluate(() => [...document.querySelectorAll('.item.tap')].map(it => { const a = it.querySelector('.t').getBoundingClientRect(), b = it.querySelector('.amt').getBoundingClientRect(); return { sw: it.scrollWidth <= it.clientWidth + 1, clear: a.bottom <= b.top + 1 || a.right <= b.left + 1 }; }));
+    must(r.length && r.every(x => x.clear && x.sw), 'large text: the bill number never overlaps the amount in the Collect bill list'); }
+  await p.evaluate(() => { document.documentElement.style.fontSize = ''; }); await p.waitForTimeout(200);
   await p.click('button:has-text("Full")'); await p.waitForTimeout(200); await p.click('.segmented button:has-text("UPI")'); await p.waitForTimeout(600); await shot('driver-collect-qr');
+  // P13: smaller QR, and a line says what "Money paid" is waiting for
+  { const w = await p.evaluate(() => document.querySelector('.qr img').getBoundingClientRect().width); must(w <= 160, `the UPI QR is small enough to leave the ref box on screen (${w}px)`);
+    must(/UPI ref/.test(await p.textContent('[data-testid=paybox-missing]').catch(() => '')), 'under "Money paid" a line says what is missing (the UPI ref)'); }
   must(await p.locator('input.bigamount[type=text]').count() && (await p.getAttribute('input.bigamount', 'placeholder')) && await p.locator('.card .row:has(input.bigamount) span', { hasText: '₹' }).count(), 'amount box: ₹ in front, the due amount as the hint, no spinner arrows');
   await p.fill('input:visible >> nth=-1', '4471'); await ballClear('button[aria-label="Shop confirms payment"]', 'Money paid ✓'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700);
   // every collection gets a numbered receipt the shop is shown (and can be sent on WhatsApp)
   if (!(await p.locator('.card', { hasText: 'Receipt R/' }).count())) throw new Error('a collection should show its numbered receipt');
   await shot('driver-receipt'); await p.click('button.btn.primary:has-text("Done")'); await p.waitForTimeout(500); await shot('driver-after');
   must(/₹[\d,.]+ by UPI/.test(await p.textContent('.main')), 'the collection done screen says "₹… by UPI"');
+  must(/Delivered ₹[\d,.]+ · paid ₹/.test(await p.textContent('[data-testid=stop-summary]').catch(() => '')), 'the stop ends with a one-line summary (delivered · paid)');
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
+  // P3: the payment table keeps the Balance column on screen on a phone
+  await p.fill('textarea', 'Murugan Stores paid 500 cash'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); await shot('rox-payment-table');
+  if (await p.locator('.engine .prop table.grid').count()) {
+    const r = await p.evaluate(() => { const w = [...document.querySelectorAll('.engine .prop .tablewrap')].pop(); const th = [...w.querySelectorAll('th')].find(x => /Balance/.test(x.textContent)); const b = th.getBoundingClientRect(), wr = w.getBoundingClientRect(); return { over: w.scrollWidth - w.clientWidth, inside: b.right <= wr.right + 1 }; });
+    must(r.inside && r.over <= 1, `the payment table shows Balance on screen without sideways scroll (${JSON.stringify(r)})`);
+    await p.locator('.engine .prop button:has-text("Cancel")').last().click(); await p.waitForTimeout(400); }
   // two things in one message, then follow-ups to the table just shown
   const say = async (t) => { await p.fill('textarea', t); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); };
   await say('Kumar Mart paid 500, toll 85'); await shot('rox-two-things');
@@ -167,6 +194,11 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Collection'); await tile('Outstanding'); await shot('owner-outstanding');
   await home(); await tile('Sales'); await tile('Beats'); await shot('owner-beats');
   await home(); await tile('Bill'); await tile('Billed'); await shot('owner-billed-list');
+  // P3: the bill editor stacks each line on a phone: no sideways scroll
+  if (await p.locator('button:has-text("Edit")').count()) { await p.locator('button:has-text("Edit")').first().click(); await p.waitForTimeout(500); await shot('owner-bill-editor');
+    const ov = await p.evaluate(() => { const s = document.querySelector('.sheet .stack'); const tb = document.querySelector('.bill-tbl'); return { sheet: s.scrollWidth - s.clientWidth, tbl: tb.scrollWidth - tb.clientWidth }; });
+    must(ov.sheet <= 1 && ov.tbl <= 1, `the bill editor does not scroll sideways on a phone (${JSON.stringify(ov)})`);
+    await p.click('.sheet-head button[aria-label="Close"]'); await p.waitForTimeout(300); }
   await home(); await tile('Payroll'); await tile('Salary'); await shot('owner-salary');
   await logout(); await loginAs('Ravi (Salesman)'); await tile('My day'); await shot('salesman-myday');
 
