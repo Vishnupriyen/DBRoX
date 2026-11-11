@@ -17,6 +17,7 @@ import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './export
 import { costValue, creditValue, openPaid } from './credit';
 import { STATES } from './gst';
 import { categoryOf, modifyIntent } from './modify';
+import { noOrderVisit } from './visitIntent';
 const ENV_SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '';
 
 export interface Reply {
@@ -68,8 +69,8 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
   { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan route', 'plan'] },
   { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking'] },
-  { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash'] },
-  { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'stock screen'] },
+  { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'who has cash', 'who has the cash', 'who has money', 'cash with whom', 'cash with who', 'staff with cash'] },
+  { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'stock screen', 'low stock', 'stock low', 'less stock', 'stock less', 'short stock'] },
   { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'claims list', 'claim list', 'pending claims'] },
   { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'dayclose', 'close day', 'close the day', 'reconcile', 'reconciliation'] },
   { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report'] },
@@ -79,7 +80,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print'] },
   { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading'] },
   { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery'] },
-  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops'] },
+  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'next shop', 'next shops', 'which shop next', 'shops today'] },
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders'] },
 ];
 function screenFor(text: string, role: Role, exact = false): Reply | null {
@@ -99,7 +100,9 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
     return { text: `Opening ${mine.name}.`, go: mine.page };
   }
   const hit = SCREENS.filter(s => s.words.some(w => text === w || text.startsWith(w + ' ') || text.endsWith(' ' + w) || text.includes(' ' + w + ' ') || (w.length > 5 && text.includes(w))))
-    .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))[0];
+    .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))
+    // two screens matched by the same words ("target": Targets / My day): the one this person may open
+    .find((h, _i, all) => { const len = (x: typeof h) => Math.max(...x.words.filter(w => text.includes(w)).map(w => w.length)); const tie = all.filter(x => len(x) === len(all[0])); return tie.includes(h) && (h.roles.includes(role) || !tie.some(x => x.roles.includes(role))); });
   if (!hit) return null;
   if (!hit.roles.includes(role)) return { text: `${hit.name} is the ${hit.roles[0] === 'owner' ? 'owner' : hit.roles[0]}'s screen. Ask them to open it.`, tone: 'warn', refused: true };
   return { text: `Opening ${hit.name}.`, go: hit.page };
@@ -259,6 +262,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     return { text: `Which ${found.ties[0].name}${list ? ` — ${list}` : ''}? Say the town too, e.g. "${found.ties[0].name} ${towns[0] ?? ''}".`, tone: 'warn', pending: { said: textIn, need: 'shop' } };
   }
 
+  const noOrder = await noOrderVisit(textIn, shop, role, parseItemLines(rest).length > 0); if (noOrder) return noOrder;
   // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
   const mod = await modifyIntent({ text, textIn, shop, rest, role, products: productsAll, isExpense: has(text, W.expense) && !orderish, isDamage: has(text, W.damage) && !orderish, isOrder: orderish, fixOf: correctionIn });
   if (mod) return mod;
@@ -300,10 +304,11 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (!shop && /\b(van|vans|auto)\b/.test(text) && /\bwhere\b/.test(text)) { const sc = screenFor('live vans', role, true); if (sc) return sc; }
   if (/\b(came|come|present|absent)\b/.test(text) && (await db.staff.toArray()).some(st => has(text, [norm(st.name.split(' ')[0])]))) { const sc = screenFor('attendance', role, true); if (sc) return sc; }
   if (/\b(van|auto)\s*\d+\s*(details|info|detail)\b/.test(text)) { const sc = screenFor('vans and drivers', role, true); return sc ?? { text: 'Vans & drivers is the owner\'s screen. Ask them to open it.', tone: 'warn', refused: true }; }
-  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text)) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
+  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text) || (!shop && /\b(stock|goods|load|lorry|items|company|purchase|parcel)\b.*\bcame\b/.test(text))) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
 
   // ------------------------ questions ------------------------
   if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
+  if (role === 'owner' && !shop && /\bcash\b/.test(text) && /\b(staff|salesmen|drivers|who|whom)\b/.test(text)) { const sc = screenFor('cash with staff', role, true); if (sc) return sc; }
   if (has(text, W.cashHand) || (!shop && /\bcash\b/.test(text) && /\bhow much\b/.test(text))) return cashInHand();
   if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
   if (has(text, W.nearExpiry)) return nearExpiry();
