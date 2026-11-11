@@ -74,6 +74,13 @@ async function play(seed: number) {
   await seedDemo();
   const owner = (await db.staff.where('role').equals('owner').first())!;
   setSession('demo', owner.id);
+  // The simulation must behave like real users: the office assigns each van,
+  // then the assigned delivery driver starts it on their own phone.
+  const driver = (await db.staff.where('role').equals('delivery').first())!;
+  const vans = await db.vans.toArray();
+  const assignments = new ChangeSet();
+  for (const van of vans) if (van.driverId !== driver.id) assignments.put('vans', { ...van, driverId: driver.id }, 'assign simulation driver');
+  if (assignments.size) await assignments.commit('Assign drivers for chaos simulation');
   const R = rng(seed); const pick = <T,>(a: T[]) => a[Math.floor(R() * a.length)];
   const start = await stockLedger();
   const log: string[] = []; const batchIds: string[] = [];
@@ -101,7 +108,12 @@ async function play(seed: number) {
       } else if (roll < 0.52) {
         const plan = await suggestPlan(); if (!plan.length) continue;
         await confirmPlan(plan);
-        for (const t of (await db.trips.toArray()).filter(t => t.status === 'planned')) { await tripLoaded(t.id); await startTrip(t.id); }
+        for (const t of (await db.trips.toArray()).filter(t => t.status === 'planned')) {
+          await tripLoaded(t.id);
+          if (!t.driverId) throw new Error('Test trip must have an assigned driver');
+          try { setSession('demo', t.driverId); await startTrip(t.id); }
+          finally { setSession('demo', owner.id); }
+        }
         what = `plan + start ${plan.length} van(s)`;
       } else if (roll < 0.66) {
         const inv = pick((await db.invoices.toArray()).filter(i => i.deliveryStatus === 'out' && !i.cancelled)); if (!inv) continue;
