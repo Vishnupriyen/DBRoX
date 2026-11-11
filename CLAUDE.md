@@ -27,6 +27,8 @@ and brings the owner only the finished result and the decisions that are theirs.
 3. **ux-designer** — the flow for each role: fewest taps, clear words, no dead ends (screens and TESRAX).
 4. **developer** — builds it, test first for any bug, gate green.
 5. **independent-tester** — checks it without the developer's story; cannot edit code; bugs go back to step 4.
+5b. **end-user-panel** — the real people (owner, office, salesman, godown, driver, company side) run a made-up business
+   for several days and report where they got stuck or didn't trust a number; before every release or demo.
 6. **ui-designer** — real phone screenshots against the locked design.
 7. **security-operations** — data safety, backups, cost; signs off every release.
 Specialists, whenever their area is touched: **gst-accounts-specialist** (bills, tax, credit notes, payments, ledgers,
