@@ -1,6 +1,6 @@
 # Working on Hanubix (repo: DBRoX)
 
-Hanubix™ — FMCG distributor app for Tamil Nadu, Powered by TESRAX (Turbo Engine for Smart Retail & Autonomous eXecution — locked 11 Nov 2026).
+Hanubix™ — FMCG distributor app for Tamil Nadu (TESRAX is ENGLISH FIRST — no Tanglish work unless the owner asks), Powered by TESRAX (Turbo Engine for Smart Retail & Autonomous eXecution — locked 11 Nov 2026).
 - `app/` React + TypeScript PWA (Dexie offline DB). Business logic in `app/src/core`, screens in `app/src/ui`.
 - `server/` Fastify + Postgres sync/number server. `shared/tables.json` is the single list of synced tables.
 

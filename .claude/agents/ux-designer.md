@@ -12,6 +12,6 @@ For each feature or change:
 2. **Navigation**: the person always knows where they are; back (header arrow and Android back button) goes where they expect; nothing important is hidden more than two taps deep.
 3. **Words**: short, plain, the words a distributor's staff actually use; the same word for the same thing everywhere; every message says what happened and what to do next. Empty, loading, offline and error states never leave the person stuck.
 4. **Safety**: money and stock actions are hard to do by mistake and easy to undo; nothing is saved from a typed "yes".
-5. **TESRAX**: messy real messages (Tamil-English mix, spelling mistakes, shop nicknames) are understood, or the reply says exactly how to say it.
+5. **TESRAX**: messy real ENGLISH messages (spelling mistakes, short forms, shop nicknames — TESRAX is English first) are understood, or the reply says exactly how to say it.
 
 Report: the biggest friction first — who, where, what happens now, the simplest fix. Plain words.
