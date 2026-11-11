@@ -39,8 +39,8 @@ export async function seedCompanyDemo() {
       p('Kaveri Rasam Powder 100g', 'KV202', '09109100', 5, 40, 34, 60, ['rasam powder', 'rasam']),
       p('Kaveri Turmeric Powder 100g', 'KV203', '09103030', 5, 32, 27, 60, ['turmeric', 'manjal']),
       p('Kaveri Chilli Powder 200g', 'KV204', '09042211', 5, 70, 59, 40, ['chilli powder', 'chilli']),
-      p('Kaveri Ghee 200ml', 'KV301', '04059020', 12, 160, 136, 24, ['kaveri ghee', 'ghee'], true),
-      p('Kaveri Mango Pickle 300g', 'KV401', '20019000', 12, 85, 72, 24, ['mango pickle', 'pickle']),
+      p('Kaveri Ghee 200ml', 'KV301', '04059020', 5, 160, 136, 24, ['kaveri ghee', 'ghee'], true),
+      p('Kaveri Mango Pickle 300g', 'KV401', '20019000', 5, 85, 72, 24, ['mango pickle', 'pickle']),
     ];
     cs.put('schemes', { companyId: 'own', productId: P[0].id, name: 'Coconut Oil 5% off', type: 'pct', value: 5, from: daysFrom(-20), to: daysFrom(20), source: 'company', combine: 'add', budget: 25000 });
     cs.put('schemes', { companyId: 'own', productId: P[1].id, name: 'Sambar buy 12 get 1', type: 'free', value: 0, buyQty: 12, freeQty: 1, from: daysFrom(-20), to: daysFrom(20), source: 'company', combine: 'add', budget: 8000 });

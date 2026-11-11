@@ -13,6 +13,8 @@ import {
   recordDelivery, endTrip, settleDifference, cancelInvoice,
 } from '../src/core/pipeline';
 import { allocateOldestFirst, invoiceBalances, r2 } from '../src/core/ledger';
+import { lineCredits } from '../src/core/gst';
+import { makeCreditNote, openPaid } from '../src/core/credit';
 
 const STEPS = Number(process.env.CHAOS_STEPS ?? 160);
 const SEEDS = (process.env.CHAOS_SEEDS ?? '1,2,3').split(',').map(Number).flatMap(n => (process.env.CHAOS_SEEDS && !process.env.CHAOS_SEEDS.includes(',') ? Array.from({ length: n }, (_, i) => i + 1) : [n]));
@@ -48,6 +50,16 @@ async function checkLaws(start: Map<string, number>): Promise<string[]> {
     if (Math.abs(lineSum - i.taxable) > 0.02) broken.push(`BILL LINES ≠ TAXABLE ${i.number}: ${lineSum} vs ${i.taxable}`);
     if (i.lines.some(l => l.batches.some(b => b.qty < 0))) broken.push(`NEGATIVE PIECES ON BILL ${i.number}`);
   }
+  // a bill's credit notes never come to more than it charged, and never credit more paid pieces than a line billed
+  for (const i of invs) {
+    const mine = cns.filter(c => c.invoiceId === i.id); if (!mine.length) continue;
+    const sum = r2(mine.reduce((a, c) => a + c.total, 0));
+    if (sum > i.total + 0.01) broken.push(`CREDITED MORE THAN BILLED ${i.number}: credit notes ${sum} > bill ${i.total}`);
+    lineCredits(i, mine).forEach((c, k) => { if (c.paid > i.lines[k].qty) broken.push(`CREDITED MORE PIECES THAN BILLED ${i.number} line ${k + 1}: ${c.paid} > ${i.lines[k].qty}`); });
+  }
+  // claim lines follow their bill: a cancelled bill keeps no live scheme claim line
+  const cancelledIds = new Set(invs.filter(i => i.cancelled).map(i => i.id));
+  for (const c of await db.claimEntries.toArray()) if (c.kind === 'scheme' && c.invoiceId && cancelledIds.has(c.invoiceId) && !c.dropped) broken.push(`CLAIM LINE KEPT FOR CANCELLED BILL ${c.invoiceId}`);
   // an order is billed at most once
   const byOrder = new Map<string, number>(); for (const i of invs) if (i.orderId && !i.cancelled) byOrder.set(`${i.orderId}|${i.companyId}`, (byOrder.get(`${i.orderId}|${i.companyId}`) ?? 0) + 1);
   for (const [k, c] of byOrder) if (c > 1) broken.push(`ORDER BILLED TWICE ${k} ×${c}`);
@@ -134,6 +146,16 @@ async function play(seed: number) {
         if (R() < 0.3) await Promise.allSettled([cancelInvoice(inv.id, 'chaos'), cancelInvoice(inv.id, 'chaos')]);
         else await cancelInvoice(inv.id, 'chaos');
         what = `cancel ${inv.number}`;
+      } else if (roll < 0.95) {
+        // a shop returns good pieces from a live bill → credit note (pieces back to stock)
+        const inv = pick((await db.invoices.toArray()).filter(i => !i.cancelled && !(i.delivery && !i.diffAction && ((i.delivery.shortages?.length ?? 0) + (i.delivery.excess?.length ?? 0)) > 0) && i.lines.some(l => l.batches.some(b => b.qty > 0)))); if (!inv) continue;
+        const cnsOf = await db.creditNotes.where('invoiceId').equals(inv.id).toArray();
+        const l = pick(inv.lines.filter(x => x.batches.some(b => b.qty > 0)));
+        const room = Math.min(openPaid(inv, cnsOf, l.productId), inv.lines.filter(x => x.productId === l.productId).reduce((a, x) => a + x.batches.reduce((y, b) => y + b.qty, 0), 0));
+        if (room <= 0) continue;
+        const qty = 1 + Math.floor(R() * room);
+        const cs = new ChangeSet(); await makeCreditNote(cs, inv, [{ productId: l.productId, paid: qty, free: 0, restock: true }], { reason: 'chaos return', source: 'return', takeOffBill: true });
+        batchIds.push(await cs.commit('Return')); what = `return ${qty} on ${inv.number}`;
       } else {
         const b = pick(batchIds); if (!b) continue;
         const n = await undoBatch(b); what = `undo → ${n}`;

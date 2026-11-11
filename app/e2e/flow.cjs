@@ -107,7 +107,8 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Delivery'); await tile('Delivery status'); await shot('owner-status');
   await home(); await tile('Day close'); await shot('owner-dayclose-checklist');
   await p.click('.check:has-text("differences")'); await p.waitForTimeout(600); await shot('owner-differences');
-  const mb = p.locator('button:has-text("Modified bill")'); while (await mb.count()) { await mb.first().click(); await p.waitForTimeout(500); }
+  // delivered bills are never re-written: each difference is settled with a credit note (+ a new bill for extra pieces)
+  const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); }
   await p.click('button:has-text("Back to day close")').catch(() => p.click('text=← Day close')); await p.waitForTimeout(600);
   // remaining items: trips not ended → end trip is driver's; mark via Live? we end trip from owner side quickly by logging in as driver later. Approve expenses:
   const exp = p.locator('.check:has-text("Expenses")'); if (await exp.count() && !(await exp.isDisabled())) { await exp.click(); await p.waitForTimeout(500); await p.click('button:has-text("Approve all")').catch(() => {}); await p.waitForTimeout(400); await home(); await tile('Day close'); }

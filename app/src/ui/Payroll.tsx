@@ -126,7 +126,7 @@ export function Salary() {
   const pay = async (r: typeof rows[0]) => {
     if (!await confirmBox(`Pay ${r.s.name} ${inr(r.net)}?`, 'Posts the salary as an expense and marks advances/shortfalls as recovered.', 'Paid')) return;
     const cs = new ChangeSet();
-    cs.put('expenses', { date: today(), category: 'salary', amount: r.net, note: `Salary ${month} ${r.s.name}`, approved: true }, 'salary paid');
+    cs.put('expenses', { date: today(), category: 'salary', amount: r.net, gross: Math.round((r.net + r.advance + r.shortfall) * 100) / 100, note: `Salary ${month} ${r.s.name}`, approved: true }, 'salary paid'); // gross = the full salary (P&L cost); amount = cash paid
     for (const { id, take } of r.takes) {
       const a = await db.advances.get(id); if (!a) continue;
       cs.put('advances', { ...a, recovered: (a.recovered ?? 0) + take }, 'recovered from salary');

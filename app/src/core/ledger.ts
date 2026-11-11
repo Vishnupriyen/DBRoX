@@ -91,7 +91,8 @@ export async function allocateOldestFirst(shopId: string, amount: number) {
   return { allocations, advance: left > 0 ? left : 0 };
 }
 
-export function isB2B(shop: Shop) { return !!shop.gstin && shop.gstin.length === 15; }
+/** B2B only with a GSTIN that passes the format and check-digit test (a typo'd 15 characters is not a registration) */
+export function isB2B(shop: Shop) { return !!shop.gstin && validGstin(shop.gstin.trim().toUpperCase()); }
 
 // GSTIN format check (state code + PAN + entity + Z + checksum character).
 export function validGstin(g: string): boolean {

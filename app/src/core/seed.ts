@@ -61,7 +61,7 @@ export async function seedDemo(tenantId = 'demo') {
     prod(itc, 'Aashirvaad Atta 5kg', 'A5K', '11010000', 5, 290, 255, 4, ['aashirvaad', 'atta']),
     prod(itc, 'Sunfeast Dark Fantasy 75g', 'SDF75', '19053100', 5, 40, 33, 48, ['dark fantasy', 'sunfeast']),
     prod(itc, 'Bingo Mad Angles 66g', 'BMA66', '21069099', 5, 20, 16.2, 60, ['bingo', 'mad angles'], true),
-    prod(itc, 'Classmate Notebook 172 pages', 'CM172', '48202000', 18, 60, 48, 24, ['classmate', 'notebook']),
+    prod(itc, 'Classmate Notebook 172 pages', 'CM172', '48202000', 0, 60, 48, 24, ['classmate', 'notebook']),
     prod(brit, 'Good Day Cashew 75g', 'GDC75', '19053100', 5, 20, 16.4, 96, ['good day', 'goodday']),
     prod(brit, 'Marie Gold 250g', 'MG250', '19059090', 5, 40, 33, 36, ['marie', 'marie gold']),
     prod(brit, 'Britannia Cake Fruit 60g', 'BCF60', '19059020', 5, 15, 12.3, 72, ['cake', 'fruit cake']),

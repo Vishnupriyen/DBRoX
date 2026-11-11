@@ -198,7 +198,7 @@ export default function App() {
       case 'cheques': return <Cheques />;
       case 'bank': return <Bank onRox={openRox} />;
       case 'expenses': return <Expenses onRox={openRox} />;
-      case 'pnl': return <PnL />;
+      case 'pnl': return me.role === 'owner' ? <PnL /> : <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />; // profit: owner only
       case 'reports': return <Reports />;
       case 'cashflow': return <CashFlow go={go} />;
       case 'vans': return <VansPage editable={me.role === 'owner'} />;

@@ -2,7 +2,8 @@ import { inr } from './i18n';
 import { nextNumbers } from './sync';
 import { ChangeSet, db, getSettings, today } from './db';
 import { isB2B, r2, shopOutstanding } from './ledger';
-import type { Batch, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Shop } from './types';
+import { isInterState, lineCredits, taxOn } from './gst';
+import type { Batch, ClaimEntry, CreditNote, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Settings, Shop } from './types';
 
 // ---------- schemes ----------
 export function activeSchemes(all: Scheme[], p: Product, date: string) {
@@ -16,18 +17,87 @@ export function applySchemes(_p: Product, qty: number, rate: number, schemes: Sc
   const names: string[] = [];
   // company schemes first, then own schemes; "replace" own schemes cancel company % discounts
   const ordered = [...schemes].sort((a, b) => (a.source === 'company' ? -1 : 1) - (b.source === 'company' ? -1 : 1));
-  let pctTotal = 0;
+  let pctTotal = 0, coPct = 0, coFree = 0, replaced = false;
   for (const s of ordered) {
     if (s.type === 'pct') {
-      if (s.source === 'own' && s.combine === 'replace') pctTotal = s.value; else pctTotal += s.value;
+      if (s.source === 'own' && s.combine === 'replace') { pctTotal = s.value; replaced = true; } else pctTotal += s.value;
+      if (s.source === 'company') coPct += s.value;
       names.push(s.name);
     } else if (s.type === 'free' && s.buyQty && s.freeQty && qty >= s.buyQty) {
-      freeQty += Math.floor(qty / s.buyQty) * s.freeQty;
+      const f = Math.floor(qty / s.buyQty) * s.freeQty;
+      freeQty += f; if (s.source === 'company') coFree += f;
       names.push(s.name);
     }
   }
   discount = r2(gross * pctTotal / 100);
-  return { gross, discount, freeQty, names };
+  // the part the company pays back (claimable): its own % schemes (unless an own scheme replaced them) and its free pieces
+  const coDiscount = replaced ? 0 : r2(gross * coPct / 100);
+  return { gross, discount, freeQty, names, coDiscount, coFree };
+}
+
+/** one bill line, priced the same way everywhere (new bill, bill editor, extra bill): schemes, then tax on the taxable value */
+export function billLine(p: Product, qty: number, rate: number, schemes: Scheme[], inter: boolean, opts: { mrp?: number; discount?: number; noFree?: boolean } = {}): InvoiceLine {
+  const sch = applySchemes(p, qty, rate, schemes);
+  const discount = opts.discount != null && Number.isFinite(opts.discount) ? r2(Math.min(sch.gross, Math.max(0, opts.discount))) : sch.discount;
+  const taxable = r2(sch.gross - discount);
+  const tax = taxOn(taxable, p.gst, inter);
+  return {
+    productId: p.id, name: p.name, hsn: p.hsn, qty, freeQty: opts.noFree ? 0 : sch.freeQty, rate, mrp: opts.mrp ?? p.mrp,
+    gross: sch.gross, discount, taxable, gst: p.gst, ...tax, total: r2(taxable + tax.cgst + tax.sgst + tax.igst), batches: [], schemeNames: sch.names,
+    // the buying rate at billing time (absent on a phone without buying rates: P&L then falls back)
+    ...(typeof p.purchaseRate === 'number' && Number.isFinite(p.purchaseRate) ? { costRate: p.purchaseRate } : {}),
+  };
+}
+/** a bill's totals from its lines: tax parts + round-off = total (rounded to the rupee) */
+export function billTotals(lines: InvoiceLine[]) {
+  const taxable = r2(lines.reduce((s, x) => s + x.taxable, 0));
+  const cgst = r2(lines.reduce((s, x) => s + x.cgst, 0));
+  const sgst = r2(lines.reduce((s, x) => s + x.sgst, 0));
+  const igst = r2(lines.reduce((s, x) => s + x.igst, 0));
+  const exact = r2(taxable + cgst + sgst + igst);
+  const total = Math.round(exact);
+  return { taxable, cgst, sgst, igst, roundOff: r2(total - exact), total, schemeSaving: r2(lines.reduce((s, x) => s + x.discount + x.freeQty * x.rate, 0)) };
+}
+/** the next number of the one running bill series: from the server when there is one, else the settings counter */
+export function takeBillNumber(cs: ChangeSet, settings: Settings, numbers: { first: number; prefix: string } | undefined, date: string) {
+  if (numbers) { const n = `${numbers.prefix}/${finYear(date)}/${String(numbers.first).padStart(5, '0')}`; numbers.first += 1; return n; } // issued by the server
+  const n = `${settings.billPrefix ?? 'DBX'}/${finYear(date)}/${String(settings.nextBillNo ?? 1).padStart(5, '0')}`;
+  settings.nextBillNo = (settings.nextBillNo ?? 1) + 1; cs.put('settings', { ...settings }, 'bill number');
+  return n;
+}
+
+/**
+ * The company-scheme claim lines of a bill, kept in step with it in the same save: only COMPANY schemes are claimed
+ * (own schemes and salesman rate cuts never), valued on the paid pieces the shop kept (billed minus credited).
+ * A cancelled bill, or one returned in full, drops its lines. Lines are never deleted — a dropped line says why.
+ */
+export async function refreshSchemeClaims(cs: ChangeSet, inv: Invoice, cns: CreditNote[], pending: ClaimEntry[] = []) {
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const schemes = await db.schemes.toArray();
+  const credits = lineCredits(inv, cns);
+  const want = new Map<string, { qty: number; amount: number; names: string[] }>();
+  if (!inv.cancelled) inv.lines.forEach((l, i) => {
+    const p = products.get(l.productId); if (!p) return;
+    const kept = Math.max(0, l.qty - credits[i].paid);
+    const sch = applySchemes(p, kept, l.rate, activeSchemes(schemes, p, inv.date).filter(s => s.source === 'company'));
+    const amount = r2(sch.coDiscount + sch.coFree * l.rate);
+    const w = want.get(l.productId) ?? { qty: 0, amount: 0, names: [] };
+    w.qty += kept; w.amount = r2(w.amount + amount); w.names = [...new Set([...w.names, ...sch.names])];
+    want.set(l.productId, w);
+  });
+  const seen = new Map(pending.map(e => [e.id, e]));
+  // a bill's scheme lines are filed in the bill's month (indexed): never read the whole claim register per bill
+  for (const e of await db.claimEntries.where('month').equals(inv.date.slice(0, 7)).toArray()) if (!seen.has(e.id)) seen.set(e.id, e);
+  for (const e of seen.values()) {
+    if (e.invoiceId !== inv.id || e.kind !== 'scheme' || e.dropped) continue;
+    const w = e.productId ? want.get(e.productId) : undefined;
+    if (!w || w.amount <= 0) cs.put('claimEntries', { ...e, dropped: inv.cancelled ? 'Bill cancelled' : 'Nothing left to claim on this bill (returned / not supplied)' }, 'scheme claim dropped');
+    else if (w.amount !== e.amount || w.qty !== e.qty) cs.put('claimEntries', { ...e, qty: w.qty, amount: w.amount }, 'scheme claim follows the bill');
+    if (e.productId) want.delete(e.productId);
+  }
+  for (const [productId, w] of want) if (w.amount > 0) {
+    cs.put('claimEntries', { companyId: inv.companyId, month: inv.date.slice(0, 7), kind: 'scheme', productId, qty: w.qty, amount: w.amount, invoiceId: inv.id, note: w.names.join(', ') }, 'scheme claim line');
+  }
 }
 
 // ---------- stock: oldest expiry first (FEFO) ----------
@@ -85,13 +155,16 @@ export async function checkOrder(shop: Shop, lines: OrderLine[]): Promise<OrderC
   }
   if (!shop.approved) issues.push('New shop not yet approved by owner');
   const out = await shopOutstanding(shop.id);
-  if (shop.cashOnly && out.total > 0.5) issues.push(`Cash-only shop has ${inr(out.total)} pending`);
+  if (isCashOnly(shop) && out.total > 0.5) issues.push(`Cash-only shop has ${inr(out.total)} pending`);
   if (shop.creditLimit > 0 && out.total + total > shop.creditLimit) {
     issues.push(`Credit limit ${inr(shop.creditLimit)} crossed (pending ${inr(r2(out.total))} + this ${inr(r2(total))})`);
   }
   if (out.maxOverdueDays > 0) issues.push(`Overdue ${out.maxOverdueDays} days (${inr(out.overdue)})`);
   return { issues, total: r2(total) };
 }
+
+/** credit limit 0 (or not set) means CASH ONLY — the owner gives credit by setting a limit (owner decision, 11 Nov 2026) */
+export const isCashOnly = (shop: Pick<Shop, 'cashOnly' | 'creditLimit'>) => !!shop.cashOnly || !(shop.creditLimit > 0);
 
 // ---------- making bills (one per company) ----------
 // Credit-note numbers: CN/<financial year>/<running no>. From the server when there is one (never a duplicate across
@@ -127,8 +200,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
     if (!p) continue;
     byCompany.set(p.companyId, [...(byCompany.get(p.companyId) ?? []), l]);
   }
-  const shopState = shop.gstin?.slice(0, 2) || settings.stateCode;
-  const inter = shopState !== settings.stateCode;
+  const inter = isInterState(shop, settings);
   const out: Invoice[] = [];
   for (const [companyId, lines] of byCompany) {
     const invLines: InvoiceLine[] = [];
@@ -141,10 +213,10 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
       if (qty < l0.qty) cuts?.push({ productId: p.id, name: p.name, wanted: l0.qty, billed: qty });
       if (qty <= 0) continue;
       const l = { ...l0, qty };
-      const sch = applySchemes(p, l.qty, l.rate, activeSchemes(schemes, p, date));
+      const line = billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter, { mrp: l.mrp });
       // the picker's batch first (what is physically in the van), the rest oldest-expiry first
       const picks: ReturnType<typeof pickBatches>['picks'] = [];
-      let need = l.qty + sch.freeQty;
+      let need = l.qty + line.freeQty;
       const chosen = l.batchId ? batches.find(b => b.id === l.batchId && b.qty > 0) : undefined;
       if (chosen) { const take = Math.min(chosen.qty, need); picks.push({ batchId: chosen.id, batch: chosen.batch, qty: take, expiry: chosen.expiry }); need -= take; }
       if (need > 0) picks.push(...pickBatches(batches.filter(b => b.id !== chosen?.id), p.id, need, date).picks);
@@ -153,59 +225,19 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
         b.qty -= pk.qty;
         cs.put('batches', { ...b }, 'stock out');
       }
-      const taxable = r2(sch.gross - sch.discount);
-      const tax = r2(taxable * p.gst / 100);
-      invLines.push({
-        productId: p.id, name: p.name, hsn: p.hsn, qty: l.qty, freeQty: sch.freeQty,
-        rate: l.rate, mrp: l.mrp ?? p.mrp, gross: sch.gross, discount: sch.discount, taxable, gst: p.gst,
-        cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0,
-        total: r2(taxable + tax), batches: picks, schemeNames: sch.names,
-      });
+      invLines.push({ ...line, batches: picks });
     }
     if (!invLines.length) continue; // nothing of this company was in stock
-    const taxable = r2(invLines.reduce((s, x) => s + x.taxable, 0));
-    const cgst = r2(invLines.reduce((s, x) => s + x.cgst, 0));
-    const sgst = r2(invLines.reduce((s, x) => s + x.sgst, 0));
-    const igst = r2(invLines.reduce((s, x) => s + x.igst, 0));
-    const exact = r2(taxable + cgst + sgst + igst);
-    const total = Math.round(exact);
-    const freeValue = invLines.reduce((s, x) => s + x.freeQty * x.rate, 0);
     // One running series for the distributor; several companies in one order take consecutive numbers.
-    let number: string;
-    if (numbers) { number = `${numbers.prefix}/${finYear(date)}/${String(numbers.first).padStart(5, '0')}`; numbers.first += 1; } // issued by the server
-    else { number = `${settings.billPrefix ?? 'DBX'}/${finYear(date)}/${String(settings.nextBillNo ?? 1).padStart(5, '0')}`; settings.nextBillNo = (settings.nextBillNo ?? 1) + 1; cs.put('settings', { ...settings }, 'bill number'); }
+    const number = takeBillNumber(cs, settings, numbers, date);
     const inv = cs.put<Invoice>('invoices', {
       number, companyId, shopId: shop.id, orderId: order.id, date, kind: isB2B(shop) ? 'B2B' : 'B2C',
-      lines: invLines, taxable, cgst, sgst, igst, roundOff: r2(total - exact), total,
-      schemeSaving: r2(invLines.reduce((s, x) => s + x.discount, 0) + freeValue),
+      lines: invLines, ...billTotals(invLines),
       deliveryStatus: 'pending',
     }, 'bill made');
     out.push(inv);
-    // every company scheme given becomes a claim line automatically (TESRAX Claim Prep)
-    for (const x of invLines) {
-      const schemeValue = r2(x.discount + x.freeQty * x.rate);
-      if (schemeValue > 0) {
-        cs.put('claimEntries', {
-          companyId, month: date.slice(0, 7), kind: 'scheme', productId: x.productId,
-          qty: x.qty, amount: schemeValue, invoiceId: inv.id, note: x.schemeNames.join(', '),
-        }, 'scheme claim line');
-      }
-    }
+    // every COMPANY scheme given becomes a claim line automatically (TESRAX Claim Prep); own schemes are never claimed
+    await refreshSchemeClaims(cs, inv, []);
   }
   return out;
-}
-
-// Book an order and, if every check passes, bill it straight away. Otherwise it waits for the owner.
-export async function placeOrder(cs: ChangeSet, shop: Shop, lines: OrderLine[], source: Order['source'], by: string, autoBill: boolean) {
-  const check = await checkOrder(shop, lines);
-  const order = cs.put<Order>('orders', {
-    shopId: shop.id, salesmanId: by, source, lines, date: today(),
-    status: check.issues.length || !autoBill ? 'needs_ok' : 'billed', issues: check.issues, invoiceIds: [],
-  }, 'order booked');
-  let invoices: Invoice[] = [];
-  if (order.status === 'billed') {
-    invoices = await makeInvoices(cs, order, shop);
-    order.invoiceIds = invoices.map(i => i.id);
-  }
-  return { order, invoices, check };
 }
