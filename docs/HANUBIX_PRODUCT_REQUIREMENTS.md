@@ -36,6 +36,8 @@ One common codebase/engine with **server-enforced module entitlements** and role
 - Tenant isolation, server-side ACL, authorization of every mutation, end-to-end auditing, idempotency and disaster recovery are compulsory.
 
 ## UX and branding requirements
+
+**Superseding founder approval:** see [HANUBIX_LOCKED_SIGNATURE.md](HANUBIX_LOCKED_SIGNATURE.md). White surfaces, Arial, jade headings/quantities and selective dark jade–gold gradients replace the historical directions below.
 **Latest working look (Hanu Tech p.146):** return to the **original black UI**, with **solid teal accents and no gradients**. Earlier Gostamo-inspired teal → pale → amber gradient, bright white, plum, gold and dark-blue variants were explored, then revised or rejected. Use existing approved layout patterns; do not claim a finalized brand system. Actual new logo remains **unapproved**. User rejected generic SaaS dashboard collages and gradient letter marks. Finalize **a distinctive Hanubix symbol/wordmark, one-colour version and app icon** before a wide UI redesign.
 
 TESRAX visual identity is a **spherical animated field of many small dots** (not a hexagon), with depth and teal/pale/amber colours. Prioritize sunlight-readable, inexpensive Android devices, staff-specific workflows, offline status, fast actions, minimal typing and precise error recovery over abstract dashboards.

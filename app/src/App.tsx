@@ -14,6 +14,7 @@ import { t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
 import { TesraxCore } from './ui/TesraxCore';
+import { Brand, PoweredBy } from './ui/Brand';
 import { ErrorBoundary } from './ui/Safety';
 import { Billing } from './ui/Billing';
 import { refreshLicence, type LicenceState } from './core/licence';
@@ -141,7 +142,7 @@ export default function App() {
   }, []);
 
 
-  if (!ready) return <div className="login"><div className="mark">Hanubix<sup>™</sup></div></div>;
+  if (!ready) return <div className="login"><div className="mark"><Brand /></div></div>;
   if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow();
@@ -159,7 +160,7 @@ export default function App() {
   const openRox = () => { sound.wake(); setRox(true); };
 
   // Check-in gate: nothing opens until the person checks in (owner exempt).
-  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark">Hanubix<sup>™</sup></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
+  if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark"><Brand /></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
     if (company) {
@@ -225,14 +226,14 @@ export default function App() {
     <div className="app">
       <GradDefs />
       <header className="top">
-        {page === 'home' ? <div className="wordmark">Hanubix<sup>™</sup></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark"><Brand /></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
-      <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
+      <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{page === 'home' && !module && <section className="signature-hero"><div className="signature-copy"><div className="eyebrow">RETAIL INTELLIGENCE</div><h1>Your day. Under control.</h1><p>Orders to delivery, collections to close. Your next action is always clear.</p></div><div className="signature-engine"><span className="eyebrow">TESRAX</span><TesraxCore size={230} onActivate={openRox} /><p className="signature-hint">Hold to ripple · Double tap to activate</p></div></section>}{body()}<footer className="brand-footer"><PoweredBy /></footer></ErrorBoundary></main>
       <DialogHost />
       <UndoToast page={`${page}|${module ?? ""}`} />
 
@@ -240,8 +241,8 @@ export default function App() {
         <div className="engine" role="dialog" aria-label="TESRAX">
           <div className="engine-col">
             <div className="engine-head" onPointerDown={e => { (e.currentTarget as HTMLElement).dataset.y = String(e.clientY); }} onPointerUp={e => { const y0 = Number((e.currentTarget as HTMLElement).dataset.y ?? e.clientY); if (e.clientY - y0 > 70) setRox(false); }}>
-              <span className="engine-mark">Hanubix<sup>™</sup></span>
-              <span className="engine-pw">Powered by <b>TESRAX</b></span>
+              <Brand powered={false} />
+              <PoweredBy compact />
               <button className="engine-x" onClick={() => { const v = !soundOn; sound.set(v); setSoundOn(v); }} aria-label={soundOn ? 'Sound off' : 'Sound on'}>{soundOn ? <Volume2 /> : <VolumeX />}</button>
               <button className="engine-x" onClick={() => setRox(false)} aria-label="Close"><X /></button>
             </div>
@@ -253,7 +254,7 @@ export default function App() {
       <nav className="tabs">
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{'Home'}</button>
         {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
-        <button className="fab" onClick={openRox} aria-label="TESRAX"><TesraxCore size={64} interactive={false} /></button>
+        <div className="fab"><TesraxCore size={64} onActivate={openRox} label="TESRAX" /></div>
         <button className={page === 'more' ? 'on' : ''} onClick={() => { setPage('more'); setMoreKey(k => k + 1); }}><span className="ic"><Menu /></span>{'More'}</button>
       </nav>
     </div>
@@ -267,7 +268,7 @@ function CompanyMore({ onLogout }: { onLogout: () => void }) {
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">Log out</span></button>
       {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('distributor')}><Repeat /> <span className="grow">Demo: open the distributor side</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX</div>
+      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}><PoweredBy /></div>
     </div>
   );
 }
@@ -311,7 +312,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
 
   if (newFirm) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{newFirm.kind === 'company' ? 'Company sign-up' : 'Start your 60-day free trial'}</div></div>
+      <div className="login-hero"><div className="mark"><Brand /></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{newFirm.kind === 'company' ? 'Company sign-up' : 'Start your 60-day free trial'}</div></div>
       <div className="stack">
         <div className="field"><label>{newFirm.kind === 'company' ? 'Company name' : 'Firm name'}</label><input value={newFirm.firmName} onChange={e => setNewFirm({ ...newFirm, firmName: e.target.value })} /></div>
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
@@ -327,7 +328,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
 
   if (firms) return (
     <div className="login">
-      <div className="login-hero"><div className="mark">Hanubix<sup>™</sup></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
+      <div className="login-hero"><div className="mark"><Brand /></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
       <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
@@ -336,9 +337,9 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
     <div className="login">
       <div className="login-hero">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div className="mark">Hanubix<sup>™</sup></div>
+          <div className="mark"><Brand /></div>
         </div>
-        <div className="powered">Powered by <b>TESRAX</b></div>
+        
         <div className="tag" style={{ margin: '10px 0 0' }}>{t('appTagline')}</div>
       </div>
       <label className="eyebrow" htmlFor="login-phone">{t('phone')}</label>

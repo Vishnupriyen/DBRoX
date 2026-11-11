@@ -44,7 +44,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
     else { await p.click('.dialog button:has-text("Cancel")'); await p.waitForTimeout(300); if (!(await p.$('text=Send order'))) fail('Cancel on "Leave this order?" should stay on the order'); else step('back from an order with lines asks first'); }
     await p.click('text=Send order'); await p.waitForSelector('text=Order sent'); await okDialog(); step(`rep ordered 2 cases for ${shopName}`);
     // TESRAX: an expense, typed
-    await p.click('.fab'); await p.fill('.engine textarea', 'lunch 120'); await p.keyboard.press('Enter'); await p.waitForSelector('text=Approve'); await p.click('.engine button:has-text("Approve")'); await p.waitForTimeout(800);
+    await p.dblclick('.fab .tx-core'); await p.fill('.engine textarea', 'lunch 120'); await p.keyboard.press('Enter'); await p.waitForSelector('text=Approve'); await p.click('.engine button:has-text("Approve")'); await p.waitForTimeout(800);
     await p.click('.engine-x[aria-label="Close"]'); step('rep typed an expense');
 
     // 2. the distributor sees the order, receives the company bill with a shortage, sends the claim
