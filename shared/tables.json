@@ -264,9 +264,6 @@
   "ownerOnlyFields": {
     "products": [
       "purchaseRate"
-    ],
-    "settings": [
-      "upiId"
     ]
   },
   "_company": "Company side (a brand's head office and team): cadmin = head office, manager = RSM/ASM/SO, rep = field rep. Tables marked relay-only in shared/relay.ts are written only by the server's relay, never by a phone."

@@ -446,7 +446,7 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
     }
     const diff = shortages.length || excess.length;
     const pos = input.pos ?? undefined;
-    cs.put('invoices', { ...inv, lines, deliveryStatus: input.returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, photo: input.shopPhoto, shopPhoto: input.shopPhoto, billPhoto: input.billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM: input.distanceM, shortages, excess } }, 'delivery');
+    cs.put('invoices', { ...inv, lines, deliveryStatus: input.returnAll ? 'returned' : diff ? 'partial' : 'delivered', delivery: { at: nowIso(), by: session().userId, shopPhoto: input.shopPhoto, billPhoto: input.billPhoto, lat: pos?.lat, lng: pos?.lng, distanceM: input.distanceM, shortages, excess } }, 'delivery');
     done++;
   }
   if (!done) return null;
