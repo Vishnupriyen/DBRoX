@@ -18,3 +18,15 @@ fix the cause, or explain to the owner why a check is wrong before changing it.
 Gostamo look: pure black, #0E1016 cards with one hairline, one gradient (#4FE3D6 → #E6E9F4 → #F9B55B) only for the
 TESRAX core, wordmark, primary actions and hero numbers; Geist font; no solid orange. Don't add design elements
 the owner didn't ask for.
+
+## The AI team (`.claude/agents/`)
+Every change runs through the team, in this order. The main session is the manager: hands out the work, keeps the order,
+and brings the owner only the finished result and the decisions that are theirs.
+1. **business-analyst** — flows, requirements, reports, "done when" rules.
+2. **systems-engineer** — data, offline sync, scale; approves the design before building.
+3. **ux-designer** — the flow for each role: fewest taps, clear words, no dead ends (screens and TESRAX).
+4. **developer** — builds it, test first for any bug, gate green.
+5. **independent-tester** — checks it without the developer's story; cannot edit code; bugs go back to step 4.
+6. **ui-designer** — real phone screenshots against the locked design.
+7. **security-operations** — data safety, backups, cost; signs off every release.
+Small fixes may skip 1–3, never 5. The owner is told about a step only when it changes what they get.
