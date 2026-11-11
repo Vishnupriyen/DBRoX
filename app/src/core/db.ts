@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
-  Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt,
+  Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt, TesraxDay,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -49,6 +49,7 @@ class RoxDB extends Dexie {
   workDays!: Table<WorkDay, string>;
   travelClaims!: Table<TravelClaim, string>;
   receipts!: Table<Receipt, string>;
+  tesraxDays!: Table<TesraxDay, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
   constructor(name = 'dbrox') {
@@ -110,6 +111,7 @@ class RoxDB extends Dexie {
     });
     this.version(6).stores({ travelClaims: `${common}, staffId, month, status` });
     this.version(7).stores({ receipts: `${common}, companyId, status`, inbound: `${common}, companyId, date` });
+    this.version(8).stores({ tesraxDays: `${common}, day, staffId` });
   }
 }
 export { RoxDB };

@@ -464,4 +464,24 @@ export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays';
+
+/** TESRAX report: one record per staff per day (small to sync; the owner reads every staff's days).
+ *  Counts every message to TESRAX: its speed on the real phone, whether it was understood, and what happened to the table it prepared. */
+export interface TesraxDay extends Base {
+  day: string;           // yyyy-mm-dd
+  staffId: string;
+  role: string;
+  n: number;             // messages
+  done: number;          // TESRAX prepared a table to approve
+  answer: number;        // answered, or opened a screen
+  ask: number;           // asked a question back (a name, a quantity)
+  missed: number;        // did not understand
+  refused: number;       // a clear no (not this role's work)
+  msTotal: number;       // total reply time, on this phone
+  msMax: number;
+  approved: number;      // tables approved exactly as TESRAX prepared them
+  edited: number;        // approved after changing a row
+  cancelled: number;
+  misses: string[];      // the last few messages it missed, to fix them
+}

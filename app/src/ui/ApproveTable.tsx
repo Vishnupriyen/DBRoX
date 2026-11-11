@@ -9,7 +9,8 @@ import { notify } from './dialog';
 
 interface Props {
   proposal: Proposal;
-  onDone: (result: { message: string; batchId: string; invoices?: Invoice[] } | null) => void;
+  /** edited: the table was changed before ✓ (counted in the TESRAX report) */
+  onDone: (result: { message: string; batchId: string; invoices?: Invoice[]; edited?: boolean } | null) => void;
 }
 
 // The one screen every action goes through: check the table, fix red cells, tap ✓.
@@ -49,7 +50,8 @@ export function ApproveTable({ proposal, onDone }: Props) {
     try {
       const res = await commit(p);
       setClosed('Approved'); // the result itself follows as TESRAX's next message (said once, with Undo)
-      onDone(res);
+      const edited = JSON.stringify([p.rows, p.fields]) !== JSON.stringify([proposal.rows, proposal.fields]);
+      onDone({ ...res, edited });
     } catch (e) {
       setClosed(null);
       void notify('Could not save', (e as Error).message);

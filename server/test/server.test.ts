@@ -110,6 +110,21 @@ describe('DBRoX server', () => {
     expect(dp2.body.changes.find((c: { id: string }) => c.id === 'l1')?.data.status).toBe('approved');
   });
 
+  it('TESRAX report counts: each phone writes only its own, so the pilot numbers cannot be faked (11 Nov 2026)', async () => {
+    const now = new Date().toISOString(), day = now.slice(0, 10);
+    const d = await post('/v1/login', { phone: '9844444444', pin: '5555' }); // the driver from the test above
+    const mine = { id: `dr1|${day}`, day, staffId: 'dr1', role: 'delivery', n: 3, missed: 0, updatedAt: now };
+    const push = await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'tesraxDays', id: mine.id, updatedAt: now, data: mine },
+      { table: 'tesraxDays', id: `sm1|${day}`, updatedAt: now, data: { ...mine, id: `sm1|${day}`, staffId: 'sm1' } }, // someone else's
+      { table: 'tesraxDays', id: `x|${day}`, updatedAt: now, data: { ...mine, id: `x|${day}` } },                    // id does not match
+    ] }, d.body.token);
+    expect(push.body.rejected).toEqual([`tesraxDays|sm1|${day}`, `tesraxDays|x|${day}`]);
+    // the owner reads every staff's counts
+    const op = await post('/v1/sync', { cursor: 0, changes: [] }, owner.token);
+    expect(op.body.changes.find((c: { id: string }) => c.id === mine.id)?.data.n).toBe(3);
+  });
+
   it('many phones of one distributor syncing at the same moment never freeze the server (capacity test, 9 Nov 2026)', async () => {
     // the sync held its distributor lock while asking the pool for a second connection: with every pooled connection
     // waiting on that same lock, nothing could ever finish

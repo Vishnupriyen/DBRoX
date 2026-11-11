@@ -150,6 +150,8 @@ export async function buildApp(pool: pg.Pool) {
         if (relayOnly(kind, ch.table)) { rejected.push(`${ch.table}|${ch.id}`); continue; } // only the relay writes these (privacy wall)
         if (!canWrite.has(ch.table) || typeof ch.id !== 'string' || !ch.id || !ch.updatedAt || isNaN(Date.parse(ch.updatedAt))) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         let data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
+        // TESRAX report counts are the proof behind its claims: a phone writes only its own signed-in user's days
+        if (ch.table === 'tesraxDays' && (data.staffId !== c.u || ch.id !== `${c.u}|${String(data.day)}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         // the server's own checks on company records and linked products (approvals and prices are never the phone's word)
         if (kind === 'company' && ['claimDecisions', 'travelClaims', 'expenses', 'leaves', 'workDays'].includes(ch.table)) {
           const ex = (await client.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [c.t, ch.table, ch.id])).rows[0]?.data;

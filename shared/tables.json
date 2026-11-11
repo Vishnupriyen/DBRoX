@@ -42,7 +42,8 @@
     "shopRequests",
     "workDays",
     "travelClaims",
-    "receipts"
+    "receipts",
+    "tesraxDays"
   ],
   "read": {
     "owner": "*",
@@ -175,6 +176,7 @@
       "claims",
       "vans",
       "audit",
+      "tesraxDays",
       "visits",
       "targets",
       "trips",
@@ -197,7 +199,8 @@
       "advances",
       "liteEntries",
       "expenses",
-      "audit"
+      "audit",
+      "tesraxDays"
     ],
     "godown": [
       "orders",
@@ -210,6 +213,7 @@
       "leaves",
       "advances",
       "audit",
+      "tesraxDays",
       "receipts"
     ],
     "delivery": [
@@ -224,7 +228,8 @@
       "advances",
       "liteEntries",
       "expenses",
-      "audit"
+      "audit",
+      "tesraxDays"
     ],
     "cadmin": "*",
     "manager": [
@@ -239,6 +244,7 @@
       "orders",
       "shopRequests",
       "audit",
+      "tesraxDays",
       "travelClaims"
     ],
     "rep": [
@@ -251,6 +257,7 @@
       "expenses",
       "shopRequests",
       "audit",
+      "tesraxDays",
       "travelClaims"
     ]
   },
