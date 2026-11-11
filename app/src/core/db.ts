@@ -271,6 +271,10 @@ const sameRecord = (a: unknown, b: unknown) => {
 export async function undoBatch(batchId: string): Promise<number> {
   const entries = await db.audit.where('batchId').equals(batchId).toArray();
   if (!entries.length || entries.some(e => e.undone)) return 0;
+  // Enforce this in the core too: an older toast, or a direct undoBatch call, must not
+  // produce an unauthorized rollback of an irreversible server-side operation.
+  const irreversible = new Set(['invoices', 'payments', 'trips', 'creditNotes', 'batches', 'dayCloses', 'receipts', 'primaryInvoices', 'primaryOrders', 'claimDecisions']);
+  if (entries.some(e => irreversible.has(e.table))) return -1;
   const tables = Array.from(new Set(entries.map(e => e.table)));
   for (const e of entries) {
     if (e.table === 'settings') continue; // the bill counter only moves forward; never re-issue a number
