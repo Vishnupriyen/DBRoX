@@ -4,7 +4,7 @@
 // GPS honesty (independent review, 10 Nov 2026): a web app records location only while it is open, and cannot detect
 // fake-location apps. So km here is "measured while the app was open", gaps and jumps are FLAGGED for the manager,
 // never silently filled or "blocked". The native Android app (planned) adds background tracking and mock-location checks.
-import { ChangeSet, db, nowIso, session, thisMonth, today } from './db';
+import { ChangeSet, db, nowIso, session, thisMonth, today, ymd } from './db';
 import type { LeaveRequest, Order, Product, Shop, ShopRequest, Staff, Target, Visit, WorkDay } from './types';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -45,7 +45,12 @@ export function measure(track: WorkDay['track']): { km: number; flags: string[] 
 }
 
 // ---------------------------------------------------------------- the working day
-export async function myDay(staffId = session().userId) { return (await db.workDays.where('staffId').equals(staffId).toArray()).find(w => w.date === today()); }
+/** today's working day — or, for a rep still out after midnight, yesterday's day that was started and not yet ended */
+export async function myDay(staffId = session().userId) {
+  const days = await db.workDays.where('staffId').equals(staffId).toArray();
+  const t = today(), [y, m, d] = t.split('-').map(Number), yesterday = ymd(new Date(y, m - 1, d - 1));
+  return days.find(w => w.date === t) ?? days.find(w => w.date === yesterday && !w.endAt);
+}
 export async function startDay(pos: Pos | null, mode: WorkDay['mode'] = 'bike') {
   const me = session().userId;
   const cur = await myDay(me);
