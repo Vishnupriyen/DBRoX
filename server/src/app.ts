@@ -229,6 +229,23 @@ export async function buildApp(pool: pg.Pool) {
     await relayChanges(pool, c.t, kind, accepted.filter(a => !authoritative.has(a)).map(a => { const [table, ...rest] = a.split('|'); return { table, id: rest.join('|') }; }));
     }
 
+    // A rejected newer edit must also be repaired even if its server version predates
+    // the phone's cursor. Return only records the user can normally read.
+    if (kind === 'distributor' && rejected.length) {
+      for (const key of rejected) {
+        const [table, ...parts] = key.split('|');
+        if (!(READ[c.r] ?? []).includes(table)) continue;
+        const id = parts.join('|');
+        const row = (await pool.query(
+          'SELECT data, updated_at FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
+          [c.t, table, id]
+        )).rows[0];
+        if (row) authoritative.set(key, {
+          table, id, data: row.data, updatedAt: new Date(row.updated_at).toISOString()
+        });
+      }
+    }
+
     const cursor = Number(b.cursor ?? 0);
     // a brand's phones never download every distributor bill: head office gets reports from the server instead; a
     // manager or rep gets only their own distributors' records, and bills of the last 60 days
