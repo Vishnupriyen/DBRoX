@@ -54,7 +54,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
       <div className="sechead"><h3>{'Picked — to verify'} · {orders.length}</h3></div>
       {locked && <div className="alert bad"><Lock /><div><b>{'Billing is locked'}</b> — {`close ${locked} first.`} {go && <button className="link" onClick={() => go('dayclose')}>{'Day close →'}</button>}</div></div>}
-      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4 }}>{made.slice(0, 6).map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number} · {shopName.get(i.shopId) ?? ''}</button>)}</div></div></div>}
+      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>{made.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number} · {shopName.get(i.shopId) ?? ''}</button>)}</div></div></div>}
       {orders.map(o => {
         const pk = pickedOf(o);
         const orderedQty = (pid: string) => o.lines.find(l => l.productId === pid)?.qty ?? 0;
@@ -62,7 +62,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? 'godown'}{o.pickedAt ? ` at ${showTime(o.pickedAt)}` : ''}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? 'godown'}{o.pickedAt ? ` at ${showTime(o.pickedAt)}` : ''}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {diffs ? <div className="muted">{plural(diffs, 'line')} {'changed by the picker — shown in red'}</div> : <div className="muted">{'Packed exactly as ordered'}</div>}

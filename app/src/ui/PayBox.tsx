@@ -36,6 +36,8 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
   const toggle = (id: string) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); if (!amount) setAmount(0); return n; });
   const canSave = chosen.length > 0 && amount > 0 && (mode === 'cash' || ref.length >= 4 || !!photo);
 
+  // why "Money paid" is not tappable yet, in the person's words
+  const missing = canSave ? '' : !chosen.length ? 'Tick the bill the shop is paying.' : !amount ? 'Type the amount.' : mode === 'upi' ? (ref.length < 4 ? 'Type the UPI ref (last 4 digits) or take the photo of the payment screen.' : '') : 'Type the cheque number and bank.';
   const [saving, setSaving] = useState(false);
   const save = async () => {
     if (saving) return; // locked while saving: one tap = one payment
@@ -72,13 +74,13 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
     <div className="card stack">
       <div className="eyebrow">{'1. Which bills?'}</div>
       <div className="list">
-        {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : null}</div><div className="grow"><div className="t">{b.number}</div><div className="s">{showDate(b.date)}</div></div><span className="amt num">{inr(b.balance)}</span></button>)}
+        {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : null}</div><div className="grow" style={{ minWidth: 0 }}><div className="t" style={{ overflowWrap: 'anywhere' }}>{b.number}</div><div className="s">{showDate(b.date)}</div><div className="amt num">{inr(b.balance)}</div></div></button>)}
         {!bills.length && <div className="muted">{'No bills pending for this shop.'}</div>}
       </div>
       {chosen.length > 0 && <>
         <div className="eyebrow">{'2. Amount'} · {'due'} {inr(due)}</div>
         <div className="row" style={{ gap: 6 }}><button className="btn small" onClick={() => setAmount(due)}>{'Full'} {inr(due)}</button></div>
-        <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}><span className="amt num" style={{ fontSize: 28 }}>₹</span><input className="bigamount grow" type="text" inputMode="decimal" placeholder={String(due)} value={amount || ''} onChange={e => { const v = e.target.value.replace(/[^\d.]/g, ''); setAmount(Number(v) || 0); }} aria-label={t('amount')} /></div>
+        <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}><span className="amt num" style={{ fontSize: '1.75rem' }}>₹</span><input className="bigamount grow" type="text" inputMode="decimal" placeholder={String(due)} value={amount || ''} onChange={e => { const v = e.target.value.replace(/[^\d.]/g, ''); setAmount(Number(v) || 0); }} aria-label={t('amount')} /></div>
         {excess > 0 && <div className="alert ok"><Check /><div>{inr(excess)} {'extra — carried to the next bill automatically'}</div></div>}
         {shortBy > 0 && amount > 0 && <div className="alert"><AlertTriangle /><div>{'Short by'} {inr(shortBy)} — {'bill stays open; owner is told'}</div></div>}
         <div className="eyebrow">{'3. How'}</div>
@@ -97,6 +99,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
         </>}
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>{t('shopConfirm')}</p>
         <button className="btn ok-huge" disabled={!canSave || saving} onClick={save} aria-label="Shop confirms payment">{'Money paid'} <Check size={40} /></button>
+        {missing && <p className="muted" data-testid="paybox-missing" style={{ margin: 0, textAlign: 'center' }}>{missing}</p>}
       </>}
       {onSkip && <button className="btn ghost" onClick={onSkip}>{'No payment today'}</button>}
     </div>

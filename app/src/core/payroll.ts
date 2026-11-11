@@ -61,3 +61,7 @@ export async function salarySheet(month: string): Promise<SalaryRow[]> {
     };
   });
 }
+
+/** the days line of the salary sheet: present days (today and a Sunday worked count) and the working days counted before today */
+export const salaryDaysLine = (r: Pick<SalaryRow, 'present' | 'workDays'>) =>
+  `${r.present} ${r.present === 1 ? 'day' : 'days'} present · ${r.workDays} working ${r.workDays === 1 ? 'day' : 'days'} counted before today`;

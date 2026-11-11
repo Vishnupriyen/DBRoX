@@ -32,7 +32,7 @@ describe('the owner\'s first five minutes', () => {
   });
   it('an unknown product names what was not found, in two lines (it used to say "not sure" plus examples)', async () => {
     const r = await say('murugan stores 2 box sunlight');
-    expect(r.text).toMatch(/Found Murugan Stores, but no product called "/);
+    expect(r.text).toMatch(/Found Murugan Stores, but "sunlight" is not in your product list/);
     expect(r.text.split('\n').length).toBeLessThanOrEqual(2);
   });
   it('a message not understood gets one short line, never the whole help page', async () => {

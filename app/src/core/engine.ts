@@ -5,7 +5,7 @@ import { inr, showDate, showDay, plural } from './i18n';
 import { licenceState } from './licence';
 import { ChangeSet, db, getSettings, newId, session, today, ymd, daysFrom } from './db';
 import { allOutstanding, invoiceBalances, r2 } from './ledger';
-import { bestProduct, cleanSaid, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
+import { bestProduct, cleanSaid, closeProduct, findAmount, findShopInText, hasWord, learnNames, norm, parseItemLines, toPieces } from './match';
 import {
   companyOptions, orderRow, productOptions, shopOptions, type Col, type Proposal, type Row,
 } from './proposals';
@@ -329,8 +329,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     const active = productsActive;
     if (!lines.some(l => bestProduct(active, l.productText).product)) {
       // say what was understood and what was not, in two lines (never a page of examples)
-      const words = lines.map(l => `"${l.productText}"`).join(', ');
-      return { text: `Found ${shop!.name}, but no product called ${words}.\nCheck the name, or say it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn', missed: true };
+      return { text: `Found ${shop!.name}, but ${notProduct(active, lines.map(l => l.productText))}\nSay it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn', missed: true };
     }
   }
   if (shop && lines.length) {
@@ -343,6 +342,9 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     return { text: 'Which shop is this order for? Say the shop name, e.g. "Murugan Stores".', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   }
   const sc = /\d/.test(text) && /\b(change|edit|update|set|make|correct|wrong)\b/.test(text) ? null : screenFor(text, role); if (sc) return sc;
+  // "Kaveri 3 case coconut oil": cases said, but no shop of ours and no product of ours → the shop is what is missing first
+  if (!shop && lines.some(l => l.unit !== 'pcs') && can(role, 'order'))
+    return { text: `Which shop is this order for? Say the shop name, e.g. "Murugan Stores".\n${cap(notProduct(productsActive, lines.map(l => l.productText)))}`, tone: 'warn', missed: true, pending: { said: textIn, need: 'shop' } };
   // not understood: a short reply with three things this person can say (the full list only when asked for "help")
   const tries = role === 'salesman' ? ['"Murugan Stores 2 case Surf"', '"Murugan Stores paid 500 cash"', '"my day"']
     : role === 'delivery' ? ['"Kumar Mart paid 1000 cash"', '"diesel 800"', '"my trip"']
@@ -585,6 +587,11 @@ async function bankProposal(file: File): Promise<Reply> {
 }
 
 // ---------------------------------------------------------------------------------------------
+/** a typo ("sarf") gets "did you mean Surf…?"; a product we never stocked ("lux") is plainly "not in your product list" */
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+function notProduct(products: Product[], words: string[]): string {
+  return words.map(w => { const c = closeProduct(products, w); return c ? `no product like "${w}" — did you mean ${c.name}?` : `"${w}" is not in your product list.`; }).join(' ');
+}
 async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
   const products = (await db.products.toArray()).filter(p => p.active);
   const parsed = parseItemLines(itemText);
@@ -606,7 +613,7 @@ async function orderProposal(shopId: string, itemText: string): Promise<Reply> {
     rows.push(await orderRow(product, qty, l.text, schemes));
   }
   return {
-    text: [unsure.length ? `Which one did you mean for: ${unsure.join(', ')}? Pick it in the table.` : '', unknown.length ? `I couldn't find: ${unknown.join(', ')}. Pick them in the table.` : ''].filter(Boolean).join(' ') || 'Order ready. Check and tap ✓.',
+    text: [unsure.length ? `Which one did you mean for: ${unsure.join(', ')}? Pick it in the table.` : '', unknown.length ? `${cap(notProduct(products, unknown))} Pick the product in the table.` : ''].filter(Boolean).join(' ') || 'Order ready. Check and tap ✓.',
     proposal: {
       id: newId(), kind: 'order', title: 'New order',
       fields: [{ key: 'shopId', label: 'Shop', type: 'select', options: await shopOptions(), value: shopId }],

@@ -6,7 +6,7 @@ import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
 import { askText, confirmBox } from './dialog';
 import type { Advance, CheckIn, LeaveRequest, Settings, Staff } from '../core/types';
-import { salarySheet, type SalaryRow } from '../core/payroll';
+import { salarySheet, salaryDaysLine, type SalaryRow } from '../core/payroll';
 
 const hm = (iso: string) => showTime(iso);
 
@@ -32,7 +32,7 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   return (
     <div className="gate">
       <div className="eyebrow">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}</div>
-      <div className="h" style={{ fontSize: 26 }}>{me.name.split(' ')[0]}</div>
+      <div className="h" style={{ fontSize: '1.625rem' }}>{me.name.split(' ')[0]}</div>
       <div className="muted"><Clock size={16} style={{ verticalAlign: -3 }} /> {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {today()}{late && <span className="badge warn" style={{ marginLeft: 8 }}>{'after'} {threshold}</span>}</div>
       <button className="big-btn" disabled={busy} onClick={go}><span><LogIn /><br />{'Check in'}</span></button>
       <div className="muted"><MapPin size={14} style={{ verticalAlign: -2 }} /> {'Your location and time are recorded.'}</div>
@@ -70,7 +70,7 @@ export function Today() {
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{rows.filter(r => r.c).length}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{rows.length}</span></div><div className="l">{'checked in'}</div></div>
+        <div className="kpi navy"><div className="v">{rows.filter(r => r.c).length}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{rows.length}</span></div><div className="l">{'checked in'}</div></div>
         <div className="kpi"><div className="v" style={{ color: rows.some(r => r.c && late(r.c)) ? 'var(--warn)' : undefined }}>{rows.filter(r => r.c && late(r.c)).length}</div><div className="l">{'late'}</div></div>
       </div>
       <div className="list">
@@ -118,11 +118,11 @@ export function Salary() {
         <div key={r.s.id} className="item">
           <div className="grow">
             <div className="t">{r.s.name.split(' (')[0]}</div>
-            <div className="s">{[`${plural(r.present, 'day')} present of ${r.workDays} counted`, r.leave ? `${r.leave} leave (${r.paidLeave} paid)` : '', r.absent ? `${plural(r.absent, 'day')} absent` : '', r.cutDays ? `${r.cutDays} cut −${inr(r.cut)}` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
+            <div className="s">{[salaryDaysLine(r), r.leave ? `${r.leave} leave (${r.paidLeave} paid)` : '', r.absent ? `${plural(r.absent, 'day')} absent` : '', r.cutDays ? `${r.cutDays} cut −${inr(r.cut)}` : '', r.fixed ? `salary ${inr(r.fixed)}` : 'salary not set', r.batta ? `batta ${inr(r.batta)}` : '', r.advance ? `advance −${inr(r.advance)}` : '', r.shortfall ? `cash short −${inr(r.shortfall)}` : ''].filter(Boolean).join(' · ')}</div>
             {r.carry > 0 && <div className="s">{inr(r.carry)} {'carries to next month'}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="num" style={{ fontWeight: 700, fontSize: 17 }}>{inr(r.net)}</div>
+            <div className="num" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>{inr(r.net)}</div>
             {r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Mark paid'}</button>}
           </div>
         </div>))}

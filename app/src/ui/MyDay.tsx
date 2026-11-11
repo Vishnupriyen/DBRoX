@@ -49,7 +49,7 @@ export function MyDay() {
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops done'}</div></div>
+        <div className="kpi navy"><div className="v">{d.visits}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{d.shops}</span></div><div className="l">{'shops done'}</div></div>
         <div className="kpi navy"><div className="v">{d.orders}</div><div className="l">{'orders'} · {inr(d.value)}</div></div>
         <div className="kpi"><div className="v">{inr(d.collected)}</div><div className="l">{'collected'}</div></div>
         <div className="kpi"><div className="v">{d.byStatus.billed ?? 0}</div><div className="l">{'orders billed'}</div></div>

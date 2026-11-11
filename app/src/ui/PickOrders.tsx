@@ -10,6 +10,8 @@ import type { Batch, Order, Product, Shop } from '../core/types';
 interface Row { product: Product; ordered: number; qty: number; batches: Batch[]; batchId?: string; mrp: number; done: boolean; extra?: boolean }
 
 // Godown: pick each approved order. Qty up or down, batch (oldest first), MRP — never a new product.
+/** stock with its unit: "96 pcs (8 cs)" — never a bare number */
+export const pcsCs = (n: number, caseSize: number) => caseSize > 1 && n >= caseSize ? `${n} pcs (${Math.floor(n / caseSize)} cs${n % caseSize ? ` + ${n % caseSize}` : ''})` : `${n} pcs`;
 export function PickOrders() {
   const [orders, setOrders0] = useState<(Order & { shop: Shop })[]>([]);
   const [loaded, setLoaded] = useState(false); // until the first load ends, say so — never "nothing here"
@@ -47,19 +49,20 @@ export function PickOrders() {
                 <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
                   <Pack product={p} size="lg" />
                   <div className="grow">
-                    <div className="t" style={{ fontSize: 18 }}>{p.name}</div>
-                    <div className="s">MRP {r.mrp} · {r.extra ? 'second MRP line' : <>{'ordered'} <b>{r.ordered}</b></>} · {'stock'} {stock}</div>
+                    <div className="t" style={{ fontSize: '1.125rem' }}>{p.name}</div>
+                    <div className="s">MRP {r.mrp} · {r.extra ? 'second MRP line' : <>{'ordered'} <b>{r.ordered}</b> pcs</>} · {'stock'} {pcsCs(stock, p.caseSize)}</div>
                     {(() => { const tot = rows.filter(x => x.product.id === p.id).reduce((a, x) => a + x.qty, 0); if (r.extra) return null; return tot < r.ordered ? <span className="badge bad"><AlertTriangle size={12} /> {'short'} {r.ordered - tot}</span> : tot > r.ordered ? <span className="badge warn">+{tot - r.ordered} {'extra'}</span> : null; })()}
                   </div>
                   <button className={`avatar ${r.done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16, border: 0 }} onClick={() => upd(i, x => ({ ...x, done: !x.done }))} aria-label="Packed">{r.done ? <Check size={30} /> : <Check size={24} style={{ opacity: .35 }} />}</button>
                 </div>
-                <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}>
+                <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
                   <div className="stepper"><button aria-label="less" onClick={() => upd(i, x => ({ ...x, qty: Math.max(0, x.qty - 1), done: false }))}><Minus /></button><input type="number" value={r.qty} onChange={e => upd(i, x => ({ ...x, qty: Math.max(0, Number(e.target.value)), done: false }))} aria-label="Quantity" /><button aria-label="more" onClick={() => upd(i, x => ({ ...x, qty: x.qty + 1, done: false }))}><Plus /></button></div>
-                  <span className="badge navy" style={{ fontSize: 14 }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}{!r.qty ? '0' : ''}</span>
+                  {p.caseSize > 1 && <><button className="btn small" aria-label="less case" onClick={() => upd(i, x => ({ ...x, qty: Math.max(0, x.qty - p.caseSize), done: false }))}>{'− 1 case'}</button><button className="btn small" aria-label="more case" onClick={() => upd(i, x => ({ ...x, qty: x.qty + p.caseSize, done: false }))}>{'+ 1 case'}</button></>}
+                  <span className="badge navy" style={{ fontSize: '0.875rem' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}{!r.qty ? '0' : ''}</span>
                 </div>
                 {r.batches.length > 0 && (
                   <div className="row" style={{ gap: 6 }}>
-                    {r.batches.map(b => <button key={b.id} className={`chip ${r.batchId === b.id ? 'on' : ''}`} onClick={() => upd(i, x => ({ ...x, batchId: b.id, mrp: b.mrp }))}>{'batch'} {b.batch} · {showMonth(b.expiry.slice(0, 7))} · MRP {b.mrp} · {b.qty}</button>)}
+                    {r.batches.map(b => <button key={b.id} className={`chip ${r.batchId === b.id ? 'on' : ''}`} onClick={() => upd(i, x => ({ ...x, batchId: b.id, mrp: b.mrp }))}>{'batch'} {b.batch} · {showMonth(b.expiry.slice(0, 7))} · MRP {b.mrp} · {pcsCs(b.qty, p.caseSize)}</button>)}
                   </div>
                 )}
                 <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><span className="muted">MRP</span><input type="number" value={r.mrp} onChange={e => upd(i, x => ({ ...x, mrp: Number(e.target.value) }))} style={{ width: 100 }} aria-label="MRP" />{r.mrp !== (r.batches.find(b => b.id === r.batchId)?.mrp ?? p.mrp) && <span className="badge warn">{'MRP changed'}</span>}

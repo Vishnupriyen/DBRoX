@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
-import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleDifference } from '../core/pipeline';
+import { dupeGroups, billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
 import { inr, showDate, plural, showTime } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
@@ -41,7 +41,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
     { n: c.waitingOrders.filter(o => o.status !== 'picked').length, en: 'Orders to approve', page: 'orders-received' },
     { n: c.waitingOrders.filter(o => o.status === 'picked').length, en: 'Packed orders to verify and bill', page: 'verify' },
     { n: c.newShops.length, en: 'New shops to approve', page: 'newshops' },
-    { n: c.dupes.length, en: 'Possible duplicate collections', action: () => setDupOpen(true) },
+    { n: dupeGroups(c.dupes).length, en: 'Possible duplicate collections', action: () => setDupOpen(true) },
     { n: c.unapprovedExpenses.length, en: 'Expenses to approve', page: 'expenses' },
     { n: c.requests.length, en: 'Staff returns / write-offs to approve', action: () => setReqOpen(true) },
   ];
@@ -147,8 +147,8 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
               {inv.delivery?.excess?.map(x => <div key={x.productId} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge warn">+{x.qty} {'extra'}</span></div>)}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              {!fixed && <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${sh?.pref === 'modified' ? 'primary' : ''}`} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: 11 }}>{'same number'}</span></button>{m && <span className="muted" style={{ fontSize: 12 }}>{`Bill becomes ${inr(m.becomes)}`}</span>}</div>}
-              <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${fixed || sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}{inv.delivery?.excess?.length ? <span className="muted" style={{ fontSize: 11 }}>{' + new bill for extra'}</span> : null}</button>{m && <span className="muted" style={{ fontSize: 12 }}>{[m.back ? `Bill stays; shop gets ${inr(m.back)} back` : 'Bill stays', m.extra ? `new bill about ${inr(m.extra)} for the extra` : ''].filter(Boolean).join(' · ')}</span>}</div>
+              {!fixed && <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${sh?.pref === 'modified' ? 'primary' : ''}`} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: '0.6875rem' }}>{'same number'}</span></button>{m && <span className="muted" style={{ fontSize: '0.75rem' }}>{`Bill becomes ${inr(m.becomes)}`}</span>}</div>}
+              <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${fixed || sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}{inv.delivery?.excess?.length ? <span className="muted" style={{ fontSize: '0.6875rem' }}>{' + new bill for extra'}</span> : null}</button>{m && <span className="muted" style={{ fontSize: '0.75rem' }}>{[m.back ? `Bill stays; shop gets ${inr(m.back)} back` : 'Bill stays', m.extra ? `new bill about ${inr(m.extra)} for the extra` : ''].filter(Boolean).join(' · ')}</span>}</div>
             </div>
             {fixed && <div className="muted">{einv ? 'E-invoiced bill — only a credit note is allowed.' : 'Delivered bill — less goes on a credit note, extra on a new bill.'}</div>}
           </div>
@@ -164,7 +164,7 @@ function Duplicates({ payments, onBack }: { payments: Payment[]; onBack: () => v
   const [list, setList] = useState(payments);
   const [names, setNames] = useState<Map<string, string>>(new Map());
   useEffect(() => { (async () => { setNames(new Map([...(await db.shops.toArray()).map(s => [s.id, s.name] as [string, string]), ...(await db.staff.toArray()).map(s => [s.id, s.name] as [string, string])])); })(); }, []);
-  const groups = [...list.reduce((m, p) => m.set(`${p.shopId}|${p.amount}`, [...(m.get(`${p.shopId}|${p.amount}`) ?? []), p]), new Map<string, Payment[]>()).values()];
+  const groups = dupeGroups(list);
   const real = async (g: Payment[]) => { await confirmNotDuplicate(g.map(p => p.id)); setList(l => l.filter(p => !g.some(x => x.id === p.id))); };
   const cancel = async (g: Payment[], p: Payment) => {
     if (!await confirmBox(`Cancel ${inr(p.amount)} by ${names.get(p.collectedBy) ?? ''}?`, 'It was entered twice. It stays in the history; the bills it paid are open again.', 'Cancel it')) return;

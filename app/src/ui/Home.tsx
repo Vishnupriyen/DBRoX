@@ -11,6 +11,7 @@ import { MODULE_ICON } from './icons';
 import { Search, Send } from 'lucide-react';
 import { invoiceBalances } from '../core/ledger';
 import { inr, plural } from '../core/i18n';
+import { waitingRequests } from '../core/requests';
 
 export type Page = 'home'
   | 'orders-received' | 'verify' | 'billed' | 'newshops' | 'targets' | 'beat' | 'myday' | 'newshop' | 'orders-excel'
@@ -45,7 +46,7 @@ const waitingLine = (ts: Tile[]) => ts.filter(x => x.count && x.page && WAITING[
 export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => void; open: string | null; onOpen: (m: string | null) => void }) {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [subs, setSubs] = useState<Record<string, Tile[]>>({});
-  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; first: Page | null } | null>(null);
+  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; leaves: number; advances: number; staffReqs: number; first: Page | null } | null>(null);
   const [q, setQ] = useState('');
   useEffect(() => {
     (async () => {
@@ -170,8 +171,11 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
       setTiles(t.filter(allowed)); setSubs(sub);
       if ((role === 'owner' || role === 'office') && !standalone(mods)) {
         const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
+        const leaveN = await db.leaves.where('status').equals('waiting').count();
+        const advanceN = await db.advances.where('status').equals('waiting').count();
+        const reqN = (await waitingRequests()).length;
         const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
-        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : diffs ? 'status' : null });
+        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, leaves: leaveN, advances: advanceN, staffReqs: reqN, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : (leaveN || advanceN) ? 'today' : diffs ? 'status' : null });
       } else setMorning(null);
     })();
   }, [role, open]);
@@ -191,7 +195,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         <div className="morning">
           <div className="grow">
             <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
-            <div className="s">{morning.orders ? `${morning.orders} order${morning.orders > 1 ? 's' : ''} waiting for your OK.` : morning.toDeliver ? `${morning.toDeliver} bill${morning.toDeliver > 1 ? 's' : ''} to plan for delivery.` : 'Nothing is waiting on you right now.'}</div>
+            <div className="s">{(() => { const w = [morning.orders ? `${plural(morning.orders, 'order')} waiting for your OK` : '', morning.toDeliver ? `${plural(morning.toDeliver, 'bill')} to plan for delivery` : '', morning.leaves ? `${plural(morning.leaves, 'leave request')}` : '', morning.advances ? `${plural(morning.advances, 'advance request')}` : '', morning.staffReqs ? `${plural(morning.staffReqs, 'staff request')} (returns, write-offs)` : ''].filter(Boolean); return w.length ? `${w.join(' · ')}.` : 'Nothing is waiting on you right now.'; })()}</div>
             <div className="kv"><div><b>{morning.orders}</b><span>{'orders'}</span></div><div><b>{morning.toDeliver}</b><span>{'to deliver'}</span></div><div><b>{inr(morning.overdue)}</b><span>{'overdue'}</span></div><div><b>{inr(morning.cash)}</b><span>{'with staff'}</span></div></div>
             {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{'Start here'} →</button>}
           </div>

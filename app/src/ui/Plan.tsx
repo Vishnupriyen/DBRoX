@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Truck, Navigation, Clock } from 'lucide-react';
 import { ask } from './dialog';
 import { db, today } from '../core/db';
-import { confirmPlan, suggestPlan, type PlanSuggestion } from '../core/pipeline';
+import { billsToPlan, confirmPlan, suggestPlan, type PlanSuggestion } from '../core/pipeline';
 import { inr, plural } from '../core/i18n';
 import type { Invoice, Trip, Van } from '../core/types';
 
@@ -13,7 +13,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
   const [vans, setVans] = useState<Van[]>([]);
   const [mode, setMode] = useState<'ask' | 'rox' | 'me'>((localStorage.getItem('dbrox.planMode') as 'rox' | 'me') ?? 'ask');
   const [pending, setPending] = useState(0);
-  useEffect(() => { db.vans.toArray().then(setVans); db.invoices.where('deliveryStatus').equals('pending').count().then(setPending); }, []);
+  useEffect(() => { db.vans.toArray().then(setVans); billsToPlan().then(setPending); }, []);
   useEffect(() => {
     if (mode === 'rox') suggestPlan().then(setPlan);
     if (mode === 'me') suggestPlan().then(p => setPlan(p.map(x => ({ ...x, shops: [] as PlanSuggestion['shops'] })).concat([{ van: { id: '', name: 'Not planned', number: '', kind: 'own' } as Van, shops: p.flatMap(x => x.shops) }])));
@@ -60,7 +60,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{billsToday}<span style={{ fontSize: 16, color: 'var(--on-navy-2)' }}>/{plural(bills, 'bill')}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
+          <div><div className="v">{billsToday}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{plural(bills, 'bill')}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
           <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? 'TESRAX plan' : 'My route'} · {'change'}</button>
         </div>
       </div>
@@ -68,7 +68,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
       {plan.filter(x => x.van.id || x.shops.length).map(p => (
         <div key={p.van.id || 'tomorrow'} className="card stack" style={{ gap: 8, borderStyle: p.van.id ? 'solid' : 'dashed' }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
-            <b style={{ fontSize: 17 }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
+            <b style={{ fontSize: '1.0625rem' }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
             <span className={`badge ${p.van.id ? 'navy' : 'warn'}`}>{plural(p.shops.length, 'stop')} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}{p.van.id && km(p) ? ` · ${km(p)}` : ''}</span>
           </div>
           <div className="route">
