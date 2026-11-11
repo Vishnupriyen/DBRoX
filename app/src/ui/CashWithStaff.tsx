@@ -39,7 +39,7 @@ export function CashWithStaff() {
             <span className="amt num">{inr(g.total)}</span>{openStaff === g.staffId ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openStaff === g.staffId && <div className="list">
-            {g.pays.map(p => <button key={p.id} className="item tap" onClick={() => setOpenShop(p.shopId)}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{p.shop}</div><div className="s">{p.date} {p.createdAt.slice(11, 16)} · {'bills'} {p.bills || '—'}</div></div><span className="amt num">{inr(p.amount)}</span></button>)}
+            {g.pays.map(p => <button key={p.id} className="item tap" onClick={() => setOpenShop(p.shopId)}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{p.shop}</div><div className="s">{showDate(p.date)} · {'bills'} {p.bills || '—'}</div></div><span className="amt num">{inr(p.amount)}</span></button>)}
           </div>}
         </div>
       ))}

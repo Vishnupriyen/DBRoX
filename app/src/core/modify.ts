@@ -407,9 +407,12 @@ async function stockFix(c: ModCtx): Promise<Reply | null> {
   // "surf stock 80", or how it is said on the floor: "surf 80 only", "red label 4 reduce", "cake 12 extra"; the godown may just say "vim 700"
   const floor = /\b(only|reduce|excess|extra|short|shortage|missing|less|count|counted)\b/.test(t) || /\bnot \d/.test(t);
   // product first and a quantity, nothing else ("vim 700 pcs", "surf 7 case 9 pcs"): a count. ("2 case surf" is an order without a shop.)
-  const bareCount = (/^[a-z][a-z_ ]*? \d+ (pcs|pieces|nos)$/.test(t.trim()) || /^[a-z][a-z_ ]*? \d+ (case|cases|cs|box) \d+( (pcs|pieces|nos))?$/.test(t.trim())) && office(c.role)
+  const bareCount = (/^[a-z][a-z_ ]*? \d+ (pcs|pieces|nos)$/.test(t.trim()) || /^[a-z][a-z_ ]*? \d+ (case|cases|cs|box) \d+( (pcs|pieces|nos))?$/.test(t.trim())) && (office(c.role) || c.role === 'godown')
     && !/\bcase\b[^\d]*$/.test(t.trim().split(/\d/)[0]) && !/\b1 (case|cs|box) \d+/.test(t); // "marie case 48 pcs", "1 case = 120 pcs" are case sizes
-  if (!has(t, STOCK_WORDS) && !floor && !bareCount && c.role !== 'godown') return null;
+  // a count only when one is said ("count", "counted", "irukku", "stock", "short"…): "good day 5 udanjiruchu" once
+  // became a count that wiped 991 pieces. The godown's bare "good day 5" is asked about, never saved as a count.
+  const explicit = has(t, STOCK_WORDS) || /\b(irukku|iruku|irukku|irukkudhu|irukudhu)\b/.test(t) || floor || bareCount;
+  if (!explicit && c.role !== 'godown') return null;
   if (/\b(rate|price|mrp|size|per case|gst|order|orders|paid|payment|bill)\b/.test(t)) return null;
   if (/\?/.test(c.textIn) || /\b(how|what|which|available|enough|do we have|is there|any|check|report|list|position|value|alert|alerts|old|near|expiry|ageing|aging)\b/.test(t)) return null;
   const nums = numbersIn(c.textIn);
@@ -417,12 +420,16 @@ async function stockFix(c: ModCtx): Promise<Reply | null> {
   const mode: 'set' | 'add' | 'sub' = /\b(short|shortage|missing|less|reduce|minus|lost|stolen)\b/.test(t) ? 'sub' : /\b(excess|extra|found extra|add|more)\b|\bplus \d/.test(t) ? 'add' : 'set';
   const cleaned = t
     .replace(new RegExp(`\\b(not|was|from) \\d+(?: ${UNIT})?\\b`, 'g'), ' ')
-    .replace(/\b(stock|stocks|count|counted|physical|shelf|rack|racks|godown|in|actual|ok|okay|right|fine|is|are|the|of|only|set|to|correct|correction|adjust|update|change|mismatch|wrong|should be|it|its|now|short|shortage|excess|extra|missing|found|add|plus|more|less|reduce|minus|lost|stolen|closing|by|we|have|has|there|qty|quantity|please|system|shows|says|but)\b/g, ' ')
+    .replace(/\b(irukku|iruku|irukkudhu|irukudhu|stock|stocks|count|counted|physical|shelf|rack|racks|godown|in|actual|ok|okay|right|fine|is|are|the|of|only|set|to|correct|correction|adjust|update|change|mismatch|wrong|should be|it|its|now|short|shortage|excess|extra|missing|found|add|plus|more|less|reduce|minus|lost|stolen|closing|by|we|have|has|there|qty|quantity|please|system|shows|says|but)\b/g, ' ')
     .replace(/\s+/g, ' ').trim();
   const lines = parseItemLines(cleaned);
   const words = cleaned.replace(new RegExp(`\\b\\d+(?:\\.\\d+)?\\b|\\b${UNIT}\\b`, 'g'), ' ').replace(/\s+/g, ' ').trim();
   const product = (lines[0] && bestProduct(c.products, lines[0].productText).product) || (words ? bestProduct(c.products, words).product : undefined);
   if (!product) return null;
+  if (!explicit) {
+    const n = lines[0] ? `${lines[0].qty}${lines[0].unit === 'case' ? ' case' : ''}` : String(nums[0]);
+    return { text: `Did you mean ${n} ${product.name} damaged? Say "${n} ${product.name} damaged" for the claim, or "${product.name} count ${nums[0]}" for a stock count.`, tone: 'warn' };
+  }
   if (!['owner', 'office', 'godown'].includes(c.role)) return deny();
   const fixNext = c.fixOf(t)?.next;
   let said = lines[0] ? toPieces(lines[0].qty, lines[0].unit, product) : (fixNext ?? nums[0]);
@@ -446,6 +453,8 @@ async function stockFix(c: ModCtx): Promise<Reply | null> {
       fields: [
         { key: 'productId', label: 'Product', type: 'select', options: await productOptions(), value: product.id, readonly: true },
         { key: 'reason', label: 'Reason', value: mode === 'set' ? 'Physical count' : mode === 'add' ? 'Found extra' : 'Shortage' },
+        // more than 1 case off: the counted total is typed a second time before Approve
+        ...(Math.abs(d) > Math.max(1, product.caseSize) ? [{ key: 'again', label: 'Type the counted total again', type: 'number' as const, value: '' }] : []),
       ],
       columns: [
         { key: 'batch', label: 'Lot', readonly: true, width: 80 },

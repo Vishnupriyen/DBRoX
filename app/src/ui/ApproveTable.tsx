@@ -3,8 +3,9 @@ import { Check, Download, Plus, X } from 'lucide-react';
 import { commit, hasErrors, validate, type Proposal, type Row, type Validation } from '../core/proposals';
 import { refreshOrderRow } from '../core/engine';
 import { downloadSheet } from '../core/readers';
-import { t } from '../core/i18n';
-import type { Invoice } from '../core/types';
+import { showDate, t } from '../core/i18n';
+import { db, session } from '../core/db';
+import type { Invoice, Role } from '../core/types';
 import { notify } from './dialog';
 
 interface Props {
@@ -13,8 +14,26 @@ interface Props {
   onDone: (result: { message: string; batchId: string; invoices?: Invoice[]; edited?: boolean } | null) => void;
 }
 
+// field staff send things to the owner; only the owner's side downloads Excel
+const FIELD: Role[] = ['salesman', 'godown', 'delivery', 'rep'];
+function useRole() {
+  const [role, setRole] = useState<Role | null>(null);
+  useEffect(() => { let alive = true; db.staff.get(session().userId).then(s => alive && setRole(s?.role ?? null)).catch(() => {}); return () => { alive = false; }; }, []);
+  return role;
+}
+// a narrow phone (360 px): the "#" and "You said" columns are left out and the amount sits next to the product
+function useNarrow() {
+  const mq = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 430px)') : null);
+  const [narrow, setNarrow] = useState(() => !!mq()?.matches);
+  useEffect(() => { const q = mq(); if (!q) return; const on = () => setNarrow(q.matches); q.addEventListener('change', on); return () => q.removeEventListener('change', on); }, []);
+  return narrow;
+}
+const isoDay = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
 // The one screen every action goes through: check the table, fix red cells, tap ✓.
 export function ApproveTable({ proposal, onDone }: Props) {
+  const role = useRole();
+  const narrow = useNarrow();
   const [p, setP] = useState<Proposal>(proposal);
   const [v, setV] = useState<Validation | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +80,14 @@ export function ApproveTable({ proposal, onDone }: Props) {
   if (closed) return <div className="muted">✓ {closed}</div>;
 
   const bad = v ? hasErrors(v) : true;
-  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo'].includes(p.kind);
+  const field = !!role && FIELD.includes(role);
+  const cols = !narrow ? p.columns : (() => {
+    const cs = p.columns.filter(c => c.key !== 'said');
+    const amt = cs.find(c => c.key === 'amount'); const at = cs.findIndex(c => c.key === 'productId');
+    return amt && at >= 0 ? [...cs.slice(0, at + 1).filter(c => c !== amt), amt, ...cs.slice(at + 1).filter(c => c !== amt)] : cs;
+  })();
+  const sendWord = field && (p.kind === 'order' || p.kind === 'leave') ? 'Send to owner' : field && p.kind === 'fieldOrder' ? 'Send to distributor' : t('approve').replace(' ✓', '');
+  const fixedRows = ['bank', 'payment', 'paymentFix', 'orderCancel', 'billCancel', 'paymentCancel', 'expenseFix', 'stockFix', 'productEdit', 'shopEdit', 'undo', 'leave'].includes(p.kind);
   return (
     <div className="prop">
       <h4>{p.title}</h4>
@@ -86,19 +112,20 @@ export function ApproveTable({ proposal, onDone }: Props) {
         <table className="grid">
           <thead>
             <tr>
-              <th>#</th>
-              {p.columns.map(c => <th key={c.key} className={c.type === 'number' ? 'num' : ''} style={{ minWidth: c.width }}>{c.label}</th>)}
+              {!narrow && <th>#</th>}
+              {cols.map(c => <th key={c.key} className={c.type === 'number' ? 'num' : ''} style={{ minWidth: c.width }}>{c.label}</th>)}
               {!fixedRows && <th></th>}
             </tr>
           </thead>
           <tbody>
             {p.rows.map((r, ri) => (
               <tr key={ri} className={p.kind === 'bank' && r.action === 'check' ? 'check' : ''}>
-                <td className="ro">{ri + 1}</td>
-                {p.columns.map(c => {
+                {!narrow && <td className="ro">{ri + 1}</td>}
+                {cols.map(c => {
                   const e = v?.errors[ri]?.[c.key];
                   if (c.readonly) {
-                    const shown = c.type === 'select' ? c.options?.find(o => o.value === r[c.key])?.label : r[c.key];
+                    const raw = c.type === 'select' ? c.options?.find(o => o.value === r[c.key])?.label : r[c.key];
+                    const shown = isoDay(raw) ? showDate(raw as string) : raw;
                     // read-only amounts the Indian way (1,506.62), never 1506.62
                     const txt = c.type === 'number' && typeof shown === 'number' ? shown.toLocaleString('en-IN', { minimumFractionDigits: shown % 1 ? 2 : 0, maximumFractionDigits: 2 }) : String(shown ?? '');
                     return <td key={c.key} className={`ro ${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>{txt}</td>;
@@ -129,13 +156,13 @@ export function ApproveTable({ proposal, onDone }: Props) {
       {v && v.warnings.length > 0 && <ul className="warns">{v.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       {v?.summary && <div className="summary">{v.summary}</div>}
       <div className="row">
-        <button className="btn primary" disabled={bad || busy || !p.rows.length} onClick={approve}><Check /> {busy ? '…' : t('approve').replace(' ✓', '')}</button>
+        <button className="btn primary" disabled={bad || busy || !p.rows.length} onClick={approve}><Check /> {busy ? '…' : sendWord}</button>
         <button className="btn" onClick={() => { setClosed('Cancelled'); onDone(null); }}>{t('cancel')}</button>
         <span className="grow" />
-        <button className="btn small" onClick={() => downloadSheet(p.title, p.columns.map(c => c.label), p.rows.map(r => p.columns.map(c => {
+        {!field && <button className="btn small" onClick={() => downloadSheet(p.title, p.columns.map(c => c.label), p.rows.map(r => p.columns.map(c => {
           const val = r[c.key];
           return c.type === 'select' ? (c.options?.find(o => o.value === val)?.label ?? String(val ?? '')) : (val ?? '');
-        })))}><Download /> {t('download')}</button>
+        })))}><Download /> {t('download')}</button>}
       </div>
       <div className="muted" style={{ marginTop: 6 }}>{bad ? t('fixRed') : t('allGood')}</div>
     </div>
@@ -143,18 +170,19 @@ export function ApproveTable({ proposal, onDone }: Props) {
 }
 
 export function ReadTable({ table }: { table: { columns: string[]; rows: (string | number)[][]; name: string } }) {
+  const role = useRole();
   return (
     <div>
       <div className="tablewrap">
         <table className="grid">
           <thead><tr>{table.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
           <tbody>
-            {table.rows.slice(0, 200).map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={`ro ${typeof c === 'number' ? 'num' : ''}`}>{typeof c === 'number' ? c.toLocaleString('en-IN') : c}</td>)}</tr>)}
+            {table.rows.slice(0, 200).map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={`ro ${typeof c === 'number' ? 'num' : ''}`}>{typeof c === 'number' ? c.toLocaleString('en-IN') : isoDay(c) ? showDate(c) : c}</td>)}</tr>)}
             {!table.rows.length && <tr><td className="ro" colSpan={table.columns.length}>{t('noItems')}</td></tr>}
           </tbody>
         </table>
       </div>
-      {table.rows.length > 0 && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> {t('download')}</button>}
+      {table.rows.length > 0 && !(role && FIELD.includes(role)) && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> {t('download')}</button>}
     </div>
   );
 }

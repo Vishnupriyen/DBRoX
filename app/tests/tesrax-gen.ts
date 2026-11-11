@@ -256,7 +256,9 @@ export function generate(facts: Facts, opts: GenOpts = {}): Case[] {
   for (const shop of SHOP_NAMES) { add('ask', `${sv(shop)} hello 12 something 40`, 'ask'); }
 
   // ------------------------------------------------------------------------------------- payroll
-  for (const s of ['leave monday', 'i want leave tomorrow', 'sick leave today', 'tomorrow leave', 'leave pls']) for (const r of ['salesman', 'godown', 'delivery'] as Role[]) add('leave', s, 'leave', r);
+  for (const s of ['leave monday', 'i want leave tomorrow', 'sick leave today', 'tomorrow leave', 'nalaiku leave', 'inniku leave']) for (const r of ['salesman', 'godown', 'delivery'] as Role[]) add('leave', s, 'leave', r);
+  // no day said: TESRAX asks "Which day?" — a leave is never put on today by guess (UX round 4)
+  for (const r of ['salesman', 'godown', 'delivery'] as Role[]) add('leave', 'leave pls', 'ask', r);
   for (const a of [500, 1000, 2000]) for (const r of ['salesman', 'delivery'] as Role[]) add('advance', `advance ${a}`, `advance:${a}`, r);
 
   // ================================================================================== CHANGES TO WHAT IS SAVED

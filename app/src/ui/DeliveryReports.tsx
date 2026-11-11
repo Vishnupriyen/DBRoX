@@ -2,7 +2,7 @@ import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showDate } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 
@@ -61,7 +61,7 @@ export function TripReports() {
   return (
     <div className="stack">
       <table className="tbl"><thead><tr><th>{'Date'}</th><th>{'Van'}</th><th>{'Stops'}</th><th>km</th><th>{'Idle'}</th><th>{'Fuel'}</th></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.t.id}><td>{r.t.date.slice(5)}</td><td>{r.van}</td><td className="num">{r.done}/{r.stops}</td><td className="num">{r.km || '—'}</td><td className="num">{r.idleMin ? `${r.idleMin} min` : '—'}</td><td className="num">{r.fuel ? inr(r.fuel) : '—'}</td></tr>)}</tbody></table>
+        <tbody>{rows.map(r => <tr key={r.t.id}><td>{showDate(r.t.date)}</td><td>{r.van}</td><td className="num">{r.done}/{r.stops}</td><td className="num">{r.km || '—'}</td><td className="num">{r.idleMin ? `${r.idleMin} min` : '—'}</td><td className="num">{r.fuel ? inr(r.fuel) : '—'}</td></tr>)}</tbody></table>
       {!rows.length && <div className="card muted">{'No trips yet.'}</div>}
       {rows.length > 0 && rows.every(r => r.t.track.length < 2) && <div className="alert warn"><AlertTriangle /><div>{'No GPS track recorded on these trips — km and idle time show "—". The driver\'s phone must keep location on during the trip.'}</div></div>}
       <div className="muted">{'km from the GPS track; fuel from expenses entered as "diesel" for that van and day.'}</div>
@@ -93,7 +93,7 @@ export function PrintLoad() {
         <button className="btn primary" onClick={() => void printPage()}><Printer /> {'Print'}</button>
       </div>
       <div className="card" style={{ background: '#fff', color: '#000' }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 18 }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{t.date} · {'Driver'}: {t.driver || '—'}</span></div>
+        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 18 }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{showDate(t.date)} · {'Driver'}: {t.driver || '—'}</span></div>
         <div className="muted">{plural(t.invs.length, 'bill')} · {plural(stops.length, 'stop')} · {inr(t.invs.reduce((a, i) => a + i.total, 0))}</div>
         <h4 style={{ margin: '12px 0 4px' }}>A. {'By product'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>☐</th><th>{'Product'}</th><th>{'Batch · expiry'}</th><th>{'Cases'}</th><th>{'Pcs'}</th></tr></thead>

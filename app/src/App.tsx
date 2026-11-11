@@ -234,7 +234,7 @@ export default function App() {
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       <DialogHost />
-      <UndoToast />
+      <UndoToast page={`${page}|${module ?? ""}`} />
 
       {rox && (
         <div className="engine" role="dialog" aria-label="TESRAX">

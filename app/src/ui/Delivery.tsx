@@ -9,6 +9,7 @@ import { r2 } from '../core/ledger';
 import { inr, t } from '../core/i18n';
 import type { Invoice, Product, Shop, Trip } from '../core/types';
 import { ask, askText, confirmBox } from './dialog';
+import { useBack } from './useBack';
 
 interface Stop { shop: Shop; invoices: Invoice[] }
 
@@ -22,6 +23,7 @@ export function Delivery() {
   const [open, setOpen] = useState<Stop | null>(null);
   const [tick, setTick] = useState(0);
   const [ending, setEnding] = useState(false);
+  useBack(() => { if (open) { setOpen(null); setTick(x => x + 1); return true; } if (ending) { setEnding(false); return true; } return false; });
   useEffect(() => {
     (async () => {
       const me = await db.staff.get(session().userId);
@@ -103,10 +105,12 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   const [short, setShort] = useState<Record<string, { qty: number; reason: string }>>({});
   const [extra, setExtra] = useState<Record<string, number>>({});
   const [step, setStep] = useState<'items' | 'confirm' | 'pay' | 'done'>('items');
+  const [paid, setPaid] = useState<{ amount: number; mode: string } | null>(null);
   const [shopPhoto, setShopPhoto] = useState<string>();
   const [billPhoto, setBillPhoto] = useState<string>();
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [grn, setGrn] = useState(true);
+  useBack(() => { if (step === 'confirm') { setStep('items'); return true; } return false; });
   useEffect(() => { db.products.toArray().then(ps => setProducts(new Map(ps.map(p => [p.id, p])))); getSettings().then(s => setGrn(s.grnPhoto !== false)); }, [stop]);
 
   const key = (inv: Invoice, pid: string) => `${inv.id}|${pid}`;
@@ -135,6 +139,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
     <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
       <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
       <h2>{stop.shop.name}</h2>
+      {paid && <div className="amt num" style={{ fontSize: 22 }}>{inr(paid.amount)} {'by'} {paid.mode === 'upi' ? 'UPI' : paid.mode === 'cheque' ? 'cheque' : 'cash'}</div>}
       <button className="btn big primary block" onClick={onClose}>{'Next shop →'}</button>
     </div>
   );
@@ -142,7 +147,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   if (step === 'pay') return (
     <div className="stack">
       <div className="sechead"><h3>{t('collect')} · {stop.shop.name}</h3></div>
-      <PayBox shop={stop.shop} preferInvoiceIds={stop.invoices.map(i => i.id)} onDone={() => setStep('done')} onSkip={() => setStep('done')} />
+      <PayBox shop={stop.shop} preferInvoiceIds={stop.invoices.map(i => i.id)} onDone={p => { setPaid(p ?? null); setStep('done'); }} onSkip={() => setStep('done')} />
     </div>
   );
 
@@ -161,7 +166,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
             {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label={'2. Signed bill / GRN'} />}
           </div>
           <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
-          <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery"><Check size={84} /></button>
+          <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery">{'Goods received'} <Check size={40} /></button>
           {!ready && <div className="muted" style={{ fontSize: 12 }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
           <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> {'Back'}</button>
         </div>
@@ -188,7 +193,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                   {p ? <Pack product={p} /> : <div className="avatar">?</div>}
                   <div className="grow">
                     <div className="t">{l.name}</div>
-                    <div className="s">{l.name} · MRP {l.mrp}</div>
+                    <div className="s">MRP {l.mrp}</div>
                     <div className="row" style={{ marginTop: 4 }}>
                       <span className="badge navy">{l.qty + l.freeQty} pcs{l.freeQty ? ` (${l.freeQty} free)` : ''}</span>
                       {s?.qty ? <span className="badge bad">−{s.qty} {REASONS.find(r => r.value === s.reason)?.label}</span> : null}

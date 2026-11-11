@@ -3,7 +3,7 @@
 // Every part still goes through handleOne(), and nothing is saved before ✓.
 import { db, newId } from './db';
 import { bestProduct, cleanSaid, findShopInText, hasWord as has, learnNames, norm, parseItemLines, protectNames, toPieces } from './match';
-import { handleOne, SCREENS, setDry, W, type Reply } from './engine';
+import { dayIn, handleOne, SCREENS, setDry, W, type Reply } from './engine';
 import { categoryOf, orderOps } from './modify';
 import { orderRow, type Proposal, type Row } from './proposals';
 import type { Product, Shop } from './types';
@@ -94,7 +94,8 @@ export async function splitIntents(said: string): Promise<string[]> {
       const lent = bestProduct(products, norm(prevText).replace(/\b(stock|how much|how many|is|available)\b/g, ' ').trim()).product;
       if (lent) { const w = `${seg} ${lent.name}`; const r4 = await probe(w); if (actionable(r4)) { r = r4; used = w; } }
     }
-    if (!actionable(r) && prev?.verb && !VERB.test(n) && !CARRY.test(n)) { const w = `${prev.verb} ${seg}`; const r3 = await probe(w); if (actionable(r3)) { r = r3; used = w; } }
+    // "count" said once covers the next piece too ("red label 430 count, clinic plus 520"), also when the piece alone was a "Did you mean…?"
+    if ((!actionable(r) || (!r.proposal && /^Did you mean/.test(r.text))) && prev?.verb && !VERB.test(n) && !CARRY.test(n)) { const w = `${prev.verb} ${seg}`; const r3 = await probe(w); if (actionable(r3)) { r = r3; used = w; } }
     const verb = n.match(VERB)?.[1] ?? n.match(CARRY)?.[1] ?? prev?.verb;
     const fromTable = shops.find(s => s.id === String(r.proposal?.fields.find(f => f.key === 'shopId')?.value ?? ''));
     const pshop = shop ?? fromTable ?? (used !== seg ? prev?.shop : undefined);
@@ -145,6 +146,8 @@ async function followUp(said: string, last: Reply): Promise<Reply | null> {
   // TESRAX asked "which shop?" — the answer is just a shop name
   if (last.pending?.need === 'shop' && shop && !restBare) return handleOne(`${shop.name} ${last.pending.said}`, []);
   // TESRAX asked "what is the correct amount?"
+  // TESRAX asked "Which day is the leave?" — the answer is a day ("tomorrow", "monday", "16/11")
+  if (last.pending?.need === 'date' && dayIn(textIn)) return handleOne(`${last.pending.said} ${textIn}`, []);
   if (last.pending?.need === 'amount') { const m = restBare.match(/^(\d+(?:\.\d+)?)$/); if (m) return handleOne(`${last.pending.said} it is ${m[1]}`, []); }
 
   if (!p) return null;

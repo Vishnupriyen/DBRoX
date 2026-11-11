@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, Boxes, Camera, FileSpreadsheet, MessageSquareText, Split, Tag } from 'lucide-react';
 import { ChangeSet, db, localDay, session, today, monthEnd, ymd, daysFrom } from '../core/db';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showDate } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
 import { Pack } from './Pack';
@@ -56,7 +56,7 @@ export function StockIn({ onRox }: { onRox?: () => void }) {
         <button className="btn grow" onClick={onRox}><Camera /> {'Photo of company bill'}</button>
         <button className="btn grow" onClick={onRox}><FileSpreadsheet /> {'Excel from company'}</button>
       </div>
-      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {'Both go through TESRAX: send the file, say "add this to inventory", approve the table. Or add by hand below.'}</div>
+      <div className="muted"><MessageSquareText size={14} style={{ verticalAlign: -2 }} /> {'Tap one, send the photo or Excel to TESRAX, check the products it reads and tap ✓ — the stock is added. Or add by hand below.'}</div>
       <div className="card stack">
         <div className="field"><label>{'Company bill no (optional)'}</label><input value={billNo} onChange={e => setBillNo(e.target.value)} /></div>
         <div className="field"><input placeholder={'Search product to add…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Search product" /></div>
@@ -85,7 +85,7 @@ function RecentPurchases() {
   const [rows, setRows] = useState<{ billNo: string; date: string; company: string; total: number; paid: number }[]>([]);
   useEffect(() => { (async () => { const c = new Map((await db.companies.toArray()).map(x => [x.id, x.name])); setRows((await db.purchases.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(p => ({ billNo: p.billNo, date: p.date, company: c.get(p.companyId) ?? '', total: p.total, paid: p.paid ?? 0 }))); })(); }, []);
   if (!rows.length) return null;
-  return <div className="card"><div className="sechead"><h3>{'Company bills & dues'}</h3></div><div className="list">{rows.map(r => <div key={r.billNo} className="item"><div className="grow"><div className="t">{r.company} · {r.billNo}</div><div className="s">{r.date}</div></div><span className="amt num">{inr(r.total)}</span>{r.total - r.paid > 0.5 && <span className="badge warn">{'due'}</span>}</div>)}</div></div>;
+  return <div className="card"><div className="sechead"><h3>{'Company bills & dues'}</h3></div><div className="list">{rows.map(r => <div key={r.billNo} className="item"><div className="grow"><div className="t">{r.company} · {r.billNo}</div><div className="s">{showDate(r.date)}</div></div><span className="amt num">{inr(r.total)}</span>{r.total - r.paid > 0.5 && <span className="badge warn">{'due'}</span>}</div>)}</div></div>;
 }
 
 // ---------- Stock position: company → product → lots. Godown sees counts; owner also sees value. ----------
@@ -241,7 +241,7 @@ export function Damages() {
           <button className="btn primary big block" disabled={qty <= 0 || saving} onClick={save}><Check /> {'Save → claim'}</button>
         </>}
       </div>
-      <div className="list">{list.map(x => <div key={x.id} className="item"><div className="avatar bad"><AlertTriangle size={18} /></div><div className="grow"><div className="t">{x.name}</div><div className="s">{x.qty} pcs · {x.kind} · {x.date}</div></div>{owner && <span className="amt num">{inr(x.amount)}</span>}</div>)}</div>
+      <div className="list">{list.map(x => <div key={x.id} className="item"><div className="avatar bad"><AlertTriangle size={18} /></div><div className="grow"><div className="t">{x.name}</div><div className="s">{x.qty} pcs · {x.kind} · {showDate(x.date)}</div></div>{owner && <span className="amt num">{inr(x.amount)}</span>}</div>)}</div>
     </div>
   );
 }

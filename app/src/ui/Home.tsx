@@ -10,7 +10,7 @@ import { ENV_SERVER } from '../core/sync';
 import { MODULE_ICON } from './icons';
 import { Search, Send } from 'lucide-react';
 import { invoiceBalances } from '../core/ledger';
-import { inr } from '../core/i18n';
+import { inr, plural } from '../core/i18n';
 
 export type Page = 'home'
   | 'orders-received' | 'verify' | 'billed' | 'newshops' | 'targets' | 'beat' | 'myday' | 'newshop' | 'orders-excel'
@@ -32,16 +32,14 @@ const NEED: Partial<Record<Page, ModuleKey>> = {
   'lite-delivery': 'delivery', 'lite-plan': 'delivery', 'lite-collect': 'collection',
 };
 
-const TAG: Record<string, string> = {
-  sales: 'Take orders in 30 seconds. No typing.',
-  bill: 'One click. Bill is ready.',
-  inventory: 'Take a photo of the bill. Stock is added.',
-  delivery: 'Plan, load, deliver. All easy.',
-  collection: 'Collect money with one tap.',
-  accountant: 'Accounts done in minutes.',
-  gst: 'GST file ready in one click.',
-  payroll: 'No confusion. Just a click.',
+// a module's line says what is waiting in it ("1 order to approve · 1 to verify"), never a slogan
+const WAITING: Partial<Record<Page, (n: number) => string>> = {
+  'orders-received': n => `${plural(n, 'order')} to approve`, verify: n => `${n} to verify`, newshops: n => `${plural(n, 'new shop')} to approve`,
+  inbound: n => `${plural(n, 'company bill')} to receive`, stock: n => `${plural(n, 'stock alert')}`, claims: n => `${plural(n, 'claim')} open`,
+  plan: n => `${plural(n, 'bill')} to plan`, live: n => `${plural(n, 'van')} out`, status: n => `${plural(n, 'bill')} with differences`,
+  cash: n => `${plural(n, 'person', 'people')} holding cash`, today: n => `${plural(n, 'request')} to approve`,
 };
+const waitingLine = (ts: Tile[]) => ts.filter(x => x.count && x.page && WAITING[x.page]).map(x => WAITING[x.page!]!(x.count!)).join(' · ') || 'Nothing waiting here.';
 
 // Opening screen: module icons with counts. Tap a module → its few screens. Nothing else.
 export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => void; open: string | null; onOpen: (m: string | null) => void }) {
@@ -180,7 +178,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
 
   const list = open ? subs[open] ?? [] : tiles;
   const label = (t: Tile) => t.en;
-  const tag = open ? TAG[open] : null;
+  const tag = open ? waitingLine(subs[open] ?? []) : null;
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const all: (Tile & { mod?: string })[] = [...tiles.filter(t => t.page), ...Object.entries(subs).flatMap(([m, ts]) => ts.map(t => ({ ...t, mod: m })))];

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Truck, PackageOpen, AlertTriangle } from 'lucide-react';
+import { Check, Truck, AlertTriangle } from 'lucide-react';
 import { db, today } from '../core/db';
 import { tripLoaded } from '../core/pipeline';
 import { inr, plural } from '../core/i18n';
@@ -84,13 +84,13 @@ export function Pick() {
                 <Pack product={p} size="lg" />
                 <div className="grow">
                   <div className="t" style={{ fontSize: 18 }}>{p.name}</div>
-                  <div className="s">{p.name} · MRP {p.mrp}</div>
+                  <div className="s">MRP {p.mrp}</div>
                   <div className="row" style={{ marginTop: 6 }}>
                     <span className="badge navy" style={{ fontSize: 15, padding: '5px 12px' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}</span>
                     {l.batches.sort((a, b) => a.expiry.localeCompare(b.expiry)).map(b => <span key={b.batch} className="badge">{'batch'} <b>{b.batch}</b> · {b.qty}</span>)}
                   </div>
                 </div>
-                <div className={`avatar ${done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16 }}>{done ? <Check size={30} /> : <PackageOpen size={24} />}</div>
+                <div className={`avatar ${done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16 }}>{done ? <Check size={30} /> : <Check size={24} style={{ opacity: .35 }} />}</div>
               </button>
             );
           })}

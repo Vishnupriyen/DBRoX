@@ -38,7 +38,7 @@ const day = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN',
 interface Tile { page: CoPage; icon: LucideIcon; en: string; count?: number; tone?: 'bad' | 'warn' | 'ok' }
 export function CompanyHome({ role, go }: { role: Role; go: (p: CoPage) => void }) {
   const [tiles, setTiles] = useState<Tile[] | null>(null);
-  const [head, setHead] = useState<{ name: string; secondary: number; primary: number; low: number; rep?: { started: boolean; ended: boolean; km: number; left: number; total: number } } | null>(null);
+  const [head, setHead] = useState<{ name: string; secondary: number; primary: number; low: number; waiting?: number; rep?: { started: boolean; ended: boolean; km: number; left: number; total: number } } | null>(null);
   useEffect(() => { (async () => {
     const me = session().userId;
     if (role === 'rep') {
@@ -84,6 +84,7 @@ export function CompanyHome({ role, go }: { role: Role; go: (p: CoPage) => void 
     all.splice(0, 0, { page: 'fd-team', icon: Activity, en: 'Team today' });
     all.splice(3, 0, { page: 'cl-inbox', icon: FileCheck2, en: 'Distributor claims', count: claimsOpen || undefined, tone: 'warn' });
     all.push({ page: 'fd-approvals', icon: Inbox, en: 'Approvals', count: waiting || undefined, tone: 'warn' }, { page: 'fd-targets', icon: Target, en: 'Targets' });
+    setHead(h => h && { ...h, waiting });
     setTiles(all);
   })(); }, [role]);
   if (!tiles || !head) return <div className="card muted">{'Loading…'}</div>;
@@ -101,9 +102,9 @@ export function CompanyHome({ role, go }: { role: Role; go: (p: CoPage) => void 
       <div className="morning">
         <div className="grow">
           <div className="t">{hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}{head.name ? `, ${head.name}` : ''}.</div>
-          <div className="s">{head.low ? `${head.low} product${head.low > 1 ? 's are' : ' is'} running low at your distributors.` : 'Stock at your distributors is fine.'}</div>
+          <div className="s">{head.waiting ? `${plural(head.waiting, 'approval')} waiting for you.` : head.low ? `${head.low} product${head.low > 1 ? 's are' : ' is'} running low at your distributors.` : 'Stock at your distributors is fine.'}</div>
           <div className="kv"><div><b>{short(head.secondary)}</b><span>{'shop sales'}</span></div><div><b>{short(head.primary)}</b><span>{'to distributors'}</span></div><div><b>{head.low}</b><span>{'low stock'}</span></div></div>
-          {head.low > 0 && <button className="pill" onClick={() => go('co-stock')}>{'See low stock'} →</button>}
+          {head.waiting ? <button className="pill" onClick={() => go('fd-approvals')}>{'Start here'} →</button> : head.low > 0 && <button className="pill" onClick={() => go('co-stock')}>{'See low stock'} →</button>}
         </div>
       </div>
       )}
@@ -514,7 +515,7 @@ export function Team({ role }: { role: Role }) {
 export function CompanyPage({ page, role, go }: { page: CoPage; role: Role; go: (p: CoPage | 'home') => void }) {
   switch (page) {
     case 'fd-day': return <MyWorkDay />;
-    case 'fd-beat': return <TodaysBeat />;
+    case 'fd-beat': return <TodaysBeat onDay={() => go('fd-day')} />;
     case 'fd-orders': return <MyOrders />;
     case 'fd-newshop': return <NewShopRequest onDone={() => go('home')} />;
     case 'fd-month': return <MyMonth />;

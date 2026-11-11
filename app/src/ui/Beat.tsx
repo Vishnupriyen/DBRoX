@@ -7,6 +7,7 @@ import { inr, t, showDate } from '../core/i18n';
 import type { Shop, Visit } from '../core/types';
 import { OrderBook } from './OrderBook';
 import { CollectShop } from './Collect';
+import { useBack } from './useBack';
 
 interface Stop { shop: Shop; due: number; overdue: number; lastOrder?: string; visit?: Visit; billedToday: boolean }
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -18,6 +19,8 @@ export function Beat() {
   const [tick, setTick] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const dayIdx = new Date().getDay();
+  // back from a shop's collection goes to the beat (the order screen answers back itself: it may ask first)
+  useBack(() => { if (open?.mode !== 'collect') return false; setOpen(null); setTick(x => x + 1); return true; });
 
   useEffect(() => {
     (async () => {

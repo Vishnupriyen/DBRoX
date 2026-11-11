@@ -462,6 +462,9 @@ h1, h2, h3, h4, .h { font-family: var(--display); font-weight: 650; letter-spaci
 .btn.ghost { background: transparent; border-color: transparent; color: var(--mut); }
 .btn.danger { color: var(--bad); }
 .btn.ok-huge { background: var(--ok); color: #04150D; }
+/* the shop's confirm button reads what it confirms, and looks off until both photos are in (same faded look as a primary button) */
+.btn.ok-huge { font-size: 26px; font-weight: 800; gap: 10px; }
+.btn.ok-huge:disabled { opacity: .4; cursor: not-allowed; }
 .btn.no-huge { background: var(--bad-soft); color: var(--bad); }
 .btn.ok-soft { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
 .icon-btn { background: var(--card); border: 1px solid var(--line); color: var(--txt); }
@@ -630,6 +633,9 @@ select:focus { outline: none; border-color: var(--teal); }
 .qr .muted { color: #514A6B; }
 /* last button on a page always scrolls clear of the TESRAX core */
 .main { padding-bottom: 76px; }
+/* the pinned total + Approve bar sits on the tab bar (it used to float 76 px above it with the list showing underneath);
+   its own bottom padding keeps its buttons clear of the TESRAX core */
+@media (max-width: 899px) { .sticky-foot { bottom: -76px; margin-bottom: -76px; padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px)); } }
 
 /* plan banner (trial ending · payment pending · locked · needs internet) */
 .plan-bar { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: var(--warn-soft); color: var(--warn); font: 600 13px/1.4 var(--body); padding: 9px max(16px, env(safe-area-inset-left, 0px)); cursor: pointer; }

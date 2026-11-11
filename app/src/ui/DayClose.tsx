@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
-import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, settleDifference } from '../core/pipeline';
+import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
 import { inr, showDate, plural } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
+import { useBack } from './useBack';
 import { billChangeBlock } from '../core/gst';
 import type { Page } from './Home';
 import type { Invoice, Payment } from '../core/types';
@@ -20,6 +21,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
   const [staffNames, setStaffNames] = useState<[string, string][]>([]);
   useEffect(() => { db.staff.toArray().then(ss => setStaffNames(ss.map(x => [x.id, x.name]))); }, []);
   const [date, setDate] = useState(today());
+  useBack(() => { if (!diffOpen && !dupOpen) return false; setDiffOpen(false); setDupOpen(false); setTick(x => x + 1); return true; });
   // oldest open day first: yesterday must be closed before today (spec 15.2)
   useEffect(() => { (async () => { const d = (await billingLockedBy()) ?? today(); setDate(d); setS(await daySummary(d)); setC(await dayChecklist(d)); })(); }, [tick]);
   if (!s || !c) return <div className="muted">…</div>;
@@ -34,7 +36,8 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
     { n: c.noResult.length, en: 'Bills without a delivery result', page: 'status' },
     { n: c.diffs.length, en: 'Bills with differences — choose modified bill or credit note', action: () => setDiffOpen(true) },
     { n: c.refs.length, en: 'UPI / cheque without reference', page: 'cheques' },
-    { n: c.waitingOrders.length, en: 'Orders waiting for you', page: 'orders-received' },
+    { n: c.waitingOrders.filter(o => o.status !== 'picked').length, en: 'Orders to approve', page: 'orders-received' },
+    { n: c.waitingOrders.filter(o => o.status === 'picked').length, en: 'Packed orders to verify and bill', page: 'verify' },
     { n: c.newShops.length, en: 'New shops to approve', page: 'newshops' },
     { n: c.dupes.length, en: 'Possible duplicate collections', action: () => setDupOpen(true) },
     { n: c.unapprovedExpenses.length, en: 'Expenses to approve', page: 'expenses' },
@@ -113,6 +116,8 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
   const [list, setList] = useState(invoices);
   const [shops, setShops] = useState<Map<string, { name: string; pref?: string }>>(new Map());
   const [products, setProducts] = useState<Map<string, string>>(new Map());
+  const [money, setMoney] = useState<Record<string, Awaited<ReturnType<typeof differenceMoney>>>>({});
+  useEffect(() => { (async () => { const m: typeof money = {}; for (const i of invoices) m[i.id] = await differenceMoney(i); setMoney(m); })(); }, [invoices]);
   useEffect(() => { (async () => {
     setShops(new Map((await db.shops.toArray()).map(s => [s.id, { name: s.name, pref: (s as unknown as { diffPref?: string }).diffPref }])));
     setProducts(new Map((await db.products.toArray()).map(p => [p.id, p.name])));
@@ -129,6 +134,7 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
         const sh = shops.get(inv.shopId); const einv = !!(inv as unknown as { irn?: string }).irn;
         // a delivered (or printed) bill is never re-written: only a credit note for less and a new bill for extra
         const fixed = einv || !!billChangeBlock(inv, 'edit', today());
+        const m = money[inv.id];
         return (
           <div key={inv.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}><div><b>{sh?.name}</b><div className="muted">{inv.number} · {inr(inv.total)}</div></div>{sh?.pref && <span className="badge">{'usually'}: {sh.pref === 'modified' ? 'modified bill' : 'credit note'}</span>}</div>
@@ -137,8 +143,8 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
               {inv.delivery?.excess?.map(x => <div key={x.productId} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge warn">+{x.qty} {'extra'}</span></div>)}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              {!fixed && <button className={`btn grow ${sh?.pref === 'modified' ? 'primary' : ''}`} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: 11 }}>{'same number'}</span></button>}
-              <button className={`btn grow ${fixed || sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}{inv.delivery?.excess?.length ? <span className="muted" style={{ fontSize: 11 }}>{' + new bill for extra'}</span> : null}</button>
+              {!fixed && <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${sh?.pref === 'modified' ? 'primary' : ''}`} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: 11 }}>{'same number'}</span></button>{m && <span className="muted" style={{ fontSize: 12 }}>{`Bill becomes ${inr(m.becomes)}`}</span>}</div>}
+              <div className="grow stack" style={{ gap: 4 }}><button className={`btn ${fixed || sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}{inv.delivery?.excess?.length ? <span className="muted" style={{ fontSize: 11 }}>{' + new bill for extra'}</span> : null}</button>{m && <span className="muted" style={{ fontSize: 12 }}>{[m.back ? `Bill stays; shop gets ${inr(m.back)} back` : 'Bill stays', m.extra ? `new bill about ${inr(m.extra)} for the extra` : ''].filter(Boolean).join(' · ')}</span>}</div>
             </div>
             {fixed && <div className="muted">{einv ? 'E-invoiced bill — only a credit note is allowed.' : 'Delivered bill — less goes on a credit note, extra on a new bill.'}</div>}
           </div>

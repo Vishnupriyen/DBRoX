@@ -8,7 +8,7 @@ import { askText } from './dialog';
 import { Pack } from './Pack';
 import type { Order, Product, Shop } from '../core/types';
 
-type Hist = Awaited<ReturnType<typeof shopHistory>>;
+type Hist = Awaited<ReturnType<typeof shopHistory>> & { late: number }; // late: days past the credit days
 
 // Bill → Orders received. The owner sees the shop's history before saying yes; clean orders approve in one tap.
 export function OrdersReceived() {
@@ -26,7 +26,7 @@ export function OrdersReceived() {
       setProducts(new Map((await db.products.toArray()).map(p => [p.id, p])));
       const os = (await db.orders.toArray()).filter(o => o.status === 'new' || o.status === 'needs_ok').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const dues = await allOutstanding(); // one pass over the bills for every shop, not one per order
-      const hist = (s: Shop): Hist => { const d = dues.get(s.id); return { bills: d?.bills ?? 0, amount: d?.amount ?? 0, oldestDays: d?.oldestDays ?? 0, limit: s.creditLimit, days: s.creditDays }; };
+      const hist = (s: Shop): Hist => { const d = dues.get(s.id); return { bills: d?.bills ?? 0, amount: d?.amount ?? 0, oldestDays: d?.oldestDays ?? 0, late: d?.maxOverdueDays ?? 0, limit: s.creditLimit, days: s.creditDays }; };
       // an order for a shop not here yet (a company rep's just-requested shop) waits until the shop arrives
       setOrders(os.filter(o => shops.has(o.shopId)).map(o => { const shop = shops.get(o.shopId)!; return { ...o, shop, hist: hist(shop), salesman: who(o) }; }));
     })();
@@ -52,14 +52,15 @@ export function OrdersReceived() {
             </div>
             {/* shop history strip — the one line that decides credit */}
             <div className={`hist ${warn ? 'bad' : ''}`}>
+              {/* one line: what is unpaid and how late it is (it used to say "oldest 12 days" here and "Overdue 5 days" below) */}
               <Store size={14} /> {o.hist.bills
-                ? <><b>{inr(o.hist.amount)}</b> {'unpaid on'} {plural(o.hist.bills, 'bill')} · {'oldest'} <b>{plural(o.hist.oldestDays, 'day')}</b></>
-                : <>{'No unpaid bills'}</>}
-              {o.hist.limit > 0 && <> · {'credit limit'} {inr(o.hist.limit)}</>}{o.hist.days > 0 && <> · {plural(o.hist.days, 'day')} {'credit'}</>}
+                ? <><b>{inr(o.hist.amount)}</b> {'unpaid'} · {o.hist.late > 0 ? <b>{plural(o.hist.late, 'day')} {'past credit'}</b> : 'within credit'}</>
+                : <>{'No unpaid bills'}{o.hist.days > 0 && <> · {plural(o.hist.days, 'day')} {'credit'}</>}</>}
+              {o.hist.limit > 0 && o.hist.amount + value(o) > o.hist.limit && <> · {'over limit'} {inr(o.hist.limit)}</>}
             </div>
             {o.rateRemark && <div className="alert"><MessageSquare /><div><b>{'Rate request'}:</b> {o.rateRemark}</div></div>}
             {o.source !== 'salesman' && o.source !== 'company' && <div className="row" style={{ alignItems: 'center', gap: 6 }}><span className="muted">{'How did this order come?'}</span><select value={o.source === 'office' ? '' : o.source} onChange={async e => { const cs = new ChangeSet(); cs.put('orders', { ...o, source: (e.target.value || 'office') as Order['source'] }, 'order source'); await cs.commit('Order source'); setTick(x => x + 1); }}><option value="">{'pick'}</option><option value="phone">{'Phone'}</option><option value="in_person">{'In person'}</option><option value="whatsapp">WhatsApp</option><option value="other">{'Other'}</option></select></div>}
-            {o.issues.length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.map((x, i) => <div key={i}>{x}</div>)}</div></div>}
+            {o.issues.filter(x => !/^Overdue \d+ days/.test(x)).length > 0 && <div className="alert"><AlertTriangle /><div>{o.issues.filter(x => !/^Overdue \d+ days/.test(x)).map((x, i) => <div key={i}>{x}</div>)}</div></div>}
             <div className="list">
               {o.lines.map(l => { const p = products.get(l.productId); return <div key={l.productId} className="row" style={{ flexWrap: 'nowrap' }}>{p && <Pack product={p} />}<span className="grow">{p?.name}</span><span className="num" style={{ fontWeight: 700 }}>{l.qty}</span><span className="muted num">× {inr(l.rate)}</span></div>; })}
             </div>

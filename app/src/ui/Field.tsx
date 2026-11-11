@@ -4,7 +4,7 @@ import { Play, Square, MapPin, ShoppingCart, Camera, Ban, Check, Minus, Plus, Ch
 import { db, session, thisMonth, today } from '../core/db';
 import { inr as inrExact, plural, showDate } from '../core/i18n';
 import {
-  applyLeave, dayName, decideLeave, endDay, fieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
+  applyLeave, countedVisit, dayName, decideLeave, endDay, fieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
   repSales, requestShop, setTarget, startDay, teamToday, todaysBeat, visitShop, DAY_NAMES, type RepRow,
 } from '../core/field';
 import { myTeam } from '../core/company';
@@ -12,6 +12,7 @@ import { TravelApprovals } from './CompanyClaims';
 import { getPos } from './Beat';
 import { PhotoButton } from './PhotoButton';
 import { askText, confirmBox, notify } from './dialog';
+import { useBack } from './useBack';
 import type { DbLink, LeaveRequest, Order, Product, Shop, Staff, Visit, WorkDay } from '../core/types';
 
 const inr = (n: number) => inrExact(Math.round(n));
@@ -52,23 +53,24 @@ export function MyWorkDay() {
 }
 
 // ---------------------------------------------------------------- today's beat → visit
-export function TodaysBeat() {
+export function TodaysBeat({ onDay }: { onDay?: () => void }) {
   const [rows, setRows] = useState<{ shop: Shop; visit?: Visit }[] | null>(null);
   const [open, setOpen] = useState<Shop | null>(null);
   const [all, setAll] = useState(false);
   const [started, setStarted] = useState(true);
   const load = async () => {
     setStarted(!!(await myDay()));
-    if (all) { const vs = (await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === session().userId); setRows((await myShops()).sort((a, b) => a.name.localeCompare(b.name)).map(shop => ({ shop, visit: vs.find(v => v.shopId === shop.id) }))); }
+    if (all) { const vs = (await db.visits.where('date').equals(today()).toArray()).filter(v => v.staffId === session().userId && countedVisit(v)); setRows((await myShops()).sort((a, b) => a.name.localeCompare(b.name)).map(shop => ({ shop, visit: vs.find(v => v.shopId === shop.id) }))); }
     else setRows(await todaysBeat());
   };
   useEffect(() => { void load(); }, [all]);
+  useBack(() => { if (!open) return false; setOpen(null); void load(); return true; });
   if (open) return <ShopVisit shop={open} onBack={() => { setOpen(null); void load(); }} />;
   if (!rows) return <div className="card muted">{'Loading…'}</div>;
   const done = rows.filter(r => r.visit).length;
   return (
     <div className="stack">
-      {!started && <div className="card" style={{ borderColor: 'var(--warn)' }}>{'Start your day first (Home → My day), so your km count.'}</div>}
+      {!started && <div className="card" style={{ borderColor: 'var(--warn)' }}><div>{'Start your day first, so your km count.'}</div>{onDay && <button className="btn primary block" style={{ marginTop: 8 }} onClick={onDay}>{'Open My day'} →</button>}</div>}
       <div className="segmented"><button className={!all ? 'on' : ''} onClick={() => setAll(false)}>{`${dayName()}'s beat`}</button><button className={all ? 'on' : ''} onClick={() => setAll(true)}>{'All my shops'}</button></div>
       <div className="muted">{`${done} of ${rows.length} visited`}</div>
       <div className="list">{rows.map(({ shop, visit }) => (
@@ -91,6 +93,12 @@ function ShopVisit({ shop, onBack }: { shop: Shop; onBack: () => void }) {
   const [dist, setDist] = useState<number | undefined>();
   const [mode, setMode] = useState<'menu' | 'order' | 'none'>('menu');
   const [busy, setBusy] = useState(false);
+  // back goes one level: order or no-order → the visit menu (an order with products asks first) → the beat
+  useBack(() => {
+    if (mode === 'menu') return false;
+    void (async () => { if (mode === 'order' && Object.values(qty).some(Boolean) && !(await confirmBox('Leave this order?', `${plural(Object.values(qty).filter(Boolean).length, 'line')} will be lost.`, 'Leave'))) return; setMode('menu'); setQty({}); })();
+    return true;
+  });
   useEffect(() => { (async () => {
     setProducts((await db.products.toArray()).filter(p => p.active).sort((a, b) => Number(!!b.focus) - Number(!!a.focus) || a.name.localeCompare(b.name)));
     const r = await visitShop(shop, await getPos()); setVisit(r.visit); setDist(r.distanceM);
@@ -152,7 +160,7 @@ export function MyOrders() {
   return (
     <div className="stack">
       <div className="list">{rows.map(({ o, shop, st }) => (
-        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[new Date(`${o.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), `${plural(o.lines.length, 'item')}`, st.status === 'billed' ? 'Billed by distributor' : 'Sent to distributor'].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
+        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[showDate(o.date), `${plural(o.lines.length, 'item')}`, st.status === 'billed' ? 'Billed by distributor' : 'Sent to distributor'].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
       ))}</div>
       {!rows.length && <div className="card muted">{'No orders this month yet.'}</div>}
     </div>
@@ -186,7 +194,7 @@ export function MyMonth() {
     const me = session().userId, m = thisMonth();
     const sales = (await repSales(m)).get(me) ?? 0;
     const target = (await db.targets.where('month').equals(m).toArray()).find(t => t.staffId === me)?.value ?? 0;
-    const vs = (await db.visits.toArray()).filter(v => v.staffId === me && v.date.slice(0, 7) === m);
+    const vs = (await db.visits.toArray()).filter(v => v.staffId === me && v.date.slice(0, 7) === m && countedVisit(v));
     setD({ sales, target, visits: vs.length, productive: vs.filter(v => v.outcome === 'order').length, leaves: (await db.leaves.where('staffId').equals(me).toArray()).sort((a, b) => b.from.localeCompare(a.from)) });
   };
   useEffect(() => { void load(); }, []);
