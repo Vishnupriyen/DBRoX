@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat } from 'lucide-react';
+import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat, Gauge } from 'lucide-react';
+import { TesraxReport } from './TesraxReport';
 import { CompanyLinks } from './CompanyLinks';
 import { SIDE_KEY } from '../core/db';
 import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
@@ -15,7 +16,7 @@ import { BillEditor } from './BillEditor';
 import { cancelInvoice } from '../core/pipeline';
 import { errorLog } from './Safety';
 
-type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links';
+type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links' | 'tesrax';
 
 export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
@@ -36,12 +37,14 @@ export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout
   if (page === 'bills') return <>{back}<Bills canCancel={boss} /></>;
   if (page === 'claims') return <>{back}<Claims /></>;
   if (page === 'links') return <>{back}<CompanyLinks editable={role === 'owner'} /></>;
+  if (page === 'tesrax') return <>{back}<TesraxReport /></>;
   return (
     <div className="list">
       {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
       {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
       {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
       {boss && <button className="item" onClick={() => setPage('links')}><Link2 /> <span className="grow">Company links</span></button>}
+      {role === 'owner' && <button className="item" onClick={() => setPage('tesrax')}><Gauge /> <span className="grow">TESRAX report</span></button>}
       {role === 'owner' && onPlan && <button className="item" onClick={onPlan}><CreditCard /> <span className="grow">Plan & billing</span></button>}
       {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {

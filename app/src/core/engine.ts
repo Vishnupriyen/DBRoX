@@ -30,6 +30,7 @@ export interface Reply {
   replaces?: boolean;       // a follow-up that changed the table just shown (the old one is closed)
   follow?: 'tap' | 'dropped'; // "yes" (tap ✓ to save) / "no" (table dropped)
   refused?: boolean;        // a clear no: not this role's screen or action
+  missed?: boolean;         // TESRAX did not understand (counted in the TESRAX report)
 }
 export { handle } from './converse';
 /** "8 cases", "8 cases + 4 pcs", "4 pcs" */
@@ -313,7 +314,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (!lines.some(l => bestProduct(active, l.productText).product)) {
       // say what was understood and what was not, in two lines (never a page of examples)
       const words = lines.map(l => `"${l.productText}"`).join(', ');
-      return { text: `Found ${shop!.name}, but no product called ${words}.\nCheck the name, or say it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn' };
+      return { text: `Found ${shop!.name}, but no product called ${words}.\nCheck the name, or say it like: "${shop!.name} 2 case Surf, 24 Good Day".`, tone: 'warn', missed: true };
     }
   }
   if (shop && lines.length) {
@@ -331,7 +332,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     : role === 'delivery' ? ['"Kumar Mart paid 1000 cash"', '"diesel 800"', '"my trip"']
     : role === 'godown' ? ['"5 Good Day damaged"', '"how much surf"', '"load sheet"']
     : ['"Murugan Stores 2 case Surf"', '"who owes more than 5000"', '"cancel Kumar Mart bill"'];
-  return { text: `I didn't get that. Try ${tries.join(', ')}, or say "help" for everything I can do.`, tone: 'warn' };
+  return { text: `I didn't get that. Try ${tries.join(', ')}, or say "help" for everything I can do.`, tone: 'warn', missed: true };
 }
 
 // "not 500 … 300", "300 not 500", "500 to 300" (with change/adjust/correct), "wrong … it is 300"

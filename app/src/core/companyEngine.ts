@@ -103,7 +103,7 @@ export async function handleCompany(textIn: string, role: Role): Promise<Reply> 
   if (role === 'rep') {
     const hit = REP_SCREENS.find(x => has(text, x.words));
     if (hit) return { text: `Opening ${hit.name}.`, go: hit.page };
-    return { text: `I didn't understand that yet.\n\n${REP_HELP}` };
+    return { text: 'I didn\'t get that. Try "lunch 120", "Murugan Stores 2 case coconut oil" or "my day", or say "help" for everything I can do.', tone: 'warn', missed: true };
   }
   const links = await myLinks(session().userId);
   const ids = new Set(links.map(l => l.id));
@@ -127,5 +127,5 @@ export async function handleCompany(textIn: string, role: Role): Promise<Reply> 
     return { text: `Opening ${hit.name}.`, go: hit.page };
   }
   void db;
-  return { text: `I didn't understand that yet.\n\n${COMPANY_HELP}` };
+  return { text: 'I didn\'t get that. Try "sales this month", "low stock" or "team today", or say "help" for everything I can do.', tone: 'warn', missed: true };
 }

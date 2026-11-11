@@ -9,8 +9,9 @@ import type { Invoice, Role } from '../core/types';
 import { notify } from './dialog';
 import { TesraxCore, type CoreState } from './TesraxCore';
 import { sound } from '../core/sound';
+import { noteMessage, noteOutcome } from '../core/tesraxReport';
 
-interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[]; closed?: boolean; replaced?: string }
+interface Msg { id: number; from: 'me' | 'bot'; text: string; files?: string[]; reply?: Reply; batchId?: string; undone?: boolean; invoices?: Invoice[]; closed?: boolean; replaced?: string; day?: string; changed?: boolean }
 
 const SUGGEST: Record<Role, string[]> = {
   owner: ['orders received', 'delivery plan', 'diesel 1500', 'who owes more than 5000', 'P&L', 'GST', 'Karthik leave tomorrow', 'help'],
@@ -51,14 +52,20 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
       // the table or question just shown, so a reply like "make it 600" or "Murugan" can refer to it
       const lastBot = [...msgs].reverse().find(m => m.from === 'bot' && m.reply && !m.reply.parts);
       const open = lastBot && !lastBot.closed && (lastBot.reply!.proposal || lastBot.reply!.pending) ? lastBot : undefined;
+      const t0 = performance.now();
       const reply = await handle(said, fs, { last: open?.reply });
+      const day = await noteMessage(role, said, reply, performance.now() - t0);
       if (reply.replaces && open) setMsgs(x => x.map(y => y.id === open.id ? { ...y, closed: true, replaced: reply.follow === 'dropped' ? 'Dropped — nothing saved.' : 'Changed — see below.' } : y));
-      push({ from: 'bot', text: reply.text, reply: reply.parts ? { text: reply.text, parts: [] } : reply });
-      for (const part of reply.parts ?? []) push({ from: 'bot', text: part.text, reply: part });
+      if (reply.replaces && open && reply.follow === 'dropped' && open.reply?.proposal) void noteOutcome(open.day ?? day, role, 'cancelled');
+      // a table changed by a follow-up ("make it 600") counts as edited when it is approved
+      const changed = !!(reply.replaces && open) || undefined;
+      push({ from: 'bot', text: reply.text, reply: reply.parts ? { text: reply.text, parts: [] } : reply, day, changed });
+      for (const part of reply.parts ?? []) push({ from: 'bot', text: part.text, reply: part, day });
       setBusy(false);
       if (reply.tone === 'warn' || reply.tone === 'error') sound.warn(); else { sound.done(); setReady(true); setTimeout(() => setReady(false), 1600); }
       if (reply.go && onGo) setTimeout(() => onGo(reply.go!), 350);
     } catch (e) {
+      void noteMessage(role, said, null, 0);
       sound.warn();
       push({ from: 'bot', text: `Something went wrong: ${(e as Error).message}`, reply: { text: '', tone: 'error' } });
     } finally { setBusy(false); }
@@ -77,7 +84,9 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
     r.start();
   };
 
-  const onDone = (msgId: number) => (res: { message: string; batchId: string; invoices?: Invoice[] } | null) => {
+  const onDone = (msgId: number) => (res: { message: string; batchId: string; invoices?: Invoice[]; edited?: boolean } | null) => {
+    const m = msgs.find(y => y.id === msgId);
+    if (m?.day) void noteOutcome(m.day, role, !res ? 'cancelled' : res.edited || m.changed ? 'edited' : 'approved');
     setMsgs(x => x.map(y => y.id === msgId ? { ...y, closed: true } : y));
     if (!res) return;
     push({ from: 'bot', text: res.message, batchId: res.batchId, invoices: res.invoices });
