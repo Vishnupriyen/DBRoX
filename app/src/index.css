@@ -19,7 +19,7 @@
   --teal: #4FE3D6;
   --pale: #E6E9F4;
   --amber: #F9B55B;
-  --g: linear-gradient(90deg, #4FE3D6 0%, #E6E9F4 50%, #F9B55B 100%);
+  --g: #4FE3D6; /* the signature colour: solid teal (no gradient — owner, 11 Nov 2026) */
   --on-g: #0B1024;
   /* semantic (never the accent) */
   --ok: #4FE3A0;
