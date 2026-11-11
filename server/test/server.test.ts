@@ -141,6 +141,41 @@ describe('DBRoX server', () => {
     expect(bad.body.rejected).toContain('payments|retry-pay');
   });
 
+  it('uploads offline start, delivery and end together while denying foreign trips', async () => {
+    const d = await post('/v1/login', { phone: '9844444444', pin: '5555' });
+    const at = new Date(Date.now() - 10000).toISOString();
+    const start = new Date(Date.now() - 6000).toISOString();
+    const finish = new Date(Date.now() - 3000).toISOString();
+    const trip = { id: 'combined-trip', driverId: 'dr1', vanId: 'v1', stops: ['shop1'], track: [],
+      date: at.slice(0, 10), status: 'loaded', updatedAt: at };
+    const other = { ...trip, id: 'foreign-trip', driverId: 'other-driver' };
+    const inv = { id: 'combined-bill', number: 'SYNC-1', tripId: trip.id, vanId: 'v1',
+      shopId: 'shop1', taxable: 100, total: 100, deliveryStatus: 'planned',
+      lines: [{ productId: 'p1', qty: 1, rate: 100, batches: [{ batchId: 'b1', qty: 1 }] }],
+      updatedAt: at };
+    await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'trips', id: trip.id, updatedAt: at, data: trip },
+      { table: 'trips', id: other.id, updatedAt: at, data: other },
+      { table: 'invoices', id: inv.id, updatedAt: at, data: inv }
+    ] }, owner.token);
+    const done = { ...trip, status: 'done', startedAt: start, endedAt: finish, updatedAt: finish };
+    const delivered = { ...inv, deliveryStatus: 'delivered',
+      delivery: { at: finish, by: 'dr1', shortages: [] }, updatedAt: finish };
+    const test = await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'invoices', id: inv.id, updatedAt: finish, data: delivered },
+      { table: 'trips', id: trip.id, updatedAt: finish, data: done }
+    ] }, d.body.token);
+    expect(test.body.rejected).toEqual([]);
+    expect(test.body.accepted).toContain('trips|combined-trip');
+    expect(test.body.accepted).toContain('invoices|combined-bill');
+    const fail = await post('/v1/sync', { cursor: 0, changes: [
+      { table: 'trips', id: other.id, updatedAt: finish, data: { ...other, status: 'out', startedAt: start } },
+      { table: 'trips', id: 'new-trip', updatedAt: finish, data: { ...trip, id: 'new-trip', status: 'out', startedAt: start } }
+    ] }, d.body.token);
+    expect(fail.body.rejected).toContain('trips|foreign-trip');
+    expect(fail.body.rejected).toContain('trips|new-trip');
+  });
+
   it('TESRAX report counts: each phone writes only its own, so the pilot numbers cannot be faked (11 Nov 2026)', async () => {
     const now = new Date().toISOString(), day = now.slice(0, 10);
     const d = await post('/v1/login', { phone: '9844444444', pin: '5555' }); // the driver from the test above
