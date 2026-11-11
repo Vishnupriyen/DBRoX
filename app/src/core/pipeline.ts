@@ -199,9 +199,10 @@ export async function tripLoaded(tripId: string) {
 }
 
 export async function startTrip(tripId: string) {
-  const t = (await db.trips.get(tripId))!;
+  const t = await db.trips.get(tripId);
+  if (!t || t.driverId !== session().userId || t.status !== 'loaded') throw new Error('This trip must be loaded and assigned to you before starting.');
   const cs = new ChangeSet();
-  cs.put('trips', { ...t, status: 'out', startedAt: nowIso(), driverId: t.driverId ?? session().userId }, 'trip started');
+  cs.put('trips', { ...t, status: 'out', startedAt: nowIso() }, 'trip started');
   for (const inv of await db.invoices.where('tripId').equals(tripId).toArray()) if (inv.deliveryStatus === 'planned') cs.put('invoices', { ...inv, deliveryStatus: 'out' }, 'out for delivery');
   await cs.commit('Trip started');
 }
@@ -381,7 +382,7 @@ export async function counts() {
   const outOfStock = products.filter(p => p.active && !batches.some(b => b.productId === p.id && b.qty > 0 && b.expiry >= today())).length;
   const claims = await db.claims.toArray();
   const me = await db.staff.get(session().userId);
-  const myTrip = me?.role === 'delivery' ? trips.find(t => t.status !== 'done' && (t.driverId === me.id || (me.vanId && t.vanId === me.vanId))) : undefined;
+  const myTrip = me?.role === 'delivery' ? trips.find(t => t.status !== 'done' && t.driverId === me.id) : undefined;
   const myStops = myTrip ? new Set(invs.filter(i => i.tripId === myTrip.id && ['planned', 'out'].includes(i.deliveryStatus)).map(i => i.shopId)).size : 0;
   return {
     toApproveOrders: orders.filter(o => o.status === 'new' || o.status === 'needs_ok').length,

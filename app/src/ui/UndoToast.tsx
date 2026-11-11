@@ -7,6 +7,12 @@ import { sideNow, undoBatch } from '../core/db';
 const CROSSES = new Set(['products', 'schemes', 'primaryInvoices', 'orders', 'shopRequests', 'claimDecisions', 'dbLinks', 'workDays']);
 // distributor side: a goods receipt, a claim sent or an order to a linked company has already reached the company
 const DB_CROSSES = new Set(['receipts', 'primaryOrders']);
+// Only explicitly proven reversible actions may expose Undo. Financial and delivery transitions
+// cannot be rolled back by writing an older snapshot after the server has already accepted them.
+export const UNSAFE_UNDO_TABLES = new Set(['invoices', 'payments', 'trips', 'creditNotes', 'batches', 'dayCloses', 'audit', 'settings', 'receipts', 'primaryInvoices', 'primaryOrders', 'claimDecisions']);
+export function mayOfferUndo(tables: string[], label: string): boolean {
+  return !tables.some(table => UNSAFE_UNDO_TABLES.has(table)) && !/^(trip |delivery |payment |collected|settled|day close)/i.test(label);
+}
 import { t } from '../core/i18n';
 import { notify } from './dialog';
 
@@ -16,7 +22,7 @@ export function UndoToast() {
   useEffect(() => {
     let timer = 0;
     const on = (e: Event) => { const d = (e as CustomEvent).detail as { label: string; batchId: string }; if ((e as CustomEvent).detail.quiet || /^(undo|sync|location|shop visit)/i.test(d.label)) return; /* a quiet save (a GPS reading) has nothing to undo */ const tables = ((e as CustomEvent).detail.tables as string[] | undefined) ?? [];
-      if (sideNow() === 'company' ? tables.some(t => CROSSES.has(t)) : (tables.some(t => DB_CROSSES.has(t)) || /^Claim to /.test(d.label))) return; setCur(d); window.clearTimeout(timer); timer = window.setTimeout(() => setCur(null), 6000); };
+      if (!mayOfferUndo(tables, d.label) || (sideNow() === 'company' ? tables.some(t => CROSSES.has(t)) : (tables.some(t => DB_CROSSES.has(t)) || /^Claim to /.test(d.label)))) return; setCur(d); window.clearTimeout(timer); timer = window.setTimeout(() => setCur(null), 6000); };
     window.addEventListener('dbrox:commit', on); return () => { window.removeEventListener('dbrox:commit', on); window.clearTimeout(timer); };
   }, []);
   if (!cur) return null;

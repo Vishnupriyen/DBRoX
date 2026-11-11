@@ -11,6 +11,7 @@ import { relayIdle } from './link.js';
 import { coverIdle } from './reports.js';
 import { archiveAll, archiveMonth, archiveMonths, DB_ARCHIVE } from './archive.js';
 import { acceptInvite, companyRule, drainRelay, findInvite, keepCompanyFields, leaveLink, relayChanges, relayOnly, resyncLink, tenantKind } from './link.js';
+import { driverTripWrite, driverInvoiceWrite, driverPaymentWrite } from './sync-guards.js';
 
 // ONE shared table definition for phone and server (shared/tables.json): a table cannot exist on one side only.
 import { readFileSync } from 'node:fs';
@@ -127,6 +128,7 @@ export async function buildApp(pool: pg.Pool) {
     const canWrite = new Set(WRITE[c.r] ?? []);
     const accepted: string[] = [];
     const rejected: string[] = [];
+    const authoritative = new Map<string, { table: string; id: string; updatedAt: string; data: Record<string, unknown> }>();
     // read before taking the lock: a lock holder that waits for a second pooled connection can freeze the server
     const st = changes.length ? await stateFor(c.t) : null;
     const kind = changes.length ? await tenantKind(pool, c.t) : 'distributor';
@@ -146,10 +148,53 @@ export async function buildApp(pool: pg.Pool) {
           UNION SELECT tbl, id FROM docs_archive_ids WHERE tenant_id=$1 AND tbl = ANY($2) AND id = ANY($3)`, [c.t, [...blockNew], want.map(w => w.id)])).rows) existing.add(`${r.tbl}|${r.id}`); // an old bill in the archive is not new
       }
       for (const ch of changes) {
-        if (blockNew.has(ch.table) && !existing.has(`${ch.table}|${ch.id}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         if (relayOnly(kind, ch.table)) { rejected.push(`${ch.table}|${ch.id}`); continue; } // only the relay writes these (privacy wall)
         if (!canWrite.has(ch.table) || typeof ch.id !== 'string' || !ch.id || !ch.updatedAt || isNaN(Date.parse(ch.updatedAt))) { rejected.push(`${ch.table}|${ch.id}`); continue; }
+        const key = `${ch.table}|${ch.id}`;
+        const priorRow = (await client.query('SELECT data, updated_at FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [c.t, ch.table, ch.id])).rows[0];
+        const prior = priorRow?.data as Record<string, unknown> | undefined;
+        // Strictly older retries cannot write. Return the authoritative row even when the
+        // request cursor is already ahead of it (lost response + subsequent owner approval).
+        // Validate basic write permission first; do not skip role/ownership checks on retries.
+        if (priorRow && Date.parse(ch.updatedAt) < new Date(priorRow.updated_at).getTime()) {
+          const belongs = ch.table === 'trips' ? (c.r !== 'delivery' || prior?.driverId === c.u)
+            : ch.table === 'invoices' ? (c.r !== 'delivery' || (await client.query(
+                'SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
+                [c.t, 'trips', String(prior?.tripId ?? '')]
+              )).rows[0]?.data?.driverId === c.u)
+            : ch.table === 'payments' ? (c.r !== 'delivery' || prior?.collectedBy === c.u)
+            : true;
+          if (!belongs) { rejected.push(key); continue; }
+          accepted.push(key);
+          if ((READ[c.r] ?? []).includes(ch.table)) authoritative.set(key, {
+            table: ch.table, id: ch.id, updatedAt: new Date(priorRow.updated_at).toISOString(), data: prior!
+          });
+          continue;
+        }
+        if (blockNew.has(ch.table) && !existing.has(key)) { rejected.push(key); continue; }
         let data: Record<string, unknown> = { ...ch.data, tenantId: c.t, id: ch.id };
+        if (c.r === 'delivery') {
+          if (ch.table === 'trips') {
+            const reason = driverTripWrite(c.u, data, prior);
+            if (reason) { rejected.push(key); continue; }
+          }
+          if (ch.table === 'invoices') {
+            const tripId = String(prior?.tripId ?? '');
+            const trip = tripId ? (await client.query(
+              'SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
+              [c.t, 'trips', tripId]
+            )).rows[0]?.data as Record<string, unknown> | undefined : undefined;
+            const tripChange = changes.find(p => p.table === 'trips' && p.id === tripId);
+            const startedOrEnding = !!trip && !!tripChange &&
+              !driverTripWrite(c.u, { ...tripChange.data, tenantId: c.t, id: tripId }, trip);
+            const reason = driverInvoiceWrite(c.u, data, prior, trip, startedOrEnding);
+            if (reason) { rejected.push(key); continue; }
+          }
+          if (ch.table === 'payments') {
+            const reason = driverPaymentWrite(c.u, data, prior);
+            if (reason) { rejected.push(key); continue; }
+          }
+        }
         // TESRAX report counts are the proof behind its claims: a phone writes only its own signed-in user's days
         if (ch.table === 'tesraxDays' && (data.staffId !== c.u || ch.id !== `${c.u}|${String(data.day)}`)) { rejected.push(`${ch.table}|${ch.id}`); continue; }
         // the server's own checks on company records and linked products (approvals and prices are never the phone's word)
@@ -181,7 +226,24 @@ export async function buildApp(pool: pg.Pool) {
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     // the other side of each company link gets what may cross (after the save, under its own lock)
-    await relayChanges(pool, c.t, kind, accepted.map(a => { const [table, ...rest] = a.split('|'); return { table, id: rest.join('|') }; }));
+    await relayChanges(pool, c.t, kind, accepted.filter(a => !authoritative.has(a)).map(a => { const [table, ...rest] = a.split('|'); return { table, id: rest.join('|') }; }));
+    }
+
+    // A rejected newer edit must also be repaired even if its server version predates
+    // the phone's cursor. Return only records the user can normally read.
+    if (kind === 'distributor' && rejected.length) {
+      for (const key of rejected) {
+        const [table, ...parts] = key.split('|');
+        if (!(READ[c.r] ?? []).includes(table)) continue;
+        const id = parts.join('|');
+        const row = (await pool.query(
+          'SELECT data, updated_at FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
+          [c.t, table, id]
+        )).rows[0];
+        if (row) authoritative.set(key, {
+          table, id, data: row.data, updatedAt: new Date(row.updated_at).toISOString()
+        });
+      }
     }
 
     const cursor = Number(b.cursor ?? 0);
@@ -205,7 +267,9 @@ export async function buildApp(pool: pg.Pool) {
       more: rows.length === config.pullLimit,
       accepted, rejected,
       // owner-only fields (purchase rate, UPI id …) never reach a staff phone
-      changes: rows.map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.tbl]) { d = { ...d }; for (const f of OWNER_ONLY[r.tbl]) delete d[f]; } return { table: r.tbl, id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: d }; }),
+      changes: [...rows.map(r => ({ table: r.tbl as string, id: r.id as string, updatedAt: new Date(r.updated_at).toISOString(), data: r.data as Record<string, unknown> })),
+        ...[...authoritative.values()].filter(a => !rows.some(r => r.tbl === a.table && r.id === a.id))]
+        .map(r => { let d = r.data; if (c.r !== 'owner' && c.r !== 'office' && OWNER_ONLY[r.table]) { d = { ...d }; for (const f of OWNER_ONLY[r.table]) delete d[f]; } return { ...r, data: d }; }),
     };
   });
 

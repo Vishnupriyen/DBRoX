@@ -132,7 +132,17 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     const res: { cursor: number; changes: Change[]; accepted: string[]; rejected?: string[]; more?: boolean; licence?: string } = await r.json();
     await saveLicence(res.licence); // every sync renews the licence
     const accepted = new Set(res.accepted);
-    await db.transaction('rw', SYNC_TABLES.map(t => db.table(t)), async () => {
+    await db.transaction('rw', [...SYNC_TABLES.map(t => db.table(t)), db.meta], async () => {
+      // Keep a durable warning across restarts. The server decision wins, but the
+      // operator must be able to review a rejected offline entry rather than lose it silently.
+      if (res.rejected?.length) {
+        const prior = (await db.meta.get('syncWarnings'))?.value;
+        const warnings = Array.isArray(prior) ? prior as { key: string; at: string; recovered: boolean }[] : [];
+        const incoming = res.rejected.map(key => ({
+          key, at: new Date().toISOString(), recovered: res.changes.some(c => `${c.table}|${c.id}` === key)
+        }));
+        await db.meta.put({ key: 'syncWarnings', value: [...warnings, ...incoming].slice(-100) });
+      }
       // refused by the server (not this role's to write, or already decided): marked clean, so the server's own copy
       // replaces it on the next pull instead of this phone holding a version nobody else has
       const refused = new Set(res.rejected ?? []);
@@ -150,7 +160,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     await db.meta.put({ key: 'cursor', value: res.cursor });
     // keep going while the server has more for us, or a table had more waiting than one batch carries
     const morePush = accepted.size > 0 && SYNC_TABLES.some(t => changes.filter(c => c.table === t).length >= 500);
-    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.`, !!res.more || morePush);
+    return done(`Synced: sent ${accepted.size}, received ${res.changes.length}.` + (res.rejected?.length ? ` ${res.rejected.length} local change(s) rejected; review sync warnings.` : ''), !!res.more || morePush);
   } catch (e) {
     return done(`Sync paused: ${(e as Error).message}. Data is safe on this phone.`);
   } finally { running = false; }

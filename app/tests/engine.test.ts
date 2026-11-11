@@ -51,16 +51,16 @@ describe('RoX Engine', () => {
     expect(claims.some(c => c.invoiceId === hul.id && c.amount === 67.2)).toBe(true);
   });
 
-  it('payment goes to oldest bill first and can be undone', async () => {
+  it('payment goes to oldest bill first and cannot be silently undone after recording', async () => {
     const r = await handle('Murugan Stores paid 1000 cash', []);
     const before = (await invoiceBalances((r.proposal!.fields[0].value) as string)).filter(b => b.balance > 0.5);
     const res = await commit(r.proposal!);
     const after = (await invoiceBalances((r.proposal!.fields[0].value) as string));
     const oldest = after.find(b => b.invoice.id === before[0].invoice.id)!;
     expect(oldest.balance).toBeCloseTo(Math.max(0, before[0].balance - 1000), 1);
-    expect(await undoBatch(res.batchId)).toBeGreaterThan(0);
-    const back = await invoiceBalances(r.proposal!.fields[0].value as string);
-    expect(back.find(b => b.invoice.id === before[0].invoice.id)!.balance).toBeCloseTo(before[0].balance, 1);
+    expect(await undoBatch(res.batchId)).toBe(-1);
+    const still = await invoiceBalances(r.proposal!.fields[0].value as string);
+    expect(still.find(b => b.invoice.id === before[0].invoice.id)!.balance).toBeCloseTo(oldest.balance, 1);
   });
 
   it('flags credit-limit and cash-only issues for the owner', async () => {
