@@ -1,7 +1,18 @@
 // Server-side authorization of driver sync writes. Never trust an offline phone's
 // cached trip assignment or financial/payment approval flags.
 type Doc = Record<string, unknown>;
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+// PostgreSQL jsonb reorders object keys; compare their structure, not serialization order.
+const same = (a: unknown, b: unknown): boolean => {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b))
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => same(v, b[i]));
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aa = a as Record<string, unknown>, bb = b as Record<string, unknown>;
+    const keysA = Object.keys(aa).sort(), keysB = Object.keys(bb).sort();
+    return keysA.length === keysB.length && keysA.every((k, i) => k === keysB[i] && same(aa[k], bb[k]));
+  }
+  return false;
+};
 const iso = (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(v) && Number.isFinite(Date.parse(v));
 const unchanged = (next: Doc, prev: Doc, keys: string[]) => keys.every(k => same(next[k], prev[k]));
 
