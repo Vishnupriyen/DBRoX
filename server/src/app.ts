@@ -157,7 +157,7 @@ export async function buildApp(pool: pg.Pool) {
         // request cursor is already ahead of it (lost response + subsequent owner approval).
         // Validate basic write permission first; do not skip role/ownership checks on retries.
         if (priorRow && Date.parse(ch.updatedAt) < new Date(priorRow.updated_at).getTime()) {
-          const belongs = ch.table === 'trips' ? prior?.driverId === c.u
+          const belongs = ch.table === 'trips' ? (c.r !== 'delivery' || prior?.driverId === c.u)
             : ch.table === 'invoices' ? (c.r !== 'delivery' || (await client.query(
                 'SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3',
                 [c.t, 'trips', String(prior?.tripId ?? '')]
