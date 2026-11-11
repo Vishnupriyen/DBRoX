@@ -115,6 +115,32 @@ describe('DBRoX server', () => {
     expect(dp2.body.changes.find((c: { id: string }) => c.id === 'l1')?.data.status).toBe('approved');
   });
 
+  it('lost-response staff payment retries reconcile with owner settlement', async () => {
+    const d = await post('/v1/login', { phone: '9844444444', pin: '5555' });
+    const oldAt = new Date(Date.now() - 10000).toISOString();
+    const ownerAt = new Date(Date.now() - 5000).toISOString();
+    const futureAt = new Date(Date.now() + 10000).toISOString();
+    const pay = { id: 'retry-pay', shopId: 'shop1', amount: 450, mode: 'cash',
+      collectedBy: 'dr1', allocations: [], advance: 450, date: oldAt.slice(0, 10),
+      status: 'ok', settled: false, updatedAt: oldAt };
+    const original = [{ table: 'payments', id: pay.id, updatedAt: oldAt, data: pay }];
+    const initial = await post('/v1/sync', { cursor: 0, changes: original }, d.body.token);
+    expect(initial.body.accepted).toContain('payments|retry-pay');
+    const ownerWrite = await post('/v1/sync', { cursor: 0, changes: [{
+      table: 'payments', id: pay.id, updatedAt: ownerAt,
+      data: { ...pay, settled: true, updatedAt: ownerAt }
+    }] }, owner.token);
+    expect(ownerWrite.body.accepted).toContain('payments|retry-pay');
+    const retry = await post('/v1/sync', { cursor: ownerWrite.body.cursor, changes: original }, d.body.token);
+    expect(retry.body.accepted).toContain('payments|retry-pay');
+    expect(retry.body.changes.find((x: { id: string }) => x.id === 'retry-pay')?.data.settled).toBe(true);
+    const bad = await post('/v1/sync', { cursor: ownerWrite.body.cursor, changes: [{
+      table: 'payments', id: pay.id, updatedAt: futureAt,
+      data: { ...pay, amount: 999, updatedAt: futureAt }
+    }] }, d.body.token);
+    expect(bad.body.rejected).toContain('payments|retry-pay');
+  });
+
   it('TESRAX report counts: each phone writes only its own, so the pilot numbers cannot be faked (11 Nov 2026)', async () => {
     const now = new Date().toISOString(), day = now.slice(0, 10);
     const d = await post('/v1/login', { phone: '9844444444', pin: '5555' }); // the driver from the test above
