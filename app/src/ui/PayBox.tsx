@@ -5,6 +5,8 @@ import { ChangeSet, getSettings, session, today } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { inr, t } from '../core/i18n';
 import { PhotoButton } from './PhotoButton';
+import { collectionCheck } from '../core/credit';
+import { confirmBox, notify } from './dialog';
 import type { Payment, Shop } from '../core/types';
 
 
@@ -29,7 +31,18 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
   const toggle = (id: string) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); if (!amount) setAmount(0); return n; });
   const canSave = chosen.length > 0 && amount > 0 && (mode === 'cash' || ref.length >= 4 || !!photo);
 
+  const [saving, setSaving] = useState(false);
   const save = async () => {
+    if (saving) return; // locked while saving: one tap = one payment
+    setSaving(true);
+    try {
+      // more than everything the shop owes is usually a typing mistake: ask first
+      const big = await collectionCheck(shop.id, amount);
+      if (big && !(await confirmBox(big, 'Check the amount with the shop before saving.', 'Yes, save'))) return;
+      await saveOnce();
+    } catch (e) { await notify('Not saved', (e as Error).message); } finally { setSaving(false); }
+  };
+  const saveOnce = async () => {
     // allocate to the chosen bills oldest first; anything left is advance (carried to the next bill automatically)
     let left = amount; const allocations: { invoiceId: string; amount: number }[] = [];
     for (const b of chosen) { if (left <= 0) break; const a = Math.min(b.balance, left); allocations.push({ invoiceId: b.id, amount: r2(a) }); left = r2(left - a); }
@@ -62,7 +75,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
         </>}
         {mode === 'cheque' && <div className="field"><label>{'Cheque no · bank · date'}</label><input value={ref} onChange={e => setRef(e.target.value)} placeholder="123456 SBI 12/11" /></div>}
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>{t('shopConfirm')}</p>
-        <button className="btn ok-huge" disabled={!canSave} onClick={save} aria-label="Shop confirms payment"><Check size={84} /></button>
+        <button className="btn ok-huge" disabled={!canSave || saving} onClick={save} aria-label="Shop confirms payment"><Check size={84} /></button>
       </>}
       {onSkip && <button className="btn ghost" onClick={onSkip}>{'No payment today'}</button>}
     </div>

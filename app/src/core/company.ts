@@ -2,6 +2,7 @@
 // Words used in the app: "Sales to distributors" (primary: company → distributor) and "Distributor sales to shops"
 // (secondary: distributor → shop). Every save goes through ChangeSet; numbers are computed, never typed twice.
 import { ChangeSet, daysFrom, db, getSettings, newId, thisMonth, today } from './db';
+import { GST_RATES } from './gst';
 import { bestProduct, norm } from './match';
 import { weakPin, WEAK_PIN_MSG } from './sync';
 import { mapColumns, num, toIsoDate } from './readers';
@@ -41,7 +42,7 @@ export async function setNorm(id: string, normDays: number) {
 export interface ProductInput { id?: string; name: string; code?: string; hsn: string; gst: number; mrp: number; rate: number; purchaseRate: number; caseSize: number; aliases?: string[]; active?: boolean; focus?: boolean }
 export function checkProduct(p: ProductInput): string | null {
   if (!p.name.trim()) return 'Product name is needed.';
-  if (![0, 5, 12, 18, 28].includes(p.gst)) return 'GST must be 0, 5, 12, 18 or 28.';
+  if (!GST_RATES.includes(p.gst)) return `GST must be ${GST_RATES.join(', ')}.`;
   if (!(p.mrp > 0)) return 'MRP must be more than 0.';
   if (!(p.rate > 0) || p.rate > p.mrp) return 'Price to shop (PTR) must be more than 0 and not above MRP.';
   if (!(p.purchaseRate > 0) || p.purchaseRate > p.rate) return 'Price to distributor (PTD) must be more than 0 and not above PTR.';

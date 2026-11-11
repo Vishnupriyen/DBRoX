@@ -1,3 +1,4 @@
+import { fillPendingValues } from '../core/credit';
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowLeft, ClipboardCheck, Route, MapPinned, IndianRupee, Banknote, Boxes, FileCheck2, Scale, BarChart3, PackageOpen, Truck, Store, ListChecks, Upload, Users, Receipt, ShoppingBag, PackagePlus, Landmark, Wallet, PieChart, Printer, ClipboardList, Target, UserPlus, CalendarCheck, Clock, TrendingUp, Download, FileWarning, Hourglass, ReceiptText } from 'lucide-react';
@@ -51,6 +52,8 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
   useEffect(() => {
     (async () => {
       const s = await db.settings.toCollection().first();
+      // values saved on staff phones without the buying rate are filled in here (owner's phone only)
+      if (role === 'owner') void fillPendingValues({ throttle: true }).catch(() => 0);
       const mods = (await licenceState(!!ENV_SERVER, s)).mods;
       const c = await counts();
       const me = session().userId;
@@ -115,7 +118,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         sub.accountant = [
           { page: 'bank', icon: Landmark, en: 'Bank' },
           { page: 'expenses', icon: Wallet, en: 'Expenses' },
-          { page: 'pnl', icon: PieChart, en: 'P&L' },
+          ...(owner ? [{ page: 'pnl' as Page, icon: PieChart, en: 'P&L' }] : []), // profit is the owner's only
           { page: 'cashflow', icon: Scale, en: 'Cash flow' },
           { page: 'reports', icon: BarChart3, en: 'Reports' },
           { page: 'export', icon: Download, en: 'Export' },

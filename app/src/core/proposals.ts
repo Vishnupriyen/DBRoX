@@ -2,11 +2,13 @@ import { inr, showMonth, plural } from './i18n';
 // A Proposal is what the TESRAX prepares for a person to check: a header + an Excel-style table.
 // Nothing is written until the person taps ✓. Code (not AI) validates every row before that.
 import { ChangeSet, db, getSettings, session, today, undoBatch } from './db';
-import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, makeInvoices, pickBatches, stockOf } from './billing';
+import { activeSchemes, applySchemes, checkOrder, countLot, creditNoteNumbers, pickBatches, stockOf } from './billing';
 import { bookOrder, cancelInvoice, changeOrder } from './pipeline';
+import { buildCreditNote, collectionCheck, costValue, makeCreditNote, openPaid } from './credit';
+import { creditNoteDeadline, GST_RATES, shopStateCode } from './gst';
 import { allocateOldestFirst, invoiceBalances, r2, validGstin } from './ledger';
 import { toIsoDate } from './readers';
-import type { Batch, Company, CreditNote, Expense, Invoice, Order, Payment, Product, Purchase, Scheme, Shop } from './types';
+import type { Batch, Company, Expense, Invoice, Payment, Product, Purchase, Scheme, Shop } from './types';
 
 export type CellValue = string | number;
 export type Row = Record<string, CellValue>;
@@ -103,6 +105,8 @@ export async function validate(p: Proposal): Promise<Validation> {
     case 'purchase': {
       if (!s(fieldValue(p, 'companyId'))) v.fieldErrors.companyId = 'Pick the company';
       if (!s(fieldValue(p, 'billNo'))) v.fieldErrors.billNo = 'Bill number needed';
+      else if ((await db.purchases.where('companyId').equals(s(fieldValue(p, 'companyId'))).toArray()).some(x => String(x.billNo ?? '').trim().toUpperCase() === s(fieldValue(p, 'billNo')).trim().toUpperCase()))
+        v.fieldErrors.billNo = 'This company bill is already entered';
       const gstin = s(fieldValue(p, 'supplierGstin')).toUpperCase();
       if (gstin && !validGstin(gstin)) v.fieldErrors.supplierGstin = 'GSTIN looks wrong';
       let sumTaxable = 0, sumTax = 0;
@@ -178,6 +182,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       if (total <= 0) v.fieldErrors.amount = 'Amount missing';
       const mode = s(fieldValue(p, 'mode'));
       if ((mode === 'upi' || mode === 'cheque') && !s(fieldValue(p, 'ref'))) v.warnings.push('Add the UPI / cheque number to match the bank later');
+      if (p.kind === 'payment' && total > 0 && s(fieldValue(p, 'shopId'))) { const big = await collectionCheck(s(fieldValue(p, 'shopId')), total); if (big) v.warnings.push(big); }
       let alloc = 0;
       p.rows.forEach((r, i) => {
         if (n(r.pay) > n(r.balance) + 0.5) err(v, i, 'pay', `More than balance ${inr(r.balance)}`);
@@ -199,19 +204,11 @@ export async function validate(p: Proposal): Promise<Validation> {
     case 'return': {
       const shopId = s(fieldValue(p, 'shopId'));
       if (!shopId) v.fieldErrors.shopId = 'Pick the shop';
-      const settings = await getSettings();
-      let total = 0;
-      p.rows.forEach((r, i) => {
-        if (!products.get(s(r.productId))) err(v, i, 'productId', 'Pick the product');
-        if (n(r.qty) <= 0) err(v, i, 'qty', 'Quantity must be more than 0');
-        if (!s(r.invoiceId)) err(v, i, 'invoiceId', 'No bill found for this item at this shop');
-        total += n(r.amount);
-      });
-      if (total > settings.returnApprovalLimit && session().userId !== 'owner') {
-        const me = await db.staff.get(session().userId);
-        if (me?.role !== 'owner') v.warnings.push(`Above ${inr(settings.returnApprovalLimit)}: owner must approve`);
-      }
-      v.summary = `Credit note ${inr(r2(total))}`;
+      const chk = await checkReturn(p);
+      for (const e of chk.errors) err(v, e.row, e.key, e.msg);
+      if (chk.ownerOnly) v.fieldErrors.reason = chk.ownerOnly;
+      v.warnings.push(...chk.warnings);
+      v.summary = `Credit note ${inr(chk.total)} (the bill's own value of these pieces, with GST)`;
       break;
     }
     case 'products': {
@@ -219,7 +216,7 @@ export async function validate(p: Proposal): Promise<Validation> {
         if (!s(r.name)) err(v, i, 'name', 'Name missing');
         if (!s(r.companyId) && !s(r.companyName)) err(v, i, 'companyId', 'Pick company');
         if (n(r.rate) <= 0) err(v, i, 'rate', 'Selling rate missing');
-        if (![0, 5, 12, 18, 28, 40].includes(n(r.gst))) err(v, i, 'gst', 'GST % should be 0/5/12/18/28/40');
+        if (!GST_RATES.includes(n(r.gst))) err(v, i, 'gst', `GST % should be ${GST_RATES.join('/')}`);
         if (!/^\d{4,8}$/.test(s(r.hsn))) err(v, i, 'hsn', 'HSN should be 4–8 digits');
         else if (!/^(\d{6}|\d{8})$/.test(s(r.hsn))) v.warnings.push(`Row ${i + 1}: e-invoice needs a 6 or 8 digit HSN`);
       });
@@ -319,7 +316,7 @@ export async function validate(p: Proposal): Promise<Validation> {
       const get = (k: string, d: number) => { const r = p.rows.find(x => s(x.key) === k); return r ? n(r.value) : d; };
       p.rows.forEach((r, i) => {
         const k = s(r.key), val = n(r.value);
-        if (k === 'gst') { if (![0, 5, 12, 18, 28, 40].includes(val)) err(v, i, 'value', 'GST % should be 0/5/12/18/28/40'); return; }
+        if (k === 'gst') { if (!GST_RATES.includes(val)) err(v, i, 'value', `GST % should be ${GST_RATES.join('/')}`); return; }
         if (val <= 0) err(v, i, 'value', 'Must be more than 0');
         if (k === 'caseSize' && !Number.isInteger(val)) err(v, i, 'value', 'Whole pieces');
       });
@@ -505,7 +502,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       const batches = await db.batches.toArray();
       for (const r of p.rows) {
         const prod = products.get(s(r.productId))!;
-        cs.put('claimEntries', { companyId: prod.companyId, month, kind: s(r.kind) || 'damage', productId: prod.id, qty: n(r.qty), amount: n(r.amount), note: s(r.note), photo: p.meta.photo as string | undefined }, 'damage entry');
+        // a staff phone has no buying rate: the value is filled in by the owner's phone (never NaN, never shown to them)
+        const val = n(r.amount) > 0 ? { amount: r2(n(r.amount)), pending: false } : costValue(prod, n(r.qty));
+        cs.put('claimEntries', { companyId: prod.companyId, month, kind: s(r.kind) || 'damage', productId: prod.id, qty: n(r.qty), amount: val.amount, valuePending: val.pending || undefined, note: s(r.note), photo: p.meta.photo as string | undefined }, 'damage entry');
         if (s(r.fromStock) !== 'no') {
           const { picks } = pickBatches(batches, prod.id, n(r.qty), '0000-00-00');
           for (const pk of picks) {
@@ -519,29 +518,21 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
       break;
     }
     case 'return': {
-      const shopId = s(fieldValue(p, 'shopId'));
+      const chk = await checkReturn(p);
+      if (chk.ownerOnly) throw new Error(chk.ownerOnly);
+      if (chk.errors.length) throw new Error(chk.errors[0].msg);
       const byInvoice = new Map<string, Row[]>();
       for (const r of p.rows) byInvoice.set(s(r.invoiceId), [...(byInvoice.get(s(r.invoiceId)) ?? []), r]);
-      const batches = await db.batches.toArray();
       const cnNos = await creditNoteNumbers(cs, byInvoice.size);
       let i = 0;
       for (const [invoiceId, rows] of byInvoice) {
-        const inv = (await db.invoices.get(invoiceId))!;
-        const lines = rows.map(r => ({ productId: s(r.productId), qty: n(r.qty), amount: n(r.amount), restock: s(r.restock) !== 'no' }));
-        // returned pieces come off the bill's batches (so a later cancel can't restock them again); good ones go back to stock
-        for (const l of lines) {
-          const line = inv.lines.find(x => x.productId === l.productId); if (!line) continue;
-          let left = l.qty;
-          for (const lb of line.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (l.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'return to stock'); } } }
-        }
-        cs.put('invoices', { ...inv }, 'returned pieces off the bill');
-        const companyId = inv.companyId;
-        cs.put<CreditNote>('creditNotes', {
-          number: cnNos[i++], invoiceId, shopId, companyId,
-          date: today(), reason: s(fieldValue(p, 'reason')) || 'Return', lines, total: r2(lines.reduce((a, l) => a + l.amount, 0)),
-        }, 'credit note');
+        const inv = await db.invoices.get(invoiceId);
+        if (!inv) throw new Error('Bill not found.');
+        // returned pieces come off the bill's lots (so a later cancel can't restock them again); good ones go back to stock;
+        // the credit is the bill line's own value of those pieces, never a typed amount
+        await makeCreditNote(cs, inv, rows.map(r => ({ productId: s(r.productId), paid: n(r.qty), free: 0, restock: s(r.restock) !== 'no' })), { reason: s(fieldValue(p, 'reason')) || 'Return', source: 'return', takeOffBill: true, number: cnNos[i++] });
       }
-      message = `Credit note made. Shop balance reduced.`;
+      message = `Credit note made (${inr(chk.total)}). Shop balance reduced.`;
       break;
     }
     case 'products': {
@@ -586,10 +577,12 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
     case 'newshop': {
       const me = await db.staff.get(session().userId);
       for (const r of p.rows) {
+        const gstin = s(r.gstin).toUpperCase() || undefined;
         cs.put<Shop>('shops', {
-          name: s(r.name), owner: s(r.owner), phone: s(r.phone), gstin: s(r.gstin).toUpperCase() || undefined,
+          name: s(r.name), owner: s(r.owner), phone: s(r.phone), gstin, stateCode: shopStateCode({ gstin, stateCode: s(r.stateCode) || undefined }),
           area: s(r.area), beat: s(r.beat), creditLimit: n(r.creditLimit), creditDays: n(r.creditDays) || 7,
-          cashOnly: s(r.cashOnly) === 'yes', type: (s(r.type) || 'retail') as Shop['type'],
+          // credit limit 0 = cash only until the owner sets a limit (owner decision, 11 Nov 2026)
+          cashOnly: s(r.cashOnly) === 'yes' || !(n(r.creditLimit) > 0), type: (s(r.type) || 'retail') as Shop['type'],
           approved: me?.role === 'owner' || p.kind === 'shops', aliases: [], address: s(r.address),
           salesmanId: me?.role === 'salesman' ? me.id : undefined,
         }, 'shop');
@@ -669,6 +662,9 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
         else if (k === 'gstin') upd.gstin = val.toUpperCase() || undefined;
         else (upd as unknown as Record<string, string>)[k] = val;
       }
+      // a credit limit decides cash-only unless cash-only was set in the same change
+      if (p.rows.some(r => s(r.key) === 'creditLimit') && !p.rows.some(r => s(r.key) === 'cashOnly')) upd.cashOnly = !(upd.creditLimit > 0);
+      if (p.rows.some(r => s(r.key) === 'gstin' || s(r.key) === 'stateCode')) upd.stateCode = shopStateCode(upd);
       cs.put<Shop>('shops', upd, 'shop details changed');
       message = `${upd.name} updated.`;
       break;
@@ -680,18 +676,50 @@ export async function commit(p: Proposal): Promise<{ message: string; batchId: s
   return { message, batchId, invoices, orderId };
 }
 
-// Bill an order that was waiting for the owner's OK.
-export async function approveOrder(orderId: string) {
-  const order = (await db.orders.get(orderId))!;
-  const shop = (await db.shops.get(order.shopId))!;
-  const cs = new ChangeSet();
-  const o = cs.put<Order>('orders', { ...order, status: 'billed', issues: order.issues }, 'owner OK');
-  const invs = await makeInvoices(cs, o, shop);
-  o.invoiceIds = invs.map(i => i.id);
-  const batchId = await cs.commit('Owner approved order');
-  return { invoices: invs, batchId };
-}
-
 export async function balancesForShop(shopId: string) {
   return (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
+}
+
+/**
+ * A shop return, checked against its bill: pieces never more than billed minus already returned, credit = the bill line's
+ * own value (taxable + GST) of those pieces (a typed amount can only match it), and above the owner's limit only the
+ * owner can make it — on any other phone nothing is saved. Also the 30 November GST date for last year's bills.
+ */
+async function checkReturn(p: Proposal) {
+  const errors: { row: number; key: string; msg: string }[] = []; const warnings: string[] = [];
+  const shopId = s(fieldValue(p, 'shopId'));
+  const byInv = new Map<string, { rows: number[]; items: { productId: string; paid: number; free: number; restock: boolean }[] }>();
+  p.rows.forEach((r, i) => {
+    if (!s(r.productId)) errors.push({ row: i, key: 'productId', msg: 'Pick the product' });
+    if (!Number.isInteger(n(r.qty)) || n(r.qty) <= 0) errors.push({ row: i, key: 'qty', msg: 'Whole pieces, more than 0' });
+    if (!s(r.invoiceId)) errors.push({ row: i, key: 'invoiceId', msg: 'No bill found for this item at this shop' });
+    const g = byInv.get(s(r.invoiceId)) ?? { rows: [], items: [] }; g.rows.push(i); g.items.push({ productId: s(r.productId), paid: Math.max(0, n(r.qty)), free: 0, restock: s(r.restock) !== 'no' }); byInv.set(s(r.invoiceId), g);
+  });
+  let total = 0;
+  for (const [invoiceId, g] of byInv) {
+    if (!invoiceId) continue;
+    const inv = await db.invoices.get(invoiceId);
+    if (!inv || inv.shopId !== shopId || inv.cancelled) { for (const i of g.rows) errors.push({ row: i, key: 'invoiceId', msg: inv?.cancelled ? 'That bill is cancelled' : 'Not a bill of this shop' }); continue; }
+    const cns = await db.creditNotes.where('invoiceId').equals(invoiceId).toArray();
+    const asked = new Map<string, number>();
+    g.items.forEach((it, k) => {
+      asked.set(it.productId, (asked.get(it.productId) ?? 0) + it.paid);
+      const left = openPaid(inv, cns, it.productId);
+      if ((asked.get(it.productId) ?? 0) > left) errors.push({ row: g.rows[k], key: 'qty', msg: `Only ${left} pcs left on bill ${inv.number} (billed minus already returned)` });
+    });
+    try {
+      const built = buildCreditNote(inv, cns, g.items);
+      total = r2(total + built.total);
+      // a typed amount can never be more than the bill's own value of these pieces
+      g.rows.forEach((i, k) => { const r = p.rows[i]; const v = built.lines.filter(l => l.productId === g.items[k].productId).reduce((a, l) => a + l.amount, 0); if (n(r.amount) > r2(v) + 0.01) errors.push({ row: i, key: 'amount', msg: `Most is ${inr(r2(v))} for these pieces` }); });
+    } catch { /* the qty error above says why */ }
+    const deadline = creditNoteDeadline(inv.date);
+    if (today() > deadline) warnings.push(`Bill ${inv.number} is from an earlier GST year: after ${deadline} a credit note no longer reduces GST (s.34(2)). The shop's account is still credited.`);
+    else if (today() >= `${deadline.slice(0, 4)}-10-01`) warnings.push(`Bill ${inv.number}: make this credit note before ${deadline} for it to reduce GST (s.34(2)).`);
+  }
+  const settings = await getSettings();
+  const me = await db.staff.get(session().userId);
+  const ownerOnly = me && me.role !== 'owner' && total > (settings.returnApprovalLimit || 0)
+    ? `Above ${inr(settings.returnApprovalLimit || 0)}: only the owner can make this credit note. Nothing is saved — ask the owner to say this return on their phone.` : '';
+  return { errors, warnings, total, ownerOnly };
 }

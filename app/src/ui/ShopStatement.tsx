@@ -6,7 +6,7 @@ import { inr } from '../core/i18n';
 import { PrintBill } from './PrintBill';
 import type { CreditNote, Invoice, Payment, Shop } from '../core/types';
 
-type Row = { at: string; kind: 'bill' | 'payment' | 'cn'; ref: string; debit: number; credit: number; note: string; inv?: Invoice };
+type Row = { at: string; kind: 'bill' | 'payment' | 'cn'; ref: string; debit: number; credit: number; note: string; inv?: Invoice; cn?: CreditNote };
 
 // One page per shop, reachable from anywhere a shop name appears: dues, every bill, every payment, credit notes, running balance.
 export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () => void }) {
@@ -14,6 +14,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
   const [rows, setRows] = useState<Row[]>([]);
   const [due, setDue] = useState({ total: 0, overdue: 0, days: 0, advance: 0 });
   const [printing, setPrinting] = useState<Invoice | null>(null);
+  const [printingCn, setPrintingCn] = useState<CreditNote | null>(null);
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
   useEffect(() => { (async () => {
     const s = await db.shops.get(shopId); setShop(s ?? null); if (!s) return;
@@ -26,7 +27,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
     const all: Row[] = [
       ...invs.map(i => ({ at: i.date + 'T' + (i.createdAt.slice(11) || '00:00:00'), kind: 'bill' as const, ref: i.number, debit: i.total, credit: 0, note: `${i.lines.length} ${'items'} · ${i.deliveryStatus}`, inv: i })),
       ...pays.map((p: Payment) => ({ at: p.date + 'T' + (p.createdAt.slice(11) || '00:00:00'), kind: 'payment' as const, ref: `${p.mode.toUpperCase()}${p.ref ? ' ' + p.ref : ''}`, debit: 0, credit: p.amount, note: `${'by'} ${p.collectedBy}` })),
-      ...cns.map((c: CreditNote) => ({ at: c.date + 'T' + (c.createdAt.slice(11) || '00:00:00'), kind: 'cn' as const, ref: c.number, debit: 0, credit: c.total, note: c.reason })),
+      ...cns.map((c: CreditNote) => ({ at: c.date + 'T' + (c.createdAt.slice(11) || '00:00:00'), kind: 'cn' as const, ref: c.number, debit: 0, credit: c.total, note: c.reason, cn: c })),
     ].sort((a, b) => b.at.localeCompare(a.at));
     setRows(all);
   })(); }, [shopId]);
@@ -35,6 +36,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
   return (
     <div className="stack">
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
+      {printingCn && <PrintBill creditNote={printingCn} onClose={() => setPrintingCn(null)} />}
       <div className="row" style={{ flexWrap: 'nowrap' }}>
         <button className="icon-btn" onClick={onBack} aria-label="Back"><ArrowLeft /></button>
         {shop.photo ? <img src={shop.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} /> : <div className="avatar" style={{ width: 56, height: 56 }}>{shop.name[0]}</div>}
@@ -49,11 +51,11 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
       <div className="muted">{'Credit'}: {shop.creditLimit ? `${inr(shop.creditLimit)} / ${shop.creditDays}d` : 'cash only'}</div>
       <div className="list">
         {rows.map((r, i) => { const after = running; running = r.kind === 'bill' ? running - r.debit : running + r.credit; return (
-          <button key={i} className="item tap" onClick={() => r.inv && setPrinting(r.inv)} disabled={!r.inv}>
+          <button key={i} className="item tap" onClick={() => r.inv ? setPrinting(r.inv) : r.cn && setPrintingCn(r.cn)} disabled={!r.inv && !r.cn}>
             <div className={`avatar ${r.kind === 'payment' ? 'ok' : r.kind === 'cn' ? 'gold' : ''}`}>{r.kind === 'bill' ? <Receipt size={18} /> : r.kind === 'payment' ? <IndianRupee size={18} /> : <FileMinus size={18} />}</div>
             <div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.ref}</div><div className="s">{localDay(r.at)} · {r.note.replace(/by (\w+)/, (_, id) => `${'by'} ${staff.get(id) ?? id}`)}</div></div>
             <div style={{ textAlign: 'right' }}><div className={`amt num`} style={{ color: r.kind === 'bill' ? undefined : 'var(--ok)' }}>{r.kind === 'bill' ? inr(r.debit) : `−${inr(r.credit)}`}</div><div className="s num">{'bal'} {inr(Math.max(0, after))}</div></div>
-            {r.inv && <Printer size={16} style={{ color: 'var(--ink-3)' }} />}
+            {(r.inv || r.cn) && <Printer size={16} style={{ color: 'var(--ink-3)' }} />}
           </button>); })}
         {!rows.length && <div className="card muted">{'No bills or payments yet.'}</div>}
       </div>

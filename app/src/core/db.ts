@@ -179,6 +179,23 @@ export function stamp<T extends object>(rec: T & Partial<Base>): T & Base {
 // tries to break them. A broken rule throws GuardError and the whole save is rolled back.
 export class GuardError extends Error { constructor(msg: string) { super(msg); this.name = 'GuardError'; } }
 const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+// every money field anywhere (top level, and inside lines / allocations / settlements): when present it must be a real number.
+// NaN (a hidden buying rate on a staff phone, a blank box) or text never reaches the books.
+const MONEY_KEYS = ['amount', 'total', 'taxable', 'tax', 'cgst', 'sgst', 'igst', 'roundOff', 'rate', 'mrp', 'purchaseRate', 'discount', 'gross',
+  'advance', 'paid', 'credited', 'received', 'recovered', 'credit', 'debit', 'schemeSaving', 'budget', 'salary', 'batta', 'kmAmount', 'daAmount', 'expenses'];
+const MONEY_REQUIRED: Partial<Record<TableName, string[]>> = {
+  claimEntries: ['amount'], claims: ['amount'], purchases: ['total'], advances: ['amount'], creditNotes: ['total'],
+};
+function badMoney(table: TableName, r: Record<string, unknown>): string | null {
+  for (const k of MONEY_REQUIRED[table] ?? []) if (!fin(r[k])) return k;
+  const check = (o: Record<string, unknown>) => { for (const k of MONEY_KEYS) if (k in o && o[k] !== undefined && o[k] !== null && !fin(o[k])) return k; return null; };
+  const top = check(r); if (top) return top;
+  for (const list of ['lines', 'allocations', 'settlements']) {
+    const arr = r[list]; if (!Array.isArray(arr)) continue;
+    for (const x of arr) if (x && typeof x === 'object') { const k = check(x as Record<string, unknown>); if (k) return `${list}.${k}`; }
+  }
+  return null;
+}
 // set by the licence: when the plan is locked (or the licence can't be renewed), new orders and bills are refused
 let writeBlock: string | null = null;
 export function setWriteBlock(msg: string | null) { writeBlock = msg; }
@@ -190,6 +207,18 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
   for (const w of writes) last.set(`${w.table}|${w.rec.id}`, w); // the final state of each record in this save
   for (const { table, rec } of last.values()) {
     const r = rec as unknown as Record<string, unknown>;
+    if (table !== 'audit' && table !== 'settings' && table !== 'staff' && table !== 'invoices') {
+      const bad = badMoney(table, r);
+      if (bad) throw new GuardError(`Money amount "${bad}" is not a valid number (${table}). Nothing was saved.`);
+    }
+    if (table === 'settings' && r.billPrefix !== undefined && r.billPrefix !== null && !/^[A-Za-z0-9]{1,4}$/.test(String(r.billPrefix)))
+      throw new GuardError('Bill number prefix: 1 to 4 letters or digits only (e.g. SMD).');
+    if (table === 'purchases' && String(r.billNo ?? '').trim()) {
+      const key = String(r.billNo).trim().toUpperCase();
+      const same = (await db.purchases.where('companyId').equals(String(r.companyId)).toArray()).some(x => x.id !== rec.id && String(x.billNo ?? '').trim().toUpperCase() === key && !last.has(`purchases|${x.id}`))
+        || [...last.values()].some(x => x.table === 'purchases' && x.rec.id !== rec.id && (x.rec as unknown as { companyId: string }).companyId === r.companyId && String((x.rec as unknown as { billNo: string }).billNo ?? '').trim().toUpperCase() === key);
+      if (same) throw new GuardError(`Company bill ${String(r.billNo).trim()} of this company is already entered.`);
+    }
     if (table === 'batches') {
       if (!fin(r.qty) || !Number.isInteger(r.qty)) throw new GuardError(`Stock count must be a whole number (got ${String(r.qty)}).`);
       if ((r.qty as number) < 0) throw new GuardError('Not enough stock for this. Stock can never go below zero — check the stock position first.');
@@ -201,6 +230,7 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
       const same = await db.invoices.where('number').equals(r.number as string).toArray();
       if (same.some(x => x.id !== rec.id) || writes.some(x => x.table === 'invoices' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number))
         throw new GuardError(`Bill number ${String(r.number)} is already used. A bill number can never repeat.`);
+      const bad = badMoney('invoices', r); if (bad) throw new GuardError(`Bill amount "${bad}" is not a valid number.`);
       const isNew = !(await db.invoices.get(rec.id));
       for (const l of (r.lines as { qty: number; freeQty?: number; name?: string; batches: { qty: number }[] }[]) ?? []) {
         if (!fin(l.qty) || l.qty < 0) throw new GuardError('A bill line has an invalid quantity.');
@@ -213,6 +243,15 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
       if (!fin(r.total) || (r.total as number) < 0) throw new GuardError('Credit note amount is not valid.');
       const dup = (await db.creditNotes.toArray()).some(x => x.id !== rec.id && x.number === r.number) || writes.some(x => x.table === 'creditNotes' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number);
       if (dup) throw new GuardError(`Credit note number ${String(r.number)} is already used.`);
+      // a bill's credit notes together never come to more than the bill charged
+      const invId = String(r.invoiceId ?? '');
+      const bill = (last.get(`invoices|${invId}`)?.rec as Invoice | undefined) ?? (invId ? await db.invoices.get(invId) : undefined);
+      if (bill) {
+        const saved = (await db.creditNotes.where('invoiceId').equals(invId).toArray()).filter(c => !last.has(`creditNotes|${c.id}`));
+        const here = [...last.values()].filter(w => w.table === 'creditNotes' && (w.rec as unknown as CreditNote).invoiceId === invId).map(w => w.rec as unknown as CreditNote);
+        const sum = Math.round([...saved, ...here].reduce((a, c) => a + c.total, 0) * 100) / 100;
+        if (sum > bill.total + 0.01) throw new GuardError(`Credit notes on bill ${bill.number} would come to ₹${sum.toFixed(2)} — more than the ₹${bill.total.toFixed(2)} it charged.`);
+      }
     }
     if (table === 'payments') {
       if (!fin(r.amount) || (r.amount as number) <= 0) throw new GuardError('Payment amount must be more than zero.');
@@ -261,7 +300,9 @@ export class ChangeSet {
   get size() { return this.writes.length; }
   async commit(label: string): Promise<string> {
     const tables = Array.from(new Set(this.writes.map(w => w.table)));
-    const dexTables = [...tables.map(t => db.table(t)), db.audit];
+    // the guard reads a credit note's bill (never more credited than charged): it must be in the same transaction
+    const reads = tables.includes('creditNotes') && !tables.includes('invoices') ? [db.invoices] : [];
+    const dexTables = [...tables.map(t => db.table(t)), ...reads, db.audit];
     await db.transaction('rw', dexTables, async () => {
       await guard(this.writes); // the laws: if any write breaks one, nothing at all is saved
       for (const w of this.writes) {

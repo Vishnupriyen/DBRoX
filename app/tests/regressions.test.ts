@@ -100,6 +100,16 @@ describe('review fixes', () => {
     await expect(cs3.commit('over')).rejects.toThrow(/more than its amount/);
   });
 
+  it('new guards (Nov 2026 money review): credit notes never beyond the bill, money is a number, a company bill once, short bill prefix', async () => {
+    const inv = (await db.invoices.toArray()).find(i => !i.cancelled)!;
+    const cn = new ChangeSet(); cn.put('creditNotes', { number: 'CN/G/1', invoiceId: inv.id, shopId: inv.shopId, companyId: inv.companyId, date: today(), reason: 'x', lines: [], total: inv.total + 5 });
+    await expect(cn.commit('too big')).rejects.toThrow(/more than/);
+    const nan = new ChangeSet(); nan.put('claimEntries', { companyId: inv.companyId, month: '2026-11', kind: 'damage', qty: 1, amount: NaN }); await expect(nan.commit('nan')).rejects.toThrow(/not a valid number/);
+    const p1 = new ChangeSet(); p1.put('purchases', { companyId: inv.companyId, billNo: 'GRD-1', date: today(), lines: [], taxable: 1, tax: 0, total: 1, source: 'typed' }); await p1.commit('p1');
+    const p2 = new ChangeSet(); p2.put('purchases', { companyId: inv.companyId, billNo: 'grd-1', date: today(), lines: [], taxable: 1, tax: 0, total: 1, source: 'typed' }); await expect(p2.commit('p2')).rejects.toThrow(/already entered/);
+    const st = new ChangeSet(); st.put('settings', { ...(await db.settings.toArray())[0], billPrefix: 'TOOLONG' }); await expect(st.commit('prefix')).rejects.toThrow(/prefix/);
+  });
+
   it('month end is the real last day of the month (no UTC shift)', () => {
     expect(monthEnd('2027-03')).toBe('2027-03-31');
     expect(monthEnd('2026-12')).toBe('2026-12-31');

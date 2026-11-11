@@ -1,3 +1,4 @@
+import { isCashOnly } from '../core/billing';
 import { useEffect, useState } from 'react';
 import { MapPin, ChevronRight, Phone, IndianRupee, PackageCheck, Store, AlertTriangle } from 'lucide-react';
 import { ChangeSet, db, nowIso, session, today, activeShops } from '../core/db';
@@ -75,7 +76,7 @@ export function Beat() {
                 <div className="s">{s.shop.area}{s.shop.owner ? ` · ${s.shop.owner}` : ''}{s.lastOrder ? ` · last order ${showDate(s.lastOrder)}` : ''}</div>
                 <div className="row" style={{ marginTop: 4 }}>
                   {s.due > 0.5 && <span className={`badge ${s.overdue > 0 ? 'bad' : ''}`}>{inr(s.due)} {s.overdue > 0 ? `· ${s.overdue}d late` : 'due'}</span>}
-                  {s.shop.cashOnly && <span className="badge warn">Cash only</span>}
+                  {isCashOnly(s.shop) && <span className="badge warn">Cash only</span>}
                   {s.billedToday && <span className="badge ok"><PackageCheck size={14} /> billed</span>}
                   {s.visit?.farFromShop && <span className="badge warn"><AlertTriangle size={14} /> far from shop</span>}
                 </div>

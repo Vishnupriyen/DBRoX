@@ -1,4 +1,5 @@
 // Company side screens (a brand's head office and managers). Logic lives in core/company.ts.
+import { GST_RATES } from '../core/gst';
 import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Building2, BarChart3, Boxes, Package, BadgePercent, Store, FileUp, Users, Search, Copy, Pause, Play, ChevronRight, CalendarCheck, Route, ShoppingCart, UserPlus, Target, Activity, Inbox, FileCheck2, Wallet } from 'lucide-react';
@@ -392,7 +393,7 @@ export function Products() {
         <div className="field"><label>{'Name'}</label><input value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} /></div>
         <div className="field"><label>{'Code'}</label><input value={edit.code ?? ''} onChange={e => setEdit({ ...edit, code: e.target.value })} /></div>
         <div className="field"><label>{'HSN'}</label><input value={edit.hsn} onChange={e => setEdit({ ...edit, hsn: e.target.value.replace(/\D/g, '') })} /></div>
-        <div className="field"><label>{'GST %'}</label><select value={edit.gst} onChange={e => setEdit({ ...edit, gst: Number(e.target.value) })}>{[0, 5, 12, 18, 28].map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div className="field"><label>{'GST %'}</label><select value={edit.gst} onChange={e => setEdit({ ...edit, gst: Number(e.target.value) })}>{GST_RATES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
         {n('mrp', 'MRP')}{n('rate', 'Price to shop (PTR)')}{n('purchaseRate', 'Price to distributor (PTD)')}{n('caseSize', 'Pieces per case')}
         {bad && <div style={{ color: 'var(--bad)', marginBottom: 8 }}>{bad}</div>}
         <div className="muted" style={{ marginBottom: 8 }}>{'Saved prices reach every linked distributor at their next sync.'}</div>

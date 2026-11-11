@@ -6,7 +6,8 @@ import { inr, showDate, showMonth, plural } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
 import { downloadWorkbook } from '../core/readers';
-import { askText, notify } from './dialog';
+import { ask, askText, notify } from './dialog';
+import { companyPayables, recordCompanyPayment } from '../core/payables';
 import type { BankLine, Expense, Payment } from '../core/types';
 import { ShopStatement } from './ShopStatement';
 
@@ -136,6 +137,7 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
   type Line = { name: string; amount: number; sub: string; id?: string };
   const [d, setD] = useState<{ cash: number; bank: number; staff: number; recv: Line[]; recvOverdue: number; payCo: Line[]; cheques: Line[]; claims: number; loans: number } | null>(null);
   const [openShop, setOpenShop] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => { (async () => {
     const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
     const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));
@@ -143,10 +145,8 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
     const byShop = new Map<string, { amount: number; overdue: number; n: number }>();
     for (const b of bal) { const v = byShop.get(b.invoice.shopId) ?? { amount: 0, overdue: 0, n: 0 }; v.amount += b.balance; v.n++; if (b.overdueDays > 0) v.overdue += b.balance; byShop.set(b.invoice.shopId, v); }
     const recv: Line[] = [...byShop.entries()].map(([id, v]) => ({ id, name: shops.get(id) ?? id, amount: r2(v.amount), sub: `${plural(v.n, 'bill')}${v.overdue ? ` · ${'overdue'} ${inr(r2(v.overdue))}` : ''}` })).sort((a, b) => b.amount - a.amount);
-    const purchases = (await db.purchases.toArray()).filter(p => p.total - (p.paid ?? 0) > 0.5);
-    const byCo = new Map<string, { amount: number; n: number; oldest: string }>();
-    for (const p of purchases) { const v = byCo.get(p.companyId) ?? { amount: 0, n: 0, oldest: p.date }; v.amount += p.total - (p.paid ?? 0); v.n++; if (p.date < v.oldest) v.oldest = p.date; byCo.set(p.companyId, v); }
-    const payCo: Line[] = [...byCo.entries()].map(([id, v]) => ({ id, name: cos.get(id) ?? id, amount: r2(v.amount), sub: `${v.n} ${'company bills'} · ${'oldest'} ${v.oldest.slice(5)}` })).sort((a, b) => b.amount - a.amount);
+    // payables = company bills − payments made − company credit notes
+    const payCo: Line[] = [...(await companyPayables()).entries()].filter(([, v]) => v.due > 0.5).map(([id, v]) => ({ id, name: cos.get(id) ?? id, amount: v.due, sub: `${v.bills} ${'company bills'} · ${'oldest'} ${v.oldest.slice(5)}${v.paid ? ` · paid ${inr(v.paid)}` : ''}${v.credited ? ` · credit notes ${inr(v.credited)}` : ''}` })).sort((a, b) => b.amount - a.amount);
     const pays = (await db.payments.toArray());
     const cheques: Line[] = pays.filter(p => p.mode === 'cheque' && p.status !== 'cancelled' && !p.bankLineId).map(p => ({ id: p.shopId, name: shops.get(p.shopId) ?? '', amount: p.amount, sub: `${p.ref ?? ''} · ${showDate(p.date)}${p.status === 'bounced' ? ' · ' + 'BOUNCED' : ''}` }));
     const ok = pays.filter(p => p.status === 'ok');
@@ -154,7 +154,15 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
     const exps = await db.expenses.toArray();
     const claims = r2((await db.claims.toArray()).filter(c => ['submitted', 'approved'].includes(c.status)).reduce((a, c) => a + c.amount - (c.received ?? 0), 0));
     setD({ cash: r2(ok.filter(p => p.mode === 'cash' && p.settled).reduce((a, p) => a + p.amount, 0) - exps.filter(e => e.approved).reduce((a, e) => a + e.amount, 0)), bank, staff: r2(ok.filter(p => p.mode === 'cash' && !p.settled).reduce((a, p) => a + p.amount, 0)), recv, recvOverdue: r2(bal.filter(b => b.overdueDays > 0).reduce((a, b) => a + b.balance, 0)), payCo, cheques, claims, loans: r2(exps.filter(e => e.category === 'loan').reduce((a, e) => a + e.amount, 0)) });
-  })(); }, []);
+  })(); }, [tick]);
+  // record a payment made to a company, or a credit note it sent (claim settled), against its oldest bills
+  const payCompany = async (l: Line) => {
+    if (!l.id) return;
+    const kind = await ask(`${l.name} · you owe ${inr(l.amount)}`, { choices: [{ label: 'Payment made', value: 'payment' }, { label: 'Credit note received', value: 'credit_note' }] }) as 'payment' | 'credit_note' | null; if (!kind) return;
+    const amount = Number(await askText('Amount ₹', String(l.amount), 'number')); if (!amount) return;
+    const ref = await askText(kind === 'payment' ? 'UTR / cheque no' : 'Company credit note no', ''); if (ref === null) return;
+    try { await recordCompanyPayment({ companyId: l.id, amount, kind, ref, mode: kind === 'payment' ? 'bank' : undefined }); setTick(x => x + 1); } catch (e) { await notify('Not saved', (e as Error).message); }
+  };
   if (openShop) return <ShopStatement shopId={openShop} onBack={() => setOpenShop(null)} />;
   if (!d) return null;
   const recvT = r2(d.recv.reduce((a, l) => a + l.amount, 0)); const payT = r2(d.payCo.reduce((a, l) => a + l.amount, 0)); const chqT = r2(d.cheques.reduce((a, l) => a + l.amount, 0));
@@ -175,7 +183,7 @@ export function CashFlow({ go }: { go?: (p: string) => void }) {
       <div className="muted">{'If everyone pays and I pay everyone'}: <b className="num" style={{ color: net < 0 ? 'var(--bad)' : 'var(--ok)' }}>{inr(net)}</b></div>
       <Sec title={'Receivables from shops'} total={recvT} lines={d.recv} tone="var(--ok)" onTap={l => l.id && setOpenShop(l.id)} />
       <Sec title={'Pending cheques'} total={chqT} lines={d.cheques} onTap={() => go?.('cheques')} />
-      <Sec title={'Payables to companies'} total={payT} lines={d.payCo} tone="var(--bad)" />
+      <Sec title={'Payables to companies'} total={payT} lines={d.payCo} tone="var(--bad)" onTap={l => void payCompany(l)} />
       <div className="card"><div className="row" style={{ justifyContent: 'space-between' }}><span>{'Claims to receive'}</span><b className="num">{inr(d.claims)}</b></div><div className="row" style={{ justifyContent: 'space-between' }}><span>{'Loans'}</span><b className="num">{inr(d.loans)}</b></div></div>
       <div className="muted">{'Ask TESRAX: "who will pay this week", "what do I owe Britannia", "cash flow".'}</div>
     </div>

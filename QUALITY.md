@@ -18,6 +18,10 @@ checks the final state of every record. If one rule breaks, **nothing** in that 
 | Pieces on a bill line are never negative | "A bill line has an invalid … quantity" |
 | A payment is more than zero and never split for more than it is | "Payment amount must be more than zero" |
 | Expense amounts are valid, order quantities are valid | — |
+| A bill's credit notes together never come to more than the bill charged | "Credit notes on bill … would come to ₹… — more than the ₹… it charged" |
+| Every money amount, in every table (and inside lines), is a real number | "Money amount … is not a valid number" |
+| The same company bill number is never entered twice for one company | "Company bill … of this company is already entered" |
+| The bill number prefix is 1–4 letters or digits | "Bill number prefix: 1 to 4 letters or digits only" |
 
 **New rule = add it to `guard()` + add a test in `tests/regressions.test.ts`.**
 
@@ -29,7 +33,7 @@ checks the final state of every record. If one rule breaks, **nothing** in that 
 
 ## 3. The money & stock laws (chaos test)
 `app/tests/laws.test.ts` plays random business days: orders, picking, billing with double taps, planning, deliveries
-(short, damaged, refused, extra, double taps), trip ends, day-close differences, payments, cancels (twice) and undo of
+(short, damaged, refused, extra, double taps), trip ends, day-close differences, payments, shop returns (credit notes), cancels (twice) and undo of
 random past actions. **After every single action** it checks:
 
 1. **Stock is conserved.** Every piece is in exactly one place: on the shelf, out on a live bill, or written off as van damage.
@@ -38,6 +42,8 @@ random past actions. **After every single action** it checks:
 4. Every bill adds up: tax parts + round-off = total; line taxables = bill taxable.
 5. An order is billed at most once.
 6. No bill shows a negative balance, and no money is lost: billed − credited − received = still owed (− shop advance).
+7. A bill's credit notes never come to more than it charged, and never credit more paid pieces than a line billed.
+8. Claim lines follow their bill: a cancelled bill keeps no live scheme claim line.
 
 If a law breaks, the test prints the seed and the last 15 actions so the exact bug can be replayed.
 Proven to work: a deliberately planted stock bug was caught within 36 actions.

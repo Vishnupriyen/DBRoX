@@ -3,7 +3,8 @@ import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, R
 import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
 import { inr, showDate, plural } from '../core/i18n';
-import { confirmBox } from './dialog';
+import { confirmBox, notify } from './dialog';
+import { billChangeBlock } from '../core/gst';
 import type { Page } from './Home';
 import type { Invoice, Payment } from '../core/types';
 
@@ -117,7 +118,7 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
     setProducts(new Map((await db.products.toArray()).map(p => [p.id, p.name])));
   })(); }, []);
   const act = async (inv: Invoice, a: 'modified' | 'credit_note') => {
-    await settleDifference(inv.id, a);
+    try { await settleDifference(inv.id, a); } catch (e) { await notify('Not done', (e as Error).message); return; }
     const shop = await db.shops.get(inv.shopId); if (shop) { const cs = new ChangeSet(); cs.put('shops', { ...shop, diffPref: a } as typeof shop, 'difference preference'); await cs.commit('Shop preference'); }
     setList(l => l.filter(x => x.id !== inv.id));
   };
@@ -126,6 +127,8 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
       <div className="sechead"><h3>{'Bills with differences'} · {list.length}</h3><button className="link" onClick={onBack}>{'← Day close'}</button></div>
       {list.map(inv => {
         const sh = shops.get(inv.shopId); const einv = !!(inv as unknown as { irn?: string }).irn;
+        // a delivered (or printed) bill is never re-written: only a credit note for less and a new bill for extra
+        const fixed = einv || !!billChangeBlock(inv, 'edit', today());
         return (
           <div key={inv.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}><div><b>{sh?.name}</b><div className="muted">{inv.number} · {inr(inv.total)}</div></div>{sh?.pref && <span className="badge">{'usually'}: {sh.pref === 'modified' ? 'modified bill' : 'credit note'}</span>}</div>
@@ -134,10 +137,10 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
               {inv.delivery?.excess?.map(x => <div key={x.productId} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge warn">+{x.qty} {'extra'}</span></div>)}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
-              <button className={`btn grow ${sh?.pref === 'modified' ? 'primary' : ''}`} disabled={einv} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: 11 }}>{'same number'}</span></button>
-              <button className={`btn grow ${sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}</button>
+              {!fixed && <button className={`btn grow ${sh?.pref === 'modified' ? 'primary' : ''}`} onClick={() => act(inv, 'modified')}><FileText /> {'Modified bill'} <span className="muted" style={{ fontSize: 11 }}>{'same number'}</span></button>}
+              <button className={`btn grow ${fixed || sh?.pref === 'credit_note' ? 'primary' : ''}`} onClick={() => act(inv, 'credit_note')}><Receipt /> {'Credit note'}{inv.delivery?.excess?.length ? <span className="muted" style={{ fontSize: 11 }}>{' + new bill for extra'}</span> : null}</button>
             </div>
-            {einv && <div className="muted">{'E-invoiced bill — only a credit note is allowed.'}</div>}
+            {fixed && <div className="muted">{einv ? 'E-invoiced bill — only a credit note is allowed.' : 'Delivered bill — less goes on a credit note, extra on a new bill.'}</div>}
           </div>
         );
       })}

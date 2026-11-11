@@ -101,6 +101,7 @@ export interface Shop extends Base {
   owner?: string;
   phone?: string;
   gstin?: string;
+  stateCode?: string; // GST state of the shop (from its GSTIN when it has one; else chosen on the shop form; '33' Tamil Nadu)
   address?: string;
   area: string;
   beat: string;
@@ -189,6 +190,7 @@ export interface InvoiceLine {
   total: number;
   batches: { batchId: string; batch: string; qty: number; expiry: string }[];
   schemeNames: string[];
+  costRate?: number; // buying rate per piece when billed (P&L cost; a later rate change never rewrites a past month)
 }
 
 export interface Invoice extends Base {
@@ -213,7 +215,7 @@ export interface Invoice extends Base {
   deliveryStatus: 'pending' | 'planned' | 'out' | 'delivered' | 'partial' | 'returned' | 'undelivered';
   delivery?: {
     at: string; by: string; photo?: string; lat?: number; lng?: number;
-    shortages: { productId: string; qty: number; reason: string }[];
+    shortages: { productId: string; qty: number; reason: string; paid?: number; free?: number }[]; // qty = pieces; paid/free = how many were charged vs scheme-free
     excess?: { productId: string; qty: number }[];
     shopPhoto?: string; billPhoto?: string; distanceM?: number;
   };
@@ -221,16 +223,26 @@ export interface Invoice extends Base {
   original?: { lines: InvoiceLine[]; total: number; at: string }; // kept when a bill is revised
   printedAt?: string;
   cancelled?: { at: string; by: string; reason: string };
+  extraOf?: string; // a new bill for extra pieces given at delivery of this bill (a delivered bill is never re-written)
 }
 
+/** one credit-note line: paid pieces credited at the bill line's own taxable + tax per piece; free pieces at ₹0 */
+export interface CreditNoteLine {
+  productId: string; line?: number; // index of the bill line
+  qty: number; freeQty?: number; amount: number; restock: boolean;
+  hsn?: string; gst?: number; taxable?: number; cgst?: number; sgst?: number; igst?: number;
+}
 export interface CreditNote extends Base {
   number: string;
   invoiceId: string;
+  invoiceNumber?: string; invoiceDate?: string; // the original bill (Rule 53)
   shopId: string;
   companyId: string;
   date: string;
   reason: string;
-  lines: { productId: string; qty: number; amount: number; restock: boolean }[];
+  source?: 'delivery' | 'return';
+  lines: CreditNoteLine[];
+  taxable?: number; cgst?: number; sgst?: number; igst?: number; roundOff?: number;
   total: number;
 }
 
@@ -267,6 +279,9 @@ export interface Purchase extends Base {
   tax: number;
   total: number;
   source: 'photo' | 'excel' | 'typed' | 'company'; // 'company' = received against the linked company's own bill
+  credited?: number; // company credit notes set against this bill
+  settlements?: { date: string; amount: number; kind: 'payment' | 'credit_note'; ref?: string; mode?: string }[];
+  valuePending?: boolean; // saved on a staff phone without the buying rate: valued when the owner's phone next opens
 }
 
 export interface Expense extends Base {
@@ -279,6 +294,7 @@ export interface Expense extends Base {
   note?: string;
   photo?: string;
   status?: 'waiting' | 'approved' | 'rejected'; // company side: a field rep's expense, approved with the month's claim
+  gross?: number; // salary: the full salary (cash paid + advance/shortfall recovered) — the P&L cost
 }
 
 export interface BankLine extends Base {
@@ -304,6 +320,8 @@ export interface ClaimEntry extends Base {
   photo?: string;
   invoiceId?: string;
   refNumber?: string; irn?: string; // the company bill this line is about (GST: a credit note must point to it)
+  dropped?: string;       // why this line is not claimed (bill cancelled, all returned, owner dropped it)
+  valuePending?: boolean; // saved on a staff phone without the buying rate: valued when the owner's phone next opens
 }
 
 export interface Claim extends Base {

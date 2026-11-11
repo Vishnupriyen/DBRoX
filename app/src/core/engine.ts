@@ -14,6 +14,8 @@ import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, r
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
 import { MODULES, type Advance, type LeaveRequest, type ModuleKey, type Product, type Role, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
+import { costValue, creditValue, openPaid } from './credit';
+import { STATES } from './gst';
 import { categoryOf, modifyIntent } from './modify';
 const ENV_SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '';
 
@@ -713,7 +715,7 @@ async function damageProposal(textIn: string, file?: File): Promise<Reply> {
   const rows: Row[] = lines.map(l => {
     const p = bestProduct(products, l.productText).product;
     const qty = p ? toPieces(l.qty, l.unit, p) : l.qty;
-    return { said: l.text, productId: p?.id ?? '', qty, kind, amount: p ? r2(qty * p.purchaseRate) : 0, fromStock: 'yes', note: '' };
+    return { said: l.text, productId: p?.id ?? '', qty, kind, amount: costValue(p, qty).amount, fromStock: 'yes', note: '' }; // 0 on a staff phone: valued by the owner's phone
   });
   if (!rows.length) rows.push({ said: '', productId: '', qty: 0, kind, amount: 0, fromStock: 'yes', note: '' });
   const photo = file && file.type.startsWith('image/') ? await fileToDataUrl(file, 1000, 0.6) : undefined;
@@ -737,15 +739,19 @@ async function damageProposal(textIn: string, file?: File): Promise<Reply> {
 
 async function returnProposal(shopId: string, itemText: string): Promise<Reply> {
   const products = await db.products.toArray();
-  const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled).sort((a, b) => b.date.localeCompare(a.date));
-  const rows: Row[] = parseItemLines(itemText.replace(/return(ed)?/gi, ' ')).map(l => {
+  const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled).sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number));
+  const cns = await db.creditNotes.where('shopId').equals(shopId).toArray();
+  const rows: Row[] = [];
+  for (const l of parseItemLines(itemText.replace(/return(ed)?/gi, ' '))) {
     const p = bestProduct(products, l.productText).product;
     const qty = p ? toPieces(l.qty, l.unit, p) : l.qty;
-    const inv = p ? invs.find(i => i.lines.some(x => x.productId === p.id)) : undefined;
-    const line = inv?.lines.find(x => x.productId === p?.id);
-    const perPc = line ? line.total / (line.qty || 1) : 0;
-    return { said: l.text, productId: p?.id ?? '', qty, invoiceId: inv?.id ?? '', bill: inv?.number ?? '', amount: r2(qty * perPc), restock: 'yes' };
-  });
+    // the latest bill that still has these pieces open (billed minus already returned)
+    const open = (i: typeof invs[0]) => p ? openPaid(i, cns.filter(c => c.invoiceId === i.id), p.id) : 0;
+    const inv = p ? invs.find(i => open(i) >= qty) ?? invs.find(i => open(i) > 0) : undefined;
+    // credit = the bill line's own value of these pieces (taxable + GST), never more than it charged
+    let amount = 0; try { amount = inv && p ? await creditValue(inv.id, [{ productId: p.id, paid: Math.min(qty, open(inv)), free: 0, restock: true }]) : 0; } catch { amount = 0; }
+    rows.push({ said: l.text, productId: p?.id ?? '', qty, invoiceId: inv?.id ?? '', bill: inv?.number ?? '', amount, restock: 'yes' });
+  }
   return {
     text: rows.length ? 'Return ready. A credit note will be made against the latest bill with that item.' : 'Say the items, e.g. "Selvam return 2 Surf".',
     proposal: {
@@ -759,7 +765,7 @@ async function returnProposal(shopId: string, itemText: string): Promise<Reply> 
         { key: 'productId', label: 'Product', type: 'select', options: (await productOptions()).filter(o => o.value !== '__new'), width: 160 },
         { key: 'qty', label: 'Qty (pcs)', type: 'number', width: 70 },
         { key: 'bill', label: 'Against bill', readonly: true, width: 140 },
-        { key: 'amount', label: 'Credit ₹', type: 'number', width: 85 },
+        { key: 'amount', label: 'Credit ₹', type: 'number', width: 85, readonly: true },
         { key: 'restock', label: 'Back to stock', type: 'select', width: 90, options: [{ value: 'yes', label: 'Yes (good)' }, { value: 'no', label: 'No (damaged)' }] },
       ],
       rows, meta: {},
@@ -774,7 +780,7 @@ async function newShopProposal(textIn: string): Promise<Reply> {
     proposal: {
       id: newId(), kind: 'newshop', title: 'New shop', fields: [],
       columns: shopColumns(),
-      rows: [{ name, owner: '', phone: '', gstin: '', area: '', beat: '', creditLimit: 0, creditDays: 7, cashOnly: 'no', type: 'retail' }],
+      rows: [{ name, owner: '', phone: '', gstin: '', stateCode: '33', area: '', beat: '', creditLimit: 0, creditDays: 7, cashOnly: 'yes', type: 'retail' }], // cash only until the owner sets a limit
       meta: {},
     },
   };
@@ -826,6 +832,7 @@ function shopColumns(): Col[] {
     { key: 'owner', label: 'Owner', width: 100 },
     { key: 'phone', label: 'Mobile', width: 110 },
     { key: 'gstin', label: 'GSTIN (if B2B)', width: 150 },
+    { key: 'stateCode', label: 'State', type: 'select', width: 120, options: Object.entries(STATES).map(([value, label]) => ({ value, label: `${value} ${label}` })) },
     { key: 'area', label: 'Area', width: 100 },
     { key: 'beat', label: 'Beat (day)', width: 90 },
     { key: 'creditLimit', label: 'Credit limit ₹', type: 'number', width: 90 },
@@ -874,7 +881,7 @@ async function importShops(file: File): Promise<Reply> {
     text: `${plural(rows.length, 'shop')} read. Check GSTIN and credit terms.`,
     proposal: {
       id: newId(), kind: 'shops', title: 'Import shops', fields: [], columns: shopColumns(),
-      rows: rows.map(r => ({ ...r, cashOnly: 'no', type: 'retail' })), meta: {},
+      rows: rows.map(r => ({ ...r, stateCode: '33', cashOnly: Number(r.creditLimit) > 0 ? 'no' : 'yes', type: 'retail' })), meta: {},
     },
   };
 }

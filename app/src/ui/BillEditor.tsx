@@ -1,64 +1,51 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, X, Plus, Trash2, Printer } from 'lucide-react';
-import { ChangeSet, db, getSettings } from '../core/db';
-import { pickBatches } from '../core/billing';
-import { r2 } from '../core/ledger';
+import { db, getSettings, today } from '../core/db';
+import { activeSchemes, billLine, billTotals } from '../core/billing';
+import { billChangeBlock, isInterState } from '../core/gst';
+import { saveBillEdit } from '../core/pipeline';
 import { inr } from '../core/i18n';
 import { norm } from '../core/match';
 import { notify } from './dialog';
-import type { Invoice, InvoiceLine, Product, Settings, Shop } from '../core/types';
+import type { Invoice, InvoiceLine, Product, Scheme, Settings, Shop } from '../core/types';
 
+type Edit = { productId: string; qty: number; rate: number; mrp: number; discount?: number }; // discount set only when typed by hand
 
 // Full bill editor, laid out like the bill itself: shop, every line (qty, rate, discount, MRP), add or remove lines.
-// Allowed until the bill is printed; the number never changes; the original is kept inside the bill; stock is corrected.
+// Allowed until the bill is printed or delivered (and before the month's GST return); the number never changes; the
+// original is kept inside the bill. Prices, free pieces and stock are worked out by the same core code as a new bill.
 export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (saved: boolean) => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [shops, setShops] = useState<Shop[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [shopId, setShopId] = useState(invoice.shopId);
-  const [lines, setLines] = useState<InvoiceLine[]>(invoice.lines.map(l => ({ ...l })));
+  const [edits, setEdits] = useState<Edit[]>(invoice.lines.map(l => ({ productId: l.productId, qty: l.qty, rate: l.rate, mrp: l.mrp })));
   const [q, setQ] = useState('');
-  useEffect(() => { getSettings().then(setS); db.shops.toArray().then(x => setShops(x.filter(y => y.active !== false))); db.products.toArray().then(ps => setProducts(ps.filter(p => p.active && p.companyId === invoice.companyId))); }, [invoice]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { getSettings().then(setS); db.shops.toArray().then(x => setShops(x.filter(y => y.active !== false))); db.products.toArray().then(ps => setProducts(ps.filter(p => p.companyId === invoice.companyId))); db.schemes.toArray().then(setSchemes); }, [invoice]);
   const shop = shops.find(x => x.id === shopId);
-  const inter = !!s && !!shop && (shop.gstin?.slice(0, 2) || s.stateCode) !== s.stateCode;
-
-  const recalc = (l: InvoiceLine): InvoiceLine => {
-    const gross = r2(l.qty * l.rate); const discount = r2(Math.min(gross, l.discount)); const taxable = r2(gross - discount); const tax = r2(taxable * l.gst / 100);
-    return { ...l, gross, discount, taxable, cgst: inter ? 0 : r2(tax / 2), sgst: inter ? 0 : r2(tax - r2(tax / 2)), igst: inter ? tax : 0, total: r2(taxable + tax) };
-  };
-  const set = (i: number, patch: Partial<InvoiceLine>) => setLines(ls => ls.map((l, k) => k === i ? recalc({ ...l, ...patch }) : l));
-  const totals = useMemo(() => {
-    const taxable = r2(lines.reduce((a, l) => a + l.taxable, 0)), cgst = r2(lines.reduce((a, l) => a + l.cgst, 0)), sgst = r2(lines.reduce((a, l) => a + l.sgst, 0)), igst = r2(lines.reduce((a, l) => a + l.igst, 0));
-    const exact = r2(taxable + cgst + sgst + igst); const total = Math.round(exact);
-    return { taxable, cgst, sgst, igst, roundOff: r2(total - exact), total, saving: r2(lines.reduce((a, l) => a + l.discount + l.freeQty * l.rate, 0)) };
-  }, [lines]);
+  const inter = !!s && !!shop && isInterState(shop, s);
+  const pmap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
+  const lines: InvoiceLine[] = useMemo(() => edits.flatMap(e => { const p = pmap.get(e.productId); return p ? [billLine(p, Math.max(0, Math.floor(e.qty)), e.rate, activeSchemes(schemes, p, invoice.date), inter, { mrp: e.mrp, discount: e.discount })] : []; }), [edits, pmap, schemes, inter, invoice.date]);
+  const set = (i: number, patch: Partial<Edit>) => setEdits(es => es.map((e, k) => k === i ? { ...e, ...patch } : e));
+  const totals = useMemo(() => { const t = billTotals(lines); return { ...t, saving: t.schemeSaving }; }, [lines]);
   const addProduct = (p: Product) => {
-    if (lines.some(l => l.productId === p.id)) return;
-    setLines(ls => [...ls, recalc({ productId: p.id, name: p.name, hsn: p.hsn, qty: p.caseSize, freeQty: 0, rate: p.rate, mrp: p.mrp, gross: 0, discount: 0, taxable: 0, gst: p.gst, cgst: 0, sgst: 0, igst: 0, total: 0, batches: [], schemeNames: [] })]);
+    if (edits.some(l => l.productId === p.id)) return;
+    setEdits(es => [...es, { productId: p.id, qty: p.caseSize, rate: p.rate, mrp: p.mrp }]);
     setQ('');
   };
+  const block = billChangeBlock(invoice, 'edit', today());
   const save = async () => {
-    if (!shop) return;
-    if (invoice.printedAt) { void notify('Printed bill', 'A printed bill cannot be edited — cancel with a remark or make a credit note.'); return; }
-    const live = lines.filter(l => l.qty > 0);
-    if (!live.length) { void notify('', 'A bill needs at least one line.'); return; }
-    const cs = new ChangeSet();
-    // stock: put the old picks back, take the new quantities out (oldest expiry first; keep the old batch where it still fits)
-    const batches = await db.batches.toArray();
-    for (const l of invoice.lines) for (const b of l.batches) { const x = batches.find(y => y.id === b.batchId); if (x) x.qty += b.qty; }
-    const finalLines = live.map(l => {
-      const need = l.qty + l.freeQty;
-      const { picks } = pickBatches(batches, l.productId, need);
-      for (const pk of picks) { const x = batches.find(y => y.id === pk.batchId)!; x.qty -= pk.qty; }
-      return { ...l, batches: picks };
-    });
-    const touched = new Set([...invoice.lines.flatMap(l => l.batches.map(b => b.batchId)), ...finalLines.flatMap(l => l.batches.map(b => b.batchId))]);
-    for (const id of touched) { const x = batches.find(y => y.id === id); if (x) cs.put('batches', { ...x }, 'bill edited'); }
-    cs.put('invoices', { ...invoice, shopId: shop.id, kind: shop.gstin && shop.gstin.length === 15 ? 'B2B' : 'B2C', lines: finalLines, ...totals, schemeSaving: totals.saving, original: invoice.original ?? { lines: invoice.lines, total: invoice.total, at: new Date().toISOString() } }, 'bill edited before print');
-    await cs.commit('Bill edited'); onClose(true);
+    if (!shop || saving) return;
+    if (block) { void notify('Bill can\'t be changed', block); return; }
+    setSaving(true);
+    try { await saveBillEdit(invoice.id, shop.id, edits.map(e => ({ ...e, qty: Math.floor(e.qty) }))); onClose(true); }
+    catch (e) { await notify('Not saved', (e as Error).message); }
+    finally { setSaving(false); }
   };
   if (!s) return null;
-  const found = q ? products.filter(p => norm(p.name).includes(norm(q))).slice(0, 6) : [];
+  const found = q ? products.filter(p => p.active && norm(p.name).includes(norm(q))).slice(0, 6) : [];
   return (
     <div className="sheet-wrap" onClick={() => onClose(false)}>
       <div className="sheet" onClick={e => e.stopPropagation()} style={{ height: 'min(92vh, 900px)' }}>
@@ -84,7 +71,7 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
                   <td><input type="number" value={l.discount} onChange={e => set(i, { discount: Number(e.target.value) })} style={{ width: 70 }} aria-label="Discount" /></td>
                   <td className="muted">{l.gst}%</td>
                   <td className="num">{inr(l.total)}</td>
-                  <td><button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => setLines(ls => ls.filter((_, k) => k !== i))} aria-label="Remove line"><Trash2 size={16} /></button></td>
+                  <td><button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => setEdits(es => es.filter((_, k) => k !== i))} aria-label="Remove line"><Trash2 size={16} /></button></td>
                 </tr>
               ))}
             </tbody>
@@ -99,8 +86,8 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
             <div className="grand"><span>{'Total'}</span><b className="num">{inr(totals.total)}</b></div>
             {totals.saving > 0 && <div className="muted"><span>{'You saved'}</span><b className="num">{inr(totals.saving)}</b></div>}
           </div>
-          {invoice.printedAt ? <div className="alert"><Printer /><div>{'This bill is printed — editing is closed. Cancel with a remark, or make a credit note.'}</div></div>
-            : <button className="btn primary big block" onClick={save}><Check /> {'Save bill (same number)'}</button>}
+          {block ? <div className="alert"><Printer /><div>{block}</div></div>
+            : <button className="btn primary big block" disabled={saving} onClick={save}><Check /> {'Save bill (same number)'}</button>}
         </div>
       </div>
     </div>
