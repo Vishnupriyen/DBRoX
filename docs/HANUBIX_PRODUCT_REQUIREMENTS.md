@@ -1,6 +1,6 @@
 # HANUBIX — Product and platform requirements
 
-**Source:** founder conversation exported as *Hanubix_Full_Chat.pdf* (Nov 6–11 2026), consolidated Nov 11 2026; plus ongoing Hanubix project conversation. This document describes the **desired system**, not a certification that every feature is working.
+**Source:** founder conversations exported as *Hanubix_Full_Chat.pdf* (154 pp.) and *Hanu-Tech-full-conversation.pdf* (146 pp., earliest distributor discussion to Nov 11 2026), plus ongoing Hanubix project conversation. For reconciled historical changes see `HANUBIX_HANU_TECH_RECOVERED_DECISIONS.md`. This document describes the **desired system**, not a certification that every feature is working.
 
 ## Mission and product identity
 Hanubix™: **"The autonomous operating system for B2B distribution."** This is an ambition, not an already proven autonomy claim. The platform must solve the **whole working day**, not just bill generation: order taking, picking, invoicing, delivery, collections, payroll, reconciliations and closing the day. The chosen founder-story positioning includes: "Billing software solved one hour of their day. We're solving the other sixteen. Hanubix: the day runs itself." These are marketing lines, not verified measured time savings.
@@ -36,7 +36,7 @@ One common codebase/engine with **server-enforced module entitlements** and role
 - Tenant isolation, server-side ACL, authorization of every mutation, end-to-end auditing, idempotency and disaster recovery are compulsory.
 
 ## UX and branding requirements
-**Established look:** Gostamo-inspired **pure black**, restrained dark panels, Geist typography, one **teal → pale → amber** signature gradient; avoid solid orange and arbitrary per-module colours. Actual new logo remains **unapproved**. User rejected generic SaaS dashboard collages and gradient letter marks. Finalize **a distinctive Hanubix symbol/wordmark, one-colour version and app icon** before a wide UI redesign.
+**Latest working look (Hanu Tech p.146):** return to the **original black UI**, with **solid teal accents and no gradients**. Earlier Gostamo-inspired teal → pale → amber gradient, bright white, plum, gold and dark-blue variants were explored, then revised or rejected. Use existing approved layout patterns; do not claim a finalized brand system. Actual new logo remains **unapproved**. User rejected generic SaaS dashboard collages and gradient letter marks. Finalize **a distinctive Hanubix symbol/wordmark, one-colour version and app icon** before a wide UI redesign.
 
 TESRAX visual identity is a **spherical animated field of many small dots** (not a hexagon), with depth and teal/pale/amber colours. Prioritize sunlight-readable, inexpensive Android devices, staff-specific workflows, offline status, fast actions, minimal typing and precise error recovery over abstract dashboards.
 
