@@ -286,9 +286,9 @@ function PlanBanner({ lic, onOpen }: { lic: LicenceState | null; onOpen: () => v
   return <button className={`plan-bar ${lic.status === 'locked' ? 'bad' : ''}`} onClick={onOpen}>{text}</button>;
 }
 
-// The signature colour (solid teal, no gradient) as an SVG paint server, so icon accents can use fill="url(#hg)".
+// The signature colour (deep green) as an SVG paint server, so icon accents can use fill="url(#hg)".
 function GradDefs() {
-  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset="1" stopColor="#4FE3D6" /></linearGradient></defs></svg>;
+  return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#17694C" /><stop offset="1" stopColor="#17694C" /></linearGradient></defs></svg>;
 }
 
 function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
@@ -338,6 +338,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div className="mark">Hanubix<sup>™</sup></div>
         </div>
+        <div className="retail">Retail Intelligence</div>
         <div className="powered">Powered by <b>TESRAX</b></div>
         <div className="tag" style={{ margin: '10px 0 0' }}>{t('appTagline')}</div>
       </div>

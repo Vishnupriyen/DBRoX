@@ -15,8 +15,10 @@ Never report work as done while the gate is red. Never weaken a guard, a law or 
 fix the cause, or explain to the owner why a check is wrong before changing it.
 
 ## Design (locked)
-Gostamo look: pure black, #0E1016 cards with one hairline, ONE solid signature colour teal #4FE3D6 (no gradients — owner, 11 Nov 2026)
-only for the TESRAX core, wordmark, primary actions and hero numbers; Geist font; no solid orange. Don't add design elements
+White Hanubix look (owner, 11 Nov 2026 — locked from the owner's screenshots): white screens and white cards with one thin grey
+hairline; deep green #17694C headings and TESRAX letters; primary buttons and the one hero card in a green-to-gold fade
+(#0B4A35 → #2B6B43 → #7C6A2B); the TESRAX ball in green-to-gold dots; grey outline icons with a pale mint #E6F2EC chip when
+selected; HANUBIX in wide black capitals with RETAIL INTELLIGENCE under it; Geist font. Don't add design elements
 the owner didn't ask for.
 
 ## The AI team (`.claude/agents/`)

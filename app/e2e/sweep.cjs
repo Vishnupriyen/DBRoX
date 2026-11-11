@@ -1,5 +1,5 @@
 // Release gate, part 2: opens EVERY screen for EVERY role at small-phone width (360 px) and the common Android width (412 px), and fails on:
-// crashes, console errors, sideways scrolling, text cut off, elements off screen, leftover light backgrounds,
+// crashes, console errors, sideways scrolling, text cut off, elements off screen, leftover dark backgrounds (the look is white — owner, 11 Nov 2026),
 // and text too faint to read (contrast below 3:1).   node e2e/sweep.cjs [outDir]
 const { chromium } = require('playwright');
 const path = require('path'); const fs = require('fs');
@@ -13,7 +13,7 @@ const audit = () => {
   const de = document.documentElement;
   if (de.scrollWidth > de.clientWidth + 1) out.push(`H-OVERFLOW page ${de.scrollWidth}>${de.clientWidth}`);
   const lum = c => { const m = c.match(/[\d.]+/g); if (!m) return null; const [r, g, b, a = 1] = m.map(Number); if (a < .5) return null; const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
-  const bgOf = el => { while (el) { const cs = getComputedStyle(el); if (cs.backgroundImage.includes('gradient') && !/text/.test(cs.backgroundClip + ' ' + cs.webkitBackgroundClip)) return .72; const l = lum(cs.backgroundColor); if (l !== null) return l; el = el.parentElement; } return 0; };
+  const bgOf = el => { while (el) { const cs = getComputedStyle(el); if (cs.backgroundImage.includes('gradient') && !/text/.test(cs.backgroundClip + ' ' + cs.webkitBackgroundClip)) return .12; const l = lum(cs.backgroundColor); if (l !== null) return l; el = el.parentElement; } return 1; };
   const seen = new Set();
   for (const el of document.querySelectorAll('body *')) {
     if (el.closest('.bill, .pack, svg, canvas, .no-audit')) continue;
@@ -21,7 +21,7 @@ const audit = () => {
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
     const bl = lum(cs.backgroundColor);
-    if (bl !== null && bl > .6 && !el.closest('.btn.primary, .tile-n, .badge, .chip.on, .switch, .gate, .pins, .pad .go, .icon-btn.gold, .toast button, .morning .pill, .avatar, .msg.typing, .tx-core, input[type=checkbox]') && !cs.backgroundImage.includes('gradient')) { const k = 'LIGHT-BG ' + el.tagName.toLowerCase() + '.' + [...el.classList].join('.') + ' "' + (el.textContent || '').trim().slice(0, 30) + '"'; if (!seen.has(k)) { seen.add(k); out.push(k); } }
+    if (bl !== null && bl < .2 && !el.closest('.btn.primary, .kpi.navy, .tile-n, .badge, .switch, .gate, .pins, .pad .go, .icon-btn.gold, .toast, .morning .pill, .avatar, .check .n, .btn.ok-huge, .msg.typing, .tx-core, input[type=checkbox]') && !cs.backgroundImage.includes('gradient')) { const k = 'DARK-BG ' + el.tagName.toLowerCase() + '.' + [...el.classList].join('.') + ' "' + (el.textContent || '').trim().slice(0, 30) + '"'; if (!seen.has(k)) { seen.add(k); out.push(k); } }
     const direct = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
     if (direct && cs.webkitTextFillColor !== 'rgba(0, 0, 0, 0)' && cs.color !== 'rgba(0, 0, 0, 0)') {
       const tl = lum(cs.color), bg = bgOf(el);
