@@ -1,4 +1,4 @@
-// TESRAX core: the particle sphere — tiny dots on a Fibonacci sphere, green fading to gold.
+// TESRAX core: the Gostamo particle sphere — tiny dots on a Fibonacci sphere in the signature gradient.
 // States: idle (slow turn) · listening (swells with each word) · thinking (fast spin + ticks) · ready (turns green).
 // Touch it and it ripples and plays a note.
 import { useEffect, useRef } from 'react';
@@ -7,8 +7,7 @@ import { sound } from '../core/sound';
 
 export type CoreState = 'idle' | 'listening' | 'thinking' | 'ready';
 
-// green → soft sage → gold, drawn on white (owner's locked look, 11 Nov 2026)
-const SIG0 = [38, 134, 104], SIG1 = [128, 160, 120], SIG2 = [184, 150, 72], GRN = [22, 119, 74];
+const SIG0 = [79, 227, 214], SIG1 = [230, 233, 244], SIG2 = [249, 181, 91], GRN = [79, 227, 160];
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 function sigAt(f: number, green: boolean): number[] {
   f = clamp(f, 0, 1);
@@ -49,14 +48,14 @@ export function TesraxCore({ state = 'idle', size = 160, n, pulse = 0, interacti
       const W = c.width, H = c.height, R = Math.min(W, H) * .36;
       g.clearRect(0, 0, W, H);
       const cr = Math.cos(rot), sr = Math.sin(rot), ct = Math.cos(.35), stt = Math.sin(.35);
-      g.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation = 'lighter';
       const breathe = st === 'idle' ? Math.sin(t / 900) * .015 : 0;
       for (let i = 0; i < N; i++) {
         const p = pts[i];
         const x = p[0] * cr - p[2] * sr; let z = p[0] * sr + p[2] * cr; const y = p[1] * ct - z * stt; z = p[1] * stt + z * ct;
         const wob = 1 + breathe + Math.sin(i * 1.7 + rot * 6) * (.02 + energy * .09) + L.touch * .12 * Math.sin(i + rot * 20);
         const sc = 1 / (1.9 - z * .6), px = W / 2 + x * R * wob * sc * 1.25, py = H / 2 + y * R * wob * sc * 1.25;
-        const a = (.3 + (z + 1) * .35);
+        const a = (.22 + (z + 1) * .36);
         const s = (1.05 + (z + 1) * 1.05) * d * (size < 100 ? .75 : .9);
         const f = (px / W - .5) * 1.9 + .5;
         const c1 = sigAt(f, false), c2 = sigAt(f, true);
@@ -79,7 +78,7 @@ export function TesraxCore({ state = 'idle', size = 160, n, pulse = 0, interacti
   return (
     <span className={`tx-core ${state}`} style={{ width: size, height: size }} onPointerDown={interactive ? poke : undefined} role={interactive ? 'img' : undefined} aria-label={label}>
       <canvas ref={cv} style={{ width: size, height: size }} />
-      {state === 'ready' && <svg className="tx-tick" viewBox="0 0 24 24" style={{ width: size * .3, height: size * .3 }}><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#16774A" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+      {state === 'ready' && <svg className="tx-tick" viewBox="0 0 24 24" style={{ width: size * .3, height: size * .3 }}><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#4FE3A0" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
     </span>
   );
 }

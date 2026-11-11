@@ -1,36 +1,34 @@
-/* Hanubix design system (locked by the owner, 11 Nov 2026).
-   White ground, white cards with one hairline, deep green headings and the TESRAX letters, primary actions and the
-   hero card in a green-to-gold fade, the TESRAX ball in green-to-gold dots, grey outline icons with a pale mint chip
-   when selected. Geist for everything. Legacy token names are aliases. */
+/* Hanubix design system — the Gostamo family look (locked).
+   Pure black ground, #0E1016 cards with one hairline, one signature gradient (teal → pale → amber) used only
+   for the TESRAX core, the wordmark, primary actions and hero numbers. Geist for everything. No solid orange anywhere. Single theme by design (works in sunlight with
+   high-contrast white text; easy on the eyes in the godown at night). Legacy token names are aliases. */
 
 :root {
-  /* ground + surfaces — the white Hanubix look (owner, 11 Nov 2026, locked) */
-  --bg: #FFFFFF;
-  --card: #FFFFFF;
-  --card-2: #F4F7F5;
-  --card-3: #EAF3EE;
-  --line: #E3E8E5;
-  --line-2: #CFD8D3;
+  /* ground + surfaces */
+  --bg: #000000;
+  --card: #0E1016;
+  --card-2: #141821;
+  --card-3: #1A1D26;
+  --line: #23262F;
+  --line-2: #2E3240;
   /* text */
-  --txt: #12201B;
-  --mut: #4C5B55;
-  --dim: #66736E;
-  /* signature: deep green, fading to gold on primary actions and the hero card */
-  --teal: #17694C;
-  --pale: #EAF3EE;
-  --amber: #8A6A1F;
-  --g: #17694C;
-  --grad: linear-gradient(120deg, #0B4A35 0%, #2B6B43 55%, #7C6A2B 100%);
-  --mint: #E6F2EC;
-  --on-g: #FFFFFF;
+  --txt: #F2F4F8;
+  --mut: #9AA3B2;
+  --dim: #6B7383;
+  /* signature */
+  --teal: #4FE3D6;
+  --pale: #E6E9F4;
+  --amber: #F9B55B;
+  --g: #4FE3D6; /* the signature colour: solid teal (no gradient — owner, 11 Nov 2026) */
+  --on-g: #0B1024;
   /* semantic (never the accent) */
-  --ok: #16774A;
-  --ok-soft: #E5F4EC;
-  --warn: #9A5B00;
-  --warn-soft: #FDF3E1;
-  --bad: #C2283A;
-  --bad-soft: #FCEBED;
-  --info-soft: #F4F7F5;
+  --ok: #4FE3A0;
+  --ok-soft: rgba(79, 227, 160, .12);
+  --warn: #F9B55B;
+  --warn-soft: rgba(249, 181, 91, .12);
+  --bad: #FF5C6C;
+  --bad-soft: rgba(255, 92, 108, .12);
+  --info-soft: #141821;
   /* aliases used across screens */
   --paper: var(--bg);
   --paper-2: var(--card-2);
@@ -60,12 +58,12 @@
   --r-lg: 20px;
   --shadow: none;
   --tap: 52px;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
-html { background: #fff; } /* behind the phone keyboard and any gap */
+html { background: #000; } /* behind the phone keyboard and any gap, never white */
 body { background: var(--paper); color: var(--ink); font: 1rem/1.45 var(--body); -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 button { font: inherit; cursor: pointer; color: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
@@ -670,50 +668,3 @@ body[data-toast] .main { padding-top: var(--toast-pad, 72px); }
 .main:has(.home) { padding-bottom: calc(76px + 28px + env(safe-area-inset-bottom, 0px)); }
 /* a long bill number shrinks a little on a narrow screen at large text instead of running out of its box */
 .item .billno { font-size: min(1em, 5.4vw); }
-
-/* =====================================================================
-   WHITE LOOK (owner, 11 Nov 2026 — locked): white, deep green, green-to-gold
-   ===================================================================== */
-.app::before { display: none; }
-.top { background: rgba(255, 255, 255, .9); }
-.top .wordmark { color: var(--txt); font-weight: 600; letter-spacing: .32em; text-transform: uppercase; font-size: 1.0625rem; }
-.top .wordmark sup, .login .mark sup, .engine-mark sup { -webkit-text-fill-color: var(--dim); letter-spacing: 0; }
-.tabs { background: rgba(255, 255, 255, .94); }
-.tabs > button:not(.fab) { color: var(--dim); }
-.tabs > button:not(.fab).on { color: var(--g); }
-.tabs > button:not(.fab).on .ic { background: var(--mint); color: var(--g); }
-@media (min-width: 900px) { .tabs > button:not(.fab).on { background: var(--mint); } }
-h1, h2, .h, .home-greet { color: var(--g); }
-.eyebrow { color: var(--mut); letter-spacing: .14em; }
-.btn.primary, .icon-btn.gold, .badge.gold, .avatar.gold, .pad button.go, .morning .pill, .toast button, .gate .big-btn, .tile-n.warn, .fab-mark.small { background: var(--grad); color: var(--on-g); border: 1px solid #0B4A35; }
-.gate .big-btn { box-shadow: 0 16px 40px rgba(11, 74, 53, .22); }
-.kpi.navy { background: var(--grad); border-color: #0B4A35; color: #fff; }
-.kpi.navy::before { display: none; }
-.kpi.navy .v, .kpi.navy .l, .kpi.navy .d.up, .kpi.navy .d.down { color: #fff; }
-.morning::before, .login-hero::before, .engine::before { display: none; }
-.morning .kv b { color: var(--g); }
-.chip.on { background: var(--mint) !important; color: var(--g) !important; border-color: var(--mint) !important; }
-.switch.on { background: var(--g); }
-.tile-ic, .tile.module .tile-ic { background: var(--card-2); color: var(--mut); border-color: var(--line); }
-.tile-n { background: var(--card-3); color: var(--g); border-color: var(--line-2); }
-.tile-n.bad, .check .n { color: #fff; }
-.tile-n.ok, .btn.ok-huge, .check .n.ok { color: #fff; }
-.msg.me { background: var(--mint); border-color: var(--mint); color: var(--txt); }
-.att { background: rgba(0, 0, 0, .06); }
-.sticky-foot { background: var(--bg); }
-.dialog-wrap { background: rgba(18, 32, 27, .45); }
-.dialog { box-shadow: 0 20px 60px rgba(18, 32, 27, .18); }
-.toast { background: var(--txt); color: #fff; border-color: var(--txt); }
-.engine { background: rgba(255, 255, 255, .97); }
-.engine-mark { color: var(--txt); font-weight: 600; letter-spacing: .32em; text-transform: uppercase; font-size: 1rem; }
-.fab { background: #fff; box-shadow: 0 0 0 1px var(--line), 0 0 0 5px #fff, 0 6px 18px rgba(18, 32, 27, .12); }
-.route .stop.now::before { box-shadow: 0 0 0 4px rgba(23, 105, 76, .18); }
-.sync { box-shadow: 0 0 0 3px rgba(22, 119, 74, .18); }
-.sync.off { box-shadow: 0 0 0 3px rgba(154, 91, 0, .18); }
-::selection { background: rgba(23, 105, 76, .2); }
-.login .mark, .login-hero .mark { color: var(--txt); font-weight: 600; letter-spacing: .3em; text-transform: uppercase; font-size: 2rem; }
-.login .powered b, .engine-pw b { color: var(--g); letter-spacing: .3em; }
-.qr .muted { color: var(--mut); }
-.login .retail { font-size: 0.6875rem; font-weight: 600; letter-spacing: .42em; text-transform: uppercase; color: var(--txt); margin-top: 8px; }
-.morning .t { color: var(--g); }
-.login-hero { border-bottom: 0; }

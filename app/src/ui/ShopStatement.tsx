@@ -47,7 +47,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
         {shop.lat && <a className="icon-btn" href={`https://maps.google.com/?q=${shop.lat},${shop.lng}`} target="_blank" rel="noreferrer" aria-label="Map"><MapPin /></a>}
       </div>
       <div className="kpis">
-        <div className="kpi navy"><div className="v" style={{ color: due.total > 0 ? undefined : '#D9F5E6' }}>{inr(Math.max(0, due.total))}</div><div className="l">{'balance due'}{due.advance > 0 ? ` · ${'advance'} ${inr(due.advance)}` : ''}</div></div>
+        <div className="kpi navy"><div className="v" style={{ color: due.total > 0 ? undefined : '#7fe0ad' }}>{inr(Math.max(0, due.total))}</div><div className="l">{'balance due'}{due.advance > 0 ? ` · ${'advance'} ${inr(due.advance)}` : ''}</div></div>
         <div className="kpi"><div className="v" style={{ color: due.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(due.overdue)}</div><div className="l">{'overdue'}{due.days ? ` · ${due.days}d` : ''}</div></div>
       </div>
       <div className="muted">{'Credit'}: {shop.creditLimit ? `${inr(shop.creditLimit)} / ${shop.creditDays}d` : 'cash only'}</div>
