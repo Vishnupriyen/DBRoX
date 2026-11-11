@@ -14,7 +14,7 @@
 | GST | Prices **plus applicable GST** | Invoice/legal implementation to verify. |
 | English vs Indian languages | English at launch; regional languages later | Keep i18n-ready. |
 | Target identity | "The autonomous operating system for B2B distribution." | Promise requires proof, not production-status assertion. |
-| Visual identity | Pure black, Geist, teal–pale–amber gradient, TESRAX point-sphere | No final approved Hanubix logo. |
+| Visual identity | **Latest: original black style, solid teal accents, no gradient** | This is the latest working visual direction (Hanu Tech p.146), **not** an approved logo. Previous gradient/plum/gold treatments are superseded explorations. |
 | Software vs ancillary services | Software sold/operated directly; other opportunities primarily via partners | Payment/credit/e-commerce/insurance/etc not automatic core product expansions. |
 | Budget / team | User + AI for pilot, ₹20k/month operating constraint | Founder partner joins later; cold calling/digital acquisition. |
 | Design process | Decide logo first, review screens and workflows rather than generic UI collages | Any image concepts produced so far are exploratory, not official assets. |
@@ -29,8 +29,8 @@
 - AI-generated logo images and generic dashboard layouts are not approved final design.
 
 ## Outstanding decisions and evidence
-- Missing **30–31 October product-definition transcript (87 founder answers)**. The November PDF only refers to it; retrieve if later available.
-- Distinct second Claude share export not proven included in the current PDF.
+- Historical **87-question product-definition milestone** is now documented in the 146-page Hanu Tech export (p.7), along with a 151-question micro-issues milestone (p.10). Many exact answers remain inside a separately referenced working document, not fully reproduced here.
+- Distinct Claude shared links are not yet individually certified as identical to the two saved PDF exports; do not claim full equivalence.
 - App logo, icon, layout grid, navigation and screen-by-screen sign-off.
 - Brand integration data rights, APIs vs CSV/file bridges, exact hierarchy and licensing unit.
 - Free trial, onboarding/setup cost, customer staff limits, feature flags, pricing discounts and renewal policy under revised prices.
