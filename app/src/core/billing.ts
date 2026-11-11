@@ -1,6 +1,6 @@
 import { inr } from './i18n';
-import { nextNumbers } from './sync';
-import { ChangeSet, db, getSettings, today } from './db';
+import { nextNumbers, PENDING_MARK, server } from './sync';
+import { ChangeSet, db, getSettings, newId, today } from './db';
 import { isB2B, r2, shopOutstanding } from './ledger';
 import type { Batch, Invoice, InvoiceLine, Order, OrderLine, Product, Scheme, Shop } from './types';
 
@@ -94,12 +94,16 @@ export async function checkOrder(shop: Shop, lines: OrderLine[]): Promise<OrderC
 }
 
 // ---------- making bills (one per company) ----------
-// Credit-note numbers: CN/<financial year>/<running no>. From the server when there is one (never a duplicate across
-// phones); otherwise from a counter in settings that only moves forward.
+// Credit-note numbers: CN/<financial year>/<running no>. With a server they come ONLY from it (never a duplicate across
+// phones); without signal the note is saved "number pending" and numbered at the next sync. No server (demo): a counter
+// in settings that only moves forward.
 export async function creditNoteNumbers(cs: ChangeSet, count: number): Promise<string[]> {
   const fy = finYear(today());
   let first: number | null = null;
-  try { first = (await nextNumbers('cn', count))?.first ?? null; } catch { first = null; }
+  if (await server()) {
+    try { first = (await nextNumbers('cn', count))?.first ?? null; } catch { first = null; }
+    if (first === null) return Array.from({ length: count }, () => `CN/${fy}${PENDING_MARK}${newId().slice(-6)}`);
+  }
   if (first === null) {
     const settings = await getSettings();
     first = settings.nextCnNo ?? (await db.creditNotes.count()) + 1;

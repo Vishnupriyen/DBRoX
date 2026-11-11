@@ -19,7 +19,8 @@ export function DeliveryStatus() {
       <div className="card stack">
         <div><b>{rows.find(r => r.id === open.id)?.shop}</b><div className="muted">{open.number} · {inr(open.total)} · {open.delivery?.at.slice(11, 16)}</div></div>
         <div className="row" style={{ gap: 8 }}>
-          {open.delivery?.shopPhoto && <img src={open.delivery.shopPhoto} alt="Shop" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
+          {/* older bills kept the shop photo twice (photo + shopPhoto): either one */}
+          {(open.delivery?.shopPhoto ?? open.delivery?.photo) && <img src={open.delivery.shopPhoto ?? open.delivery.photo} alt="Shop" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
           {open.delivery?.billPhoto && <img src={open.delivery.billPhoto} alt="Bill" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
         </div>
         <div className="muted"><MapPin size={14} style={{ verticalAlign: -2 }} /> {open.delivery?.lat ? `${open.delivery.lat.toFixed(5)}, ${open.delivery.lng?.toFixed(5)}` : 'no location'}{open.delivery?.distanceM != null && <span className={`badge ${open.delivery.distanceM > 150 ? 'bad' : 'ok'}`} style={{ marginLeft: 6 }}>{open.delivery.distanceM} m {'from shop'}</span>}</div>

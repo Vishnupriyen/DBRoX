@@ -20,14 +20,24 @@ export function resultOf(r: Reply | null): Result {
   return 'answer';
 }
 
+/** this phone (one install): the same person on two phones keeps two counts, and the report adds them up */
+export function deviceId(): string {
+  try {
+    let d = localStorage.getItem('hanubix.device');
+    if (!d) { d = crypto.getRandomValues(new Uint32Array(2)).reduce((a, x) => a + x.toString(36), ''); localStorage.setItem('hanubix.device', d); }
+    return d;
+  } catch { return 'phone'; }
+}
+
 const blank = (day: string, staffId: string, role: string) => ({
-  id: `${staffId}|${day}`, day, staffId, role, n: 0, done: 0, answer: 0, ask: 0, missed: 0, refused: 0,
+  id: `${staffId}|${day}|${deviceId()}`, day, staffId, role, n: 0, done: 0, answer: 0, ask: 0, missed: 0, refused: 0,
   msTotal: 0, msMax: 0, approved: 0, edited: 0, cancelled: 0, misses: [] as string[],
 });
 
 async function change(day: string, role: string, f: (d: ReturnType<typeof blank>) => void) {
   const staffId = session().userId;
-  const d = { ...blank(day, staffId, role), ...((await db.tesraxDays.get(`${staffId}|${day}`)) ?? {}) };
+  const fresh = blank(day, staffId, role);
+  const d = { ...fresh, ...((await db.tesraxDays.get(fresh.id)) ?? {}) };
   f(d);
   const cs = new ChangeSet({ noAudit: true }); // a count, not an action: nothing to undo
   cs.put<TesraxDay>('tesraxDays', d, 'count');
@@ -41,7 +51,8 @@ export async function noteMessage(role: string, said: string, reply: Reply | nul
     const res = resultOf(reply);
     await change(day, role, d => {
       d.n++; d[res]++; d.msTotal += Math.round(ms); d.msMax = Math.max(d.msMax, Math.round(ms));
-      if (res === 'missed' && said) d.misses = [...d.misses, said.slice(0, 120)].slice(-KEEP_MISSES);
+      // cut by whole characters: an emoji cut in half is text the server's database cannot store
+      if (res === 'missed' && said) d.misses = [...d.misses, Array.from(said).slice(0, 120).join('')].slice(-KEEP_MISSES);
     });
   } catch { /* the report must never get in the way of the work */ }
   return day;

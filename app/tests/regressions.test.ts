@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ChangeSet, db, setSession, undoBatch, today, daysFrom, monthEnd } from '../src/core/db';
 import { seedDemo } from '../src/core/seed';
-import { bookOrder, approveOrder, suggestPick, pickOrder, approvePicked, settleDifference } from '../src/core/pipeline';
+import { bookOrder, approveOrder, suggestPick, pickOrder, approvePicked, settleDifference, recordDelivery } from '../src/core/pipeline';
 import { creditNoteNumbers, finYear } from '../src/core/billing';
 import { shopOutstanding } from '../src/core/ledger';
 import type { Product, Shop } from '../src/core/types';
@@ -25,6 +25,17 @@ async function pickedOrder(shop: Shop, p: Product, qty: number, extra = {}) {
 }
 
 describe('review fixes', () => {
+  it('a delivery keeps the shop photo once on the bill, and no copy in the history log (pre-pilot, 11 Nov 2026)', async () => {
+    const p = products[2]; const id = await pickedOrder(shops[2], p, 2);
+    const { invoices } = await approvePicked(id);
+    const photo = 'data:image/jpeg;base64,' + 'C'.repeat(40000);
+    const batch = await recordDelivery([invoices[0].id], { shopPhoto: photo });
+    const inv = (await db.invoices.get(invoices[0].id))!;
+    expect(inv.delivery?.shopPhoto).toBe(photo);
+    expect(inv.delivery?.photo).toBeUndefined();
+    expect(JSON.stringify(await db.audit.where('batchId').equals(batch!).toArray())).not.toContain('CCCCCCCC');
+  });
+
   it('a double tap on Done → bill makes one bill and takes stock once', async () => {
     const p = products[0]; const id = await pickedOrder(shops[0], p, 6);
     const s0 = await stock(p.id);

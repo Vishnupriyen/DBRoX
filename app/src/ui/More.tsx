@@ -7,7 +7,7 @@ import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { inr, t, showDate } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
-import { ENV_SERVER, syncNow } from '../core/sync';
+import { ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
 import { addClaimLine, decisionsFor, openLines, sendClaim } from '../core/claims';
 import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
 import { PrintBill } from './PrintBill';
@@ -165,6 +165,7 @@ function StaffPage({ editable }: { editable: boolean }) {
   const add = async () => {
     if (!form.name || !/^\d{10}$/.test(form.phone) || !/^\d{4}$/.test(form.pin)) { void notify('Name, 10-digit phone and 4-digit PIN needed'); return; }
     if (list.some(s => s.phone === form.phone)) { void notify('This phone number is already used'); return; }
+    if (weakPin(form.pin)) { void notify(WEAK_PIN_MSG); return; }
     const cs = new ChangeSet(); cs.put<Staff>('staff', { ...form, active: true }, 'add staff'); await cs.commit('Staff added');
     setForm({ name: '', phone: '', role: 'salesman', pin: '' }); load();
   };

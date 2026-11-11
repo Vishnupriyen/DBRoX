@@ -154,9 +154,19 @@ export function cachedStore(q: Q, tenant: string) {
 }
 type Cached = ReturnType<typeof cachedStore>;
 
-/** after a tenant's changes are saved: note them for the relay (the sync itself stays fast) */
-export async function relayChanges(pool: pg.Pool, tenant: string, kind: 'company' | 'distributor', changed: { table: string; id: string }[]) {
-  if (!changed.length) return;
+/** inside the sync's own transaction: note the saved changes for the relay (a crash after the save can't lose them) */
+export async function queueRelay(client: pg.PoolClient, tenant: string, kind: 'company' | 'distributor', changed: { table: string; id: string }[]) {
+  if (!changed.length) return false;
+  // only tenants with a live link have anything to relay
+  const has = (await client.query(`SELECT 1 FROM links WHERE ${kind === 'company' ? 'company_tenant' : 'db_tenant'}=$1 AND status='linked' LIMIT 1`, [tenant])).rowCount;
+  if (!has) return false;
+  await client.query(`INSERT INTO relay_queue(tenant_id, kind, tbl, doc_id) SELECT $1, $2, t, i FROM unnest($3::text[], $4::text[]) AS x(t, i)`,
+    [tenant, kind, changed.map(c => c.table), changed.map(c => c.id)]);
+  return true;
+}
+
+/** after the save: a company pausing / resuming a distributor, then start the relay workers */
+export async function afterSave(pool: pg.Pool, tenant: string, kind: 'company' | 'distributor', changed: { table: string; id: string }[], queued: boolean) {
   // the company may pause a distributor from its own list; on resume, what changed meanwhile is caught up
   if (kind === 'company') for (const ch of changed.filter(c => c.table === 'dbLinks')) {
     const d = await storeFor(pool, tenant).get('dbLinks', ch.id);
@@ -164,12 +174,18 @@ export async function relayChanges(pool: pg.Pool, tenant: string, kind: 'company
     const r = (await pool.query(`UPDATE links l SET status=$3, updated_at=now() FROM (SELECT status AS was FROM links WHERE id=$1) o WHERE l.id=$1 AND l.company_tenant=$2 AND l.status <> 'left' RETURNING o.was`, [ch.id, tenant, d.status])).rows[0];
     if (r?.was === 'paused' && d.status === 'linked') await resyncLink(pool, ch.id);
   }
-  // only tenants with a live link have anything to relay
-  const has = (await pool.query(`SELECT 1 FROM links WHERE ${kind === 'company' ? 'company_tenant' : 'db_tenant'}=$1 AND status='linked' LIMIT 1`, [tenant])).rowCount;
-  if (!has) return;
-  await pool.query(`INSERT INTO relay_queue(tenant_id, kind, tbl, doc_id) SELECT $1, $2, t, i FROM unnest($3::text[], $4::text[]) AS x(t, i)`,
-    [tenant, kind, changed.map(c => c.table), changed.map(c => c.id)]);
+  if (!queued) return;
   if (process.env.RELAY_INLINE === '1') await drainRelay(pool); else kickRelay(pool);
+}
+
+/** note changes for the relay outside a sync (one transaction of its own) */
+export async function relayChanges(pool: pg.Pool, tenant: string, kind: 'company' | 'distributor', changed: { table: string; id: string }[]) {
+  if (!changed.length) return;
+  const client = await pool.connect();
+  let queued = false;
+  try { await client.query('BEGIN'); queued = await queueRelay(client, tenant, kind, changed); await client.query('COMMIT'); }
+  catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  await afterSave(pool, tenant, kind, changed, queued);
 }
 
 let draining: Promise<number> | null = null;
@@ -184,27 +200,42 @@ export function kickRelay(pool: pg.Pool) {
   draining.catch(() => {});
 }
 /** changes noted but not yet handed over (waiting in the queue, or being written right now) */
-export async function relayBacklog(pool: pg.Pool) { return Number((await pool.query('SELECT count(*)::int n FROM relay_queue')).rows[0].n) + inFlight; }
+export async function relayBacklog(pool: pg.Pool) { return Number((await pool.query('SELECT count(*)::int n FROM relay_queue')).rows[0].n); } // rows being relayed stay in the queue until done
 /** wait for a running background relay to finish (server shutdown) */
 export async function relayIdle() { if (draining) await draining.catch(() => 0); }
 /** empty the queue now (tests, the every-minute safety call, and RELAY_INLINE) */
 export async function drainRelay(pool: pg.Pool) { if (draining) await draining.catch(() => 0); let n = 0; for (;;) { const k = await drainOnce(pool); n += k; if (!k) break; } return n; }
 
-/** take up to 2,000 noted changes (oldest first, never two workers on the same rows), relay them in batches */
+type QRow = { id: string; tenant_id: string; kind: 'company' | 'distributor'; tbl: string; doc_id: string; tries: number };
+const STALE_CLAIM_MIN = 10; // a worker that stopped mid-way (instance shut down): its rows are taken again after this
+const MAX_TRIES = 5;
+/** take up to `size` noted changes (oldest first, never two workers on the same rows). They stay in the queue until relayed. */
+export async function claimRelay(pool: pg.Pool, size = 2000): Promise<QRow[]> {
+  return (await pool.query(`UPDATE relay_queue SET taken_at = now() WHERE id IN (
+      SELECT id FROM relay_queue WHERE taken_at IS NULL OR taken_at < now() - make_interval(mins => $2) ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED)
+    RETURNING *`, [size, STALE_CLAIM_MIN])).rows;
+}
+/** relayed: now they can go */
+export async function relayDone(pool: pg.Pool, rows: QRow[]) {
+  if (rows.length) await pool.query('DELETE FROM relay_queue WHERE id = ANY($1::bigint[])', [rows.map(r => r.id)]);
+}
+/** failed: tried again later; after 5 tries kept in relay_failed (never dropped) */
+export async function relayFailed(pool: pg.Pool, rows: QRow[], error: string) {
+  if (!rows.length) return;
+  const ids = rows.map(r => r.id);
+  await pool.query(`WITH gone AS (DELETE FROM relay_queue WHERE id = ANY($1::bigint[]) AND tries + 1 >= $2 RETURNING *)
+    INSERT INTO relay_failed(id, tenant_id, kind, tbl, doc_id, at, tries, error) SELECT id, tenant_id, kind, tbl, doc_id, at, tries + 1, $3 FROM gone ON CONFLICT (id) DO NOTHING`, [ids, MAX_TRIES, error]);
+  await pool.query('UPDATE relay_queue SET tries = tries + 1, taken_at = NULL WHERE id = ANY($1::bigint[])', [ids]);
+}
+
 async function drainOnce(pool: pg.Pool, size = 2000): Promise<number> {
-  const client = await pool.connect();
-  let rows: { id: string; tenant_id: string; kind: 'company' | 'distributor'; tbl: string; doc_id: string; tries: number }[];
-  try {
-    await client.query('BEGIN');
-    rows = (await client.query(`DELETE FROM relay_queue WHERE id IN (SELECT id FROM relay_queue ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED) RETURNING *`, [size])).rows;
-    await client.query('COMMIT');
-  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  const rows = await claimRelay(pool, size);
   if (!rows.length) return 0;
   inFlight += rows.length;
   try { await relayRows(pool, rows); } finally { inFlight -= rows.length; }
   return rows.length;
 }
-async function relayRows(pool: pg.Pool, rows: { id: string; tenant_id: string; kind: 'company' | 'distributor'; tbl: string; doc_id: string; tries: number }[]) {
+async function relayRows(pool: pg.Pool, rows: QRow[]) {
   rows.sort((a, b) => Number(a.id) - Number(b.id));
   const byTenant = new Map<string, typeof rows>();
   for (const r of rows) byTenant.set(r.tenant_id, [...(byTenant.get(r.tenant_id) ?? []), r]);
@@ -228,12 +259,12 @@ async function relayRows(pool: pg.Pool, rows: { id: string; tenant_id: string; k
         const target = kind === 'company' ? link.dbTenant : link.companyTenant;
         for (let i = 0; i < writes.length; i += 500) await writeInto(pool, target, writes.slice(i, i + 500));
       }
+      await relayDone(pool, list); // removed only once handed over
     } catch (e) {
-      // put them back for the next run (a few tries), never lose a change
-      const back = list.filter(r => r.tries < 5);
-      if (back.length) await pool.query(`INSERT INTO relay_queue(tenant_id, kind, tbl, doc_id, tries) SELECT $1, $2, t, i, n FROM unnest($3::text[], $4::text[], $5::int[]) AS x(t, i, n)`,
-        [tenant, list[0].kind, back.map(r => r.tbl), back.map(r => r.doc_id), back.map(r => r.tries + 1)]);
-      console.error('relay', tenant, (e as Error).message);
+      // kept for the next run (a few tries), then kept in relay_failed: never a lost change
+      const code = String((e as { code?: string }).code ?? (e as Error).name ?? 'error');
+      await relayFailed(pool, list, code).catch(() => {});
+      console.error('relay failed', code);
     }
   }
 }

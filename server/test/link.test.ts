@@ -3,6 +3,7 @@ process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { billNo, issueNumbers, realBill } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,12 +36,13 @@ const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 describe('company link', () => {
   let co = { token: '', tenantId: '' }, dist = { token: '', tenantId: '' };
   it('a company signs up as a company, with a head-office login', async () => {
-    const s = await post('/v1/signup', { firmName: 'Kaveri Consumer', ownerName: 'HO', phone: '9822200001', pin: '1234', kind: 'company' });
+    const s = await post('/v1/signup', { firmName: 'Kaveri Consumer', ownerName: 'HO', phone: '9822200001', pin: '4826', kind: 'company' });
     expect(s.status).toBe(200); co = s.body;
     expect((await pool.query('SELECT kind FROM tenants WHERE id=$1', [co.tenantId])).rows[0].kind).toBe('company');
     expect((await pool.query('SELECT role FROM users WHERE tenant_id=$1', [co.tenantId])).rows[0].role).toBe('cadmin');
-    const d = await post('/v1/signup', { firmName: 'Velan Agencies', ownerName: 'Velan', phone: '9822200002', pin: '1234' });
+    const d = await post('/v1/signup', { firmName: 'Velan Agencies', ownerName: 'Velan', phone: '9822200002', pin: '4826' });
     dist = d.body;
+    await issueNumbers(pool, dist.tenantId, 'VA');
   });
 
   it('the distributor accepts the invite; only the company\'s own brand crosses', async () => {
@@ -51,8 +53,8 @@ describe('company link', () => {
       ch('products', { id: 'd2', companyId: 'cRIV', name: 'Rival Oil 500ml', code: 'RV500', rate: 80, active: true }),
       ch('shops', { id: 's1', name: 'Murugan Stores', area: 'Pennadam', beat: 'Monday', phone: '9443000001', owner: 'Murugan', gstin: '33AAAAA0000A1Z5', creditLimit: 50000, approved: true, aliases: [] }),
       ch('batches', { id: 'b1', productId: 'd1', qty: 40, expiry: '2027-06-01' }), ch('batches', { id: 'b2', productId: 'd2', qty: 77, expiry: '2027-06-01' }),
-      ch('invoices', { id: 'i1', companyId: 'cKAV', number: 'VA/1', date: today, shopId: 's1', lines: [{ productId: 'd1', name: 'Kaveri Gold Oil 500ml', qty: 2, rate: 95, taxable: 190, total: 199.5 }], total: 200 }),
-      ch('invoices', { id: 'i2', companyId: 'cRIV', number: 'VA/2', date: today, shopId: 's1', lines: [{ productId: 'd2', name: 'Rival Oil 500ml', qty: 9, rate: 80, taxable: 720, total: 756 }], total: 756 }),
+      ch('invoices', realBill({ id: 'i1', companyId: 'cKAV', number: billNo(1, 'VA'), date: today, shopId: 's1', lines: [{ productId: 'd1', name: 'Kaveri Gold Oil 500ml', qty: 2, rate: 95, taxable: 190, total: 199.5 }] })),
+      ch('invoices', realBill({ id: 'i2', companyId: 'cRIV', number: billNo(2, 'VA'), date: today, shopId: 's1', lines: [{ productId: 'd2', name: 'Rival Oil 500ml', qty: 9, rate: 80, taxable: 720, total: 756 }] })),
       ch('payments', { id: 'p1', shopId: 's1', amount: 500, mode: 'cash', allocations: [] }),
     ]);
     // company: its catalogue and an invite
@@ -72,7 +74,7 @@ describe('company link', () => {
     expect(text).not.toContain('33AAAAA0000A1Z5');
     expect(text).not.toContain('50000');      // no credit limit
     expect(cdocs.some(d => d.tbl === 'payments')).toBe(false);
-    expect(cdocs.filter(d => d.tbl === 'secondary').map(d => d.data.number)).toEqual(['VA/1']);
+    expect(cdocs.filter(d => d.tbl === 'secondary').map(d => d.data.number)).toEqual([billNo(1, 'VA')]);
     expect((await pool.query('SELECT product_id, qty FROM link_stock WHERE tenant_id=$1', [co.tenantId])).rows.map(r => [r.product_id, Number(r.qty)])).toEqual([['P1', 40], ['P2', 0]]); // stock lives in its compact table (P2: the brand's new product, none in stock yet)
     expect(cdocs.find(d => d.tbl === 'dbLinks')?.data.status).toBe('linked');
     // the distributor's own Kaveri product was tied to the company's (by code), the new one added
@@ -85,13 +87,13 @@ describe('company link', () => {
 
   it('new bills cross on sync; a rival bill does not; relay-only tables cannot be written by a phone', async () => {
     const r = await sync(dist.token, [
-      ch('invoices', { id: 'i3', companyId: 'cKAV', number: 'VA/3', date: today, shopId: 's1', lines: [{ productId: 'd1', qty: 1, rate: 95, taxable: 95, total: 99.75 }], total: 100 }),
-      ch('invoices', { id: 'i4', companyId: 'cRIV', number: 'VA/4', date: today, shopId: 's1', lines: [{ productId: 'd2', qty: 1, rate: 80, taxable: 80, total: 84 }], total: 84 }),
+      ch('invoices', realBill({ id: 'i3', companyId: 'cKAV', number: billNo(3, 'VA'), date: today, shopId: 's1', lines: [{ productId: 'd1', qty: 1, rate: 95, taxable: 95, total: 99.75 }] })),
+      ch('invoices', realBill({ id: 'i4', companyId: 'cRIV', number: billNo(4, 'VA'), date: today, shopId: 's1', lines: [{ productId: 'd2', qty: 1, rate: 80, taxable: 80, total: 84 }] })),
       ch('claimDecisions', { id: 'fake', claimId: 'x', status: 'approved', amount: 99999 }),
     ]);
     expect(r.rejected).toContain('claimDecisions|fake'); // a distributor cannot approve its own claim
     const sec = (await docsOf(co.tenantId)).filter(d => d.tbl === 'secondary').map(d => d.data.number).sort();
-    expect(sec).toEqual(['VA/1', 'VA/3']);
+    expect(sec).toEqual([billNo(1, 'VA'), billNo(3, 'VA')]);
     const forged = await sync(co.token, [ch('secondary', { id: 'forged', dbLinkId: 'L1', number: 'X', lines: [] })]);
     expect(forged.rejected).toContain('secondary|forged'); // a company cannot invent distributor sales
   });
@@ -103,7 +105,7 @@ describe('company link', () => {
   });
 
   it('a company role can never be created inside a distributor', async () => {
-    await sync(dist.token, [ch('staff', { id: 'u9', name: 'Fake HO', phone: '9822200009', role: 'cadmin', pin: '1111', active: true })]);
+    await sync(dist.token, [ch('staff', { id: 'u9', name: 'Fake HO', phone: '9822200009', role: 'cadmin', pin: '3917', active: true })]);
     expect((await pool.query('SELECT 1 FROM users WHERE phone=$1', ['9822200009'])).rowCount).toBe(0);
   });
 
@@ -123,9 +125,9 @@ describe('company link', () => {
 
   it('after the distributor leaves, nothing new crosses', async () => {
     expect((await post('/v1/link/leave', { linkId: 'L1' }, dist.token)).status).toBe(200);
-    await sync(dist.token, [ch('invoices', { id: 'i5', companyId: 'cKAV', number: 'VA/5', date: today, shopId: 's1', lines: [{ productId: 'd1', qty: 1, rate: 95, taxable: 95, total: 99.75 }], total: 100 })]);
+    await sync(dist.token, [ch('invoices', realBill({ id: 'i5', companyId: 'cKAV', number: billNo(5, 'VA'), date: today, shopId: 's1', lines: [{ productId: 'd1', qty: 1, rate: 95, taxable: 95, total: 99.75 }] }))]);
     const cdocs = await docsOf(co.tenantId);
-    expect(cdocs.some(d => d.tbl === 'secondary' && d.data.number === 'VA/5')).toBe(false);
+    expect(cdocs.some(d => d.tbl === 'secondary' && d.data.number === billNo(5, 'VA'))).toBe(false);
     expect(cdocs.find(d => d.tbl === 'dbLinks')?.data.status).toBe('left');
     await sync(co.token, [ch('products', { id: 'P3', name: 'Kaveri Rasam Powder', rate: 30, active: true })]);
     expect((await docsOf(dist.tenantId)).some(d => d.tbl === 'products' && d.data.id === 'P3')).toBe(false);

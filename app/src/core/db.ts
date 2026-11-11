@@ -224,6 +224,27 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
   }
 }
 
+// The history log keeps no photo copies (a delivery photo inside every before/after copy filled phones and the server).
+// A photo is replaced by this mark; undo takes the photo back from the record itself.
+export const PHOTO_KEPT = '(photo kept on the record)';
+const isPhoto = (v: unknown) => typeof v === 'string' && v.startsWith('data:') && v.length > 512;
+export function withoutPhotos(v: unknown): unknown {
+  if (isPhoto(v)) return PHOTO_KEPT;
+  if (Array.isArray(v)) return v.map(withoutPhotos);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, withoutPhotos(x)]));
+  return v;
+}
+/** a log copy with its photos taken back from the record as it is now */
+function photosFrom(logged: unknown, now: unknown): unknown {
+  if (logged === PHOTO_KEPT) return now;
+  if (Array.isArray(logged)) return logged.map((x, i) => photosFrom(x, Array.isArray(now) ? now[i] : undefined));
+  if (logged && typeof logged === 'object') {
+    const n = (now && typeof now === 'object' ? now : {}) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(logged as Record<string, unknown>).map(([k, x]) => [k, photosFrom(x, n[k])]));
+  }
+  return logged;
+}
+
 // A Change set = everything one ✓ approval writes. Written in one transaction with an
 // audit entry per record, so the whole approval can be undone later.
 export class ChangeSet {
@@ -249,7 +270,7 @@ export class ChangeSet {
         if (this.opts.noAudit) continue;
         await db.audit.put(stamp<AuditEntry>({
           at: nowIso(), by: currentUser, action: `${label}: ${w.action}`,
-          table: w.table, recordId: w.rec.id, before, after: w.rec, batchId: this.batchId,
+          table: w.table, recordId: w.rec.id, before: withoutPhotos(before), after: withoutPhotos(w.rec), batchId: this.batchId,
         } as AuditEntry));
       }
     });
@@ -276,14 +297,15 @@ export async function undoBatch(batchId: string): Promise<number> {
     if (e.table === 'settings') continue; // the bill counter only moves forward; never re-issue a number
     // compare the record itself, not its save time: two saves in the same millisecond share a timestamp
     const cur = await db.table(e.table).get(e.recordId);
-    if (sameRecord(cur, e.after) === false) return -1;
+    if (sameRecord(withoutPhotos(cur), e.after) === false) return -1;
   }
   await db.transaction('rw', [...tables.map(t => db.table(t)), db.audit], async () => {
+    // the log itself is add-only on the server: "undone" is this phone's own mark (an unsent entry still goes as it is)
     for (const e of entries.slice().reverse()) {
-      if (e.table === 'settings') { await db.audit.put({ ...e, undone: true, updatedAt: nowIso(), dirty: 1 }); continue; }
-      if (e.before) await db.table(e.table).put({ ...(e.before as object), updatedAt: nowIso(), dirty: 1 });
+      if (e.table === 'settings') { await db.audit.put({ ...e, undone: true }); continue; }
+      if (e.before) await db.table(e.table).put({ ...(photosFrom(e.before, await db.table(e.table).get(e.recordId)) as object), updatedAt: nowIso(), dirty: 1 });
       else await db.table(e.table).delete(e.recordId);
-      await db.audit.put({ ...e, undone: true, updatedAt: nowIso(), dirty: 1 });
+      await db.audit.put({ ...e, undone: true });
     }
   });
   return entries.length;

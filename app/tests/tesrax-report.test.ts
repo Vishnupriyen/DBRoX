@@ -47,7 +47,7 @@ describe('the report', () => {
     await noteMessage('owner', 'P&L', { text: 'x' }, 80);
     const recs = await db.tesraxDays.toArray();
     expect(recs).toHaveLength(1);
-    expect(recs[0].id).toBe(`${owner}|${today()}`);
+    expect(recs[0].id).toMatch(new RegExp(`^${owner}\\|${today()}\\|.+`)); // one record per staff per day per phone (11 Nov 2026)
     const r = await tesraxReport(today());
     expect(r.messages).toBe(4);
     expect(r.missed).toBe(1);
