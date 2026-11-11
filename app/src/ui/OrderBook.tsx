@@ -115,7 +115,7 @@ export function OrderBook({ shop, visit, onClose, existing }: { shop: Shop; visi
       <h2>{result.text}</h2>
       <div className="muted">{shop.name} · {plural(totals.items, 'item')} · {inr(totals.amount)}</div>
       {result.needsOk && <div className="alert" style={{ textAlign: 'left' }}><AlertTriangle /><div>{'Owner will check: '}{issuesText}</div></div>}
-      {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}>{i.number} · {inr(i.total)}</button>)}</div>}
+      {result.invoices.length > 0 && <div className="row" style={{ justifyContent: 'center' }}>{result.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><span className="billno">{i.number}</span> · {inr(i.total)}</button>)}</div>}
       <button className="btn big primary block" onClick={onClose}>{'Next shop'} →</button>
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
     </div>

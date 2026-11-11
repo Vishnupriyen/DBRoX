@@ -189,17 +189,18 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         <div className="grow"><div className="h">{stop.shop.name}</div><div className="muted">{stop.shop.area}</div></div>
         <span className="amt num">{inr(billTotal)}</span>
       </div>
+      <div className="stack">
       {stop.invoices.map(inv => (
         <div className="card" key={inv.id}>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>{inv.number}</div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}><span className="billno">{inv.number}</span></div>
           <div className="list">
             {inv.lines.map(l => {
               const p = products.get(l.productId);
               const s = short[key(inv, l.productId)]; const e = extra[key(inv, l.productId)];
               return (
-                <div className="item" key={l.productId}>
+                <div className="item" key={l.productId} style={{ flexWrap: 'wrap' }}>
                   {p ? <Pack product={p} /> : <div className="avatar">?</div>}
-                  <div className="grow">
+                  <div className="grow" style={{ minWidth: 0 }}>
                     <div className="t">{l.name}</div>
                     <div className="s">MRP {l.mrp}</div>
                     <div className="row" style={{ marginTop: 4 }}>
@@ -208,14 +209,14 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                       {e ? <span className="badge warn">+{e} extra</span> : null}
                     </div>
                   </div>
-                  <div className="stack" style={{ gap: 4 }}>
-                    <button className="btn small" onClick={async () => {
+                  <div className="row" style={{ gap: 8, flex: '1 1 100%', flexWrap: 'nowrap' }}>
+                    <button className="btn small" style={{ flex: 1 }} onClick={async () => {
                       const raw = await askText(`${t('short')}: ${l.name} — ${'how many pieces?'}`, String(s?.qty ?? ''), 'number');
                       if (raw == null) return; const q = Number(raw); if (!Number.isFinite(q)) return;
                       const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
                       setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
                     }}>{t('short')}</button>
-                    <button className="btn small" onClick={async () => { const raw = await askText(`${'Extra pieces of'} ${l.name} ${'given from the van?'}`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>{'Extra'}</button>
+                    <button className="btn small" style={{ flex: 1 }} onClick={async () => { const raw = await askText(`${'Extra pieces of'} ${l.name} ${'given from the van?'}`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>{'Extra'}</button>
                   </div>
                 </div>
               );
@@ -223,7 +224,8 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
           </div>
         </div>
       ))}
-      <button className="btn big primary block" onClick={() => setStep('confirm')}><Check /> {t('delivered')}</button>
+      </div>
+      <button className="btn big primary block" style={{ marginTop: 12 }} onClick={() => setStep('confirm')}><Check /> {t('delivered')}</button>
       <button className="btn big block ghost" style={{ marginTop: 8 }} onClick={async () => { if (await confirmBox('Shop refused everything?', 'All goods go back to the godown. The owner decides the bill at day close.', 'Refused')) void confirmDelivery(true); }}><PackageX /> {t('returnAll')}</button>
     </div>
   );

@@ -54,7 +54,7 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
           {/* bill head, laid out as on paper */}
           <div className="bill-head">
             <div><b>{s.firmName}</b><div className="muted">{s.address}</div><div className="muted">GSTIN {s.gstin}</div></div>
-            <div style={{ textAlign: 'right' }}><b>{'TAX INVOICE'}</b><div>{invoice.number}</div><div className="muted">{invoice.date.split('-').reverse().join('-')}</div></div>
+            <div style={{ textAlign: 'right' }}><b>{'TAX INVOICE'}</b><div className="billno">{invoice.number}</div><div className="muted">{invoice.date.split('-').reverse().join('-')}</div></div>
           </div>
           <div className="field"><label>{'Bill to'}</label>
             <select value={shopId} onChange={e => setShopId(e.target.value)}>{shops.map(x => <option key={x.id} value={x.id}>{x.name} · {x.area}</option>)}</select>

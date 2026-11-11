@@ -30,6 +30,14 @@ const audit = () => {
     if (direct && (cs.overflow === 'hidden' || cs.overflowX === 'hidden') && el.scrollWidth > el.clientWidth + 2 && cs.textOverflow !== 'ellipsis' && !cs.webkitLineClamp) { const k = `CLIPPED ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
     if (r.right > de.clientWidth + 2 && !el.closest('.tablewrap, table, .chips, .cat, .segmented, [style*="overflow"]') && cs.position !== 'fixed') { const k = `OFFSCREEN ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${(el.textContent || '').trim().slice(0, 30)}" right=${Math.round(r.right)}`; if (!seen.has(k) && seen.size < 400) { seen.add(k); out.push(k); } }
   }
+  // a word (or a bill number) is never broken across two lines in a list row
+  for (const el of document.querySelectorAll('.item .s, .item .t, .billno')) {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) for (const m of n.textContent.matchAll(/\S+/g)) {
+      const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+      const lines = new Set([...rg.getClientRects()].map(q => Math.round(q.top / 4))); if (lines.size > 1) { const k = `WORD-SPLIT "${m[0]}" in "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
+    }
+  }
   // text drawn over other text (a label running into its neighbour on a wider phone)
   const texts = [];
   for (const el of document.querySelectorAll('body *')) {

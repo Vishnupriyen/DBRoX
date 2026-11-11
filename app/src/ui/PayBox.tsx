@@ -77,7 +77,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
     <div className="card stack">
       <div className="eyebrow">{'1. Which bills?'}</div>
       <div className="list">
-        {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : null}</div><div className="grow" style={{ minWidth: 0 }}><div className="t" style={{ overflowWrap: 'anywhere' }}>{b.number}</div><div className="s">{showDate(b.date)}</div><div className="amt num">{inr(b.balance)}</div></div></button>)}
+        {bills.map(b => <button key={b.id} className="item tap" onClick={() => toggle(b.id)}><div className={`avatar ${sel.has(b.id) ? 'ok' : ''}`}>{sel.has(b.id) ? <Check /> : null}</div><div className="grow" style={{ minWidth: 0 }}><div className="t"><span className="billno">{b.number}</span></div><div className="s">{showDate(b.date)}</div><div className="amt num">{inr(b.balance)}</div></div></button>)}
         {!bills.length && <div className="muted">{'No bills pending for this shop.'}</div>}
       </div>
       {shortCredit > 0 && <div className="muted">{'Short'} {inr(shortCredit)} — {'credit note at day close'}</div>}

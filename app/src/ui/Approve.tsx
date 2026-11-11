@@ -60,7 +60,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
       <div className="sechead"><h3>{'Picked — to verify'} · {orders.length}</h3></div>
       {locked && <div className="alert bad"><Lock /><div><b>{'Billing is locked'}</b> — {`close ${locked} first.`} {go && <button className="link" onClick={() => go('dayclose')}>{'Day close →'}</button>}</div></div>}
-      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>{made.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number} · {shopName.get(i.shopId) ?? ''}</button>)}</div></div></div>}
+      {made.length > 0 && <div className="alert ok"><Check /><div><b>{plural(made.length, 'bill')} {'made'}</b> <div className="row" style={{ marginTop: 4, flexWrap: 'wrap' }}>{made.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> <span className="billno">{i.number}</span> · {shopName.get(i.shopId) ?? ''}</button>)}</div></div></div>}
       {orders.map(o => {
         const pk = pickedOf(o);
         const orderedQty = (pid: string) => o.lines.find(l => l.productId === pid)?.qty ?? 0;

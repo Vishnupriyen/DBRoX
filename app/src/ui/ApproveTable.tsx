@@ -15,6 +15,7 @@ interface Props {
 }
 
 // field staff send things to the owner; only the owner's side downloads Excel
+const BILLNO = /^[A-Za-z0-9]{1,6}\/\d{2}-\d{2}\/\d{3,}$/; // a bill number is never broken across two lines
 const FIELD: Role[] = ['salesman', 'godown', 'delivery', 'rep'];
 function useRole() {
   const [role, setRole] = useState<Role | null>(null);
@@ -132,7 +133,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
                     const shown = isoDay(raw) ? showDate(raw as string) : raw;
                     // read-only amounts the Indian way (1,506.62), never 1506.62
                     const txt = c.type === 'number' && typeof shown === 'number' ? shown.toLocaleString('en-IN', { minimumFractionDigits: shown % 1 ? 2 : 0, maximumFractionDigits: 2 }) : String(shown ?? '');
-                    return <td key={c.key} className={`ro ${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>{txt}</td>;
+                    return <td key={c.key} className={`ro ${c.type === 'number' ? 'num' : ''} ${c.key === 'number' || BILLNO.test(txt) ? 'billno' : ''} ${e ? 'bad' : ''}`} title={e}>{txt}</td>;
                   }
                   return (
                     <td key={c.key} className={`${c.type === 'number' ? 'num' : ''} ${e ? 'bad' : ''}`} title={e}>

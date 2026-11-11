@@ -17,7 +17,14 @@ export function UndoToast({ page }: { page?: string }) {
   const [cur, setCur] = useState<{ label: string; batchId: string } | null>(null);
   useEffect(() => { setCur(null); }, [page]);
   // while the bubble is up the screen below it makes room, so it never covers a header or the first row
-  useEffect(() => { document.body.toggleAttribute('data-toast', !!cur); return () => document.body.removeAttribute('data-toast'); }, [cur]);
+  useEffect(() => {
+    document.body.toggleAttribute('data-toast', !!cur);
+    if (cur) { // the screen below starts 14 px under the bubble's real bottom edge (the bubble grows with large text)
+      const place = () => { const t = document.querySelector('.toast')?.getBoundingClientRect(); const top = document.querySelector('.top')?.getBoundingClientRect(); const m = document.querySelector('.main'); if (t && top && m && t.width < window.innerWidth) document.body.style.setProperty('--toast-pad', `${Math.ceil(Math.max(56, t.bottom - top.bottom + 16))}px`); };
+      place(); const id = window.setTimeout(place, 60); const el = document.querySelector('.toast'); const ro = typeof ResizeObserver !== 'undefined' && el ? new ResizeObserver(place) : null; ro?.observe(document.documentElement); if (el) ro?.observe(el); return () => { ro?.disconnect(); window.clearTimeout(id); document.body.removeAttribute('data-toast'); document.body.style.removeProperty('--toast-pad'); };
+    }
+    return () => document.body.removeAttribute('data-toast');
+  }, [cur]);
   useEffect(() => {
     let timer = 0;
     const on = (e: Event) => { const d = (e as CustomEvent).detail as { label: string; batchId: string }; if ((e as CustomEvent).detail.quiet || /^(undo|sync|location|shop visit)/i.test(d.label)) return; /* a quiet save (a GPS reading) has nothing to undo */ const tables = ((e as CustomEvent).detail.tables as string[] | undefined) ?? [];

@@ -336,7 +336,7 @@ export function Invoices() {
         <div className="card"><h3>{`${drafts.length} invoice${drafts.length === 1 ? '' : 's'} in the file`}</h3><div className="muted">{`${ok.length} ready to send · ${drafts.length - ok.length} need fixing in the file`}</div></div>
         {drafts.map(d => (
           <div key={d.invoice.number} className="card">
-            <div className="row" style={{ justifyContent: 'space-between' }}><b>{d.invoice.number}</b><span className="num">{inr(d.invoice.total)}</span></div>
+            <div className="row" style={{ justifyContent: 'space-between' }}><b className="billno">{d.invoice.number}</b><span className="num">{inr(d.invoice.total)}</span></div>
             <div className="muted">{[day(d.invoice.date), links.get(d.invoice.dbLinkId)?.name, `${plural(d.invoice.lines.length, 'line')}`].filter(Boolean).join(' · ')}</div>
             {d.problems.map(p => <div key={p} style={{ color: 'var(--bad)' }}>{p}</div>)}
           </div>
@@ -367,7 +367,7 @@ export function Invoices() {
       </div>
       <div className="list">{list.map(i => (
         <div key={i.id} className="item">
-          <div className="grow"><div className="t">{i.number}</div><div className="s">{[day(i.date), links.get(i.dbLinkId)?.name, grn.get(i.id) === 'received' ? 'Received' : grn.get(i.id) === 'disputed' ? 'Received with differences' : 'Waiting to be received'].filter(Boolean).join(' · ')}</div></div>
+          <div className="grow"><div className="t"><span className="billno">{i.number}</span></div><div className="s">{[day(i.date), links.get(i.dbLinkId)?.name, grn.get(i.id) === 'received' ? 'Received' : grn.get(i.id) === 'disputed' ? 'Received with differences' : 'Waiting to be received'].filter(Boolean).join(' · ')}</div></div>
           <div className="num">{inr(i.total)}</div>
         </div>
       ))}</div>

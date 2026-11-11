@@ -122,7 +122,7 @@ export function Chat({ role, onGo }: { role: Role; onGo?: (page: string) => void
             {m.reply?.table && <div style={{ marginTop: 10 }}><ReadTable table={m.reply.table} /></div>}
             {m.reply?.link && onGo ? <div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={() => onGo(m.reply!.link!.page)}>{m.reply.link.label} →</button></div> : null}
             {m.reply?.actions?.length ? <div className="row" style={{ marginTop: 8 }}>{m.reply.actions.map(a => <button key={a.label} className="btn primary small" onClick={() => a.run()}>{a.label}</button>)}</div> : null}
-            {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> {i.number}</button>)}</div> : null}
+            {m.invoices?.length ? <div className="row" style={{ marginTop: 8 }}>{m.invoices.map(i => <button key={i.id} className="btn small" onClick={() => setPrinting(i)}><Printer /> <span className="billno">{i.number}</span></button>)}</div> : null}
             {m.batchId && !m.undone && <div style={{ marginTop: 6 }}><button className="btn small ghost" onClick={() => undo(m)}><Undo2 /> {t('undo')}</button></div>}
           </div>
         ))}

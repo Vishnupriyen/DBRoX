@@ -75,9 +75,9 @@ export function Today() {
       </div>
       <div className="list">
         {rows.map(({ s, c }) => (
-          <div key={s.id} className="item">
+          <div key={s.id} className="item" style={{ flexWrap: 'wrap' }}>
             <div className={`avatar ${c ? (late(c) ? 'gold' : 'ok') : onLeave(s.id) ? '' : 'bad'}`}>{c ? <Check /> : onLeave(s.id) ? <Clock /> : <UserX />}</div>
-            <div className="grow"><div className="t">{s.name}</div><div className="s">{c ? `${hm(c.at)}${c.distanceM != null ? ` · ${c.distanceM < 300 ? 'at godown' : `${(c.distanceM / 1000).toFixed(1)} km ${'from godown'}`}` : ''}${late(c) ? ` · ${'late'}` : ''}` : onLeave(s.id) ? 'on leave' : absentNow ? 'absent (no check-in by 11:00)' : 'not checked in yet'}</div></div>
+            <div className="grow" style={{ minWidth: 'min(100%, 200px)' }}><div className="t">{s.name}</div><div className="s">{c ? `${hm(c.at)}${c.distanceM != null ? ` · ${c.distanceM < 300 ? 'at godown' : `${(c.distanceM / 1000).toFixed(1)} km ${'from godown'}`}` : ''}${late(c) ? ` · ${'late'}` : ''}` : onLeave(s.id) ? 'on leave' : absentNow ? 'absent (no check-in by 11:00)' : 'not checked in yet'}</div></div>
             {!c && !onLeave(s.id) && <button className="btn small" onClick={() => mark(s)}>{'Mark present'}</button>}
           </div>
         ))}

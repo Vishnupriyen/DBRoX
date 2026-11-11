@@ -654,3 +654,17 @@ body[data-toast] .main { padding-top: 56px; }
   .bill-tbl td input { width: 100% !important; min-width: 0; }
   .bill-tbl td.num { text-align: left; }
 }
+
+/* release polish (Nov 2026) — layout only, no colour changes */
+.billno { white-space: nowrap; }
+/* the Undo bubble: the screen below starts a clear 14 px under it (set from its real height, so large text works too) */
+body[data-toast] .main { padding-top: var(--toast-pad, 72px); }
+/* the pinned bar is solid, so nothing shows through between it and the tab bar */
+.sticky-foot { background: var(--bg); }
+/* TESRAX forms: room above the table, Approve and Cancel the same height */
+.prop .tablewrap { margin-top: 12px; }
+.prop .row > .btn:not(.small) { align-self: stretch; min-height: 48px; }
+/* the last tile row clears the tab bar and the TESRAX core that hangs over it */
+.main:has(.home) { padding-bottom: calc(76px + 28px + env(safe-area-inset-bottom, 0px)); }
+/* a long bill number shrinks a little on a narrow screen at large text instead of running out of its box */
+.item .billno { font-size: min(1em, 5.4vw); }

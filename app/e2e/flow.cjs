@@ -40,6 +40,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.locator('button:has-text("Order")').first().click(); await p.waitForTimeout(900);
   await p.click('text=Usual'); await p.waitForTimeout(400);
   const plus = p.locator('.stepper button[aria-label="more"]'); await plus.nth(0).click(); await plus.nth(1).click(); await p.waitForTimeout(300); await shot('salesman-order');
+  { const a = await p.evaluate(() => { const m = getComputedStyle(document.querySelector('.sticky-foot')).backgroundColor.match(/[\d.]+/g); return m.length > 3 ? +m[3] : 1; }); must(a === 1, 'the Send bar has a solid background (nothing shows through it)'); }
   const orderShop = (await p.textContent('.main .h')).trim();
   { const g = await p.evaluate(() => ({ foot: document.querySelector('.sticky-foot').getBoundingClientRect().bottom, tabs: document.querySelector('.tabs').getBoundingClientRect().top }));
     must(Math.abs(g.foot - g.tabs) <= 2, `only the total + Approve bar is pinned, sitting on the tab bar (bar ends at ${g.foot}, tabs start at ${g.tabs})`);
@@ -118,6 +119,11 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await logout();
 
   // Driver: trip, two photos, extra, collect with bill + QR
+
+  // release polish: the Undo bubble keeps a clear gap above whatever is under it; a bill number is never split over two lines
+  const bubbleClear = async (what) => { const r = await p.evaluate(() => { const t = document.querySelector('.toast'); if (!t) return null; const tb = t.getBoundingClientRect().bottom; const main = document.querySelector('.main'); const next = [...main.querySelectorAll('*')].map(e => e.getBoundingClientRect()).filter(q => q.width && q.height && q.bottom > tb - 40 && q.top > 0 && !(q.top < tb - 40)).map(q => q.top); const first = Math.min(...next.filter(y => y >= tb - 2), 1e9); return { gap: first - tb }; });
+    if (r) must(r.gap >= 8, `${what}: the Undo bubble keeps a clear gap above the next element (${Math.round(r.gap)} px)`); };
+  const oneLineBillNos = async (what) => { const r = await p.evaluate(() => [...document.querySelectorAll('.billno')].filter(e => e.getClientRects().length).map(e => e.getClientRects().length + ':' + e.textContent)); must(r.every(x => x.startsWith('1:')), `${what}: every bill number stays on one line (${r.join(' | ')})`); };
   await loginAs('Karthik (Delivery)'); await gate(); await tile('My trip'); await shot('driver-trip');
   await p.click('button:has-text("Start trip")'); await p.waitForTimeout(700);
   await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
@@ -125,7 +131,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.locator('.route .stop').first().click(); await p.waitForTimeout(600);
   await p.locator('button:has-text("Short")').first().click(); await p.waitForTimeout(300); await p.fill('.dialog input, dialog input, input[type=number] >> nth=-1', '4').catch(() => {}); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
   const why = p.locator('button:has-text("Not loaded")'); if (await why.count()) { await why.click(); await p.waitForTimeout(300); }
-  await shot('driver-stop-short');
+  await shot('driver-stop-short'); await bubbleClear('driver stop'); await oneLineBillNos('driver stop');
   await p.click('button:has-text("Delivered")'); await p.waitForTimeout(500); await shot('driver-photos-needed');
   { const b = p.locator('button[aria-label="Shop confirms delivery"]');
     must(await b.isDisabled() && /Goods received/.test(await b.textContent()) && Number(await b.evaluate(el => getComputedStyle(el).opacity)) < .6, 'before both photos the "Goods received ✓" button looks switched off'); }
@@ -135,7 +141,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('button[aria-label="Shop confirms delivery"]'); await p.waitForTimeout(800); await shot('driver-collect-bills');
   
   // P2: at the biggest phone text size the bill number sits above the amount, never over it
-  await p.evaluate(() => { document.documentElement.style.fontSize = '28px'; }); await p.waitForTimeout(300); await shot('driver-collect-bills-large');
+  await p.evaluate(() => { document.documentElement.style.fontSize = '28px'; }); await p.waitForTimeout(300); await shot('driver-collect-bills-large'); await bubbleClear('collect (large text)'); await oneLineBillNos('collect (large text)');
   { const r = await p.evaluate(() => [...document.querySelectorAll('.item.tap')].map(it => { const a = it.querySelector('.t').getBoundingClientRect(), b = it.querySelector('.amt').getBoundingClientRect(); return { sw: it.scrollWidth <= it.clientWidth + 1, clear: a.bottom <= b.top + 1 || a.right <= b.left + 1 }; }));
     must(r.length && r.every(x => x.clear && x.sw), 'large text: the bill number never overlaps the amount in the Collect bill list'); }
   await p.evaluate(() => { document.documentElement.style.fontSize = ''; }); await p.waitForTimeout(200);
@@ -154,7 +160,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
   await p.click('.engine button:has-text("Approve")').catch(() => {}); await p.waitForTimeout(500);
   // P3: the payment table keeps the Balance column on screen on a phone
-  await p.fill('textarea', 'Murugan Stores paid 500 cash'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); await shot('rox-payment-table');
+  await p.fill('textarea', 'Murugan Stores paid 500 cash'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(900); await shot('rox-payment-table'); await oneLineBillNos('TESRAX payment table');
   if (await p.locator('.engine .prop table.grid').count()) {
     const r = await p.evaluate(() => { const w = [...document.querySelectorAll('.engine .prop .tablewrap')].pop(); const th = [...w.querySelectorAll('th')].find(x => /Balance/.test(x.textContent)); const b = th.getBoundingClientRect(), wr = w.getBoundingClientRect(); return { over: w.scrollWidth - w.clientWidth, inside: b.right <= wr.right + 1 }; });
     must(r.inside && r.over <= 1, `the payment table shows Balance on screen without sideways scroll (${JSON.stringify(r)})`);
