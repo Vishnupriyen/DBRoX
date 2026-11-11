@@ -179,7 +179,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
         if (++n >= 500) { full = true; break; }
       }
     }
-    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes }) });
+    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes, moves: 1 }) }); // moves: this phone sends stock as movements
     if (r.status === 403 && (await r.clone().json().catch(() => ({}))).error === 'Access removed') {
       await wipeLocal(); window.dispatchEvent(new Event('dbrox:logout'));
       return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.');
@@ -208,6 +208,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
         const cur = await db.table(c.table).get(c.id);
         if (!cur || (!cur.dirty && cur.updatedAt <= c.updatedAt)) await db.table(c.table).put({ ...c.data, dirty: 0 });
       }
+      await trueStock([...(res.current ?? []), ...res.changes]);
     });
     await db.meta.put({ key: 'cursor', value: res.cursor });
     await db.meta.put({ key: 'held', value: [...held] });
@@ -218,6 +219,27 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
   } catch (e) {
     return done(`Sync paused: ${(e as Error).message}. Data is safe on this phone.`);
   } finally { running = false; }
+}
+
+/**
+ * STOCK: every lot the server sent takes the server's qty (the sum of all phones' movements) + this phone's own
+ * movements not yet counted there (unsent, or sent and held). A refused movement (it would take the lot below zero) is
+ * held — kept and tried again — and not counted, so the phone shows the server's qty. Nothing else of the lot changes,
+ * and it is not marked unsent (this is the server's word, not a change). Runs inside the sync's transaction.
+ */
+async function trueStock(fromServer: Change[]) {
+  const lots = new Map<string, Change>();
+  for (const c of fromServer) if (c.table === 'batches') lots.set(c.id, c); // the pull comes after the push: the later copy wins
+  if (!lots.size) return;
+  const mine = new Map<string, number>();
+  for (const m of await db.stockMoves.where('dirty').equals(1).toArray()) if (!held.has(`stockMoves|${m.id}`)) mine.set(m.batchId, (mine.get(m.batchId) ?? 0) + m.delta);
+  for (const [id, c] of lots) {
+    const cur = await db.batches.get(id);
+    const q = Number((c.data as unknown as { qty: unknown }).qty);
+    if (!cur || cur.legacyQty || !Number.isFinite(q)) continue; // a lot still to be sent whole keeps its own count once more
+    const want = q + (mine.get(id) ?? 0);
+    if (cur.qty !== want) await db.batches.put({ ...cur, qty: want });
+  }
 }
 
 export function startAutoSync() {

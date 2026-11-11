@@ -45,7 +45,8 @@
     "receipts",
     "tesraxDays",
     "openingDues",
-    "requests"
+    "requests",
+    "stockMoves"
   ],
   "read": {
     "owner": "*",
@@ -168,6 +169,7 @@
       "products",
       "shops",
       "batches",
+      "stockMoves",
       "schemes",
       "orders",
       "invoices",
@@ -212,6 +214,7 @@
     "godown": [
       "orders",
       "batches",
+      "stockMoves",
       "purchases",
       "products",
       "claimEntries",
@@ -228,6 +231,7 @@
       "invoices",
       "payments",
       "batches",
+      "stockMoves",
       "claimEntries",
       "trips",
       "shops",
@@ -275,5 +279,6 @@
       "purchaseRate"
     ]
   },
-  "_company": "Company side (a brand's head office and team): cadmin = head office, manager = RSM/ASM/SO, rep = field rep. Tables marked relay-only in shared/relay.ts are written only by the server's relay, never by a phone."
+  "_company": "Company side (a brand's head office and team): cadmin = head office, manager = RSM/ASM/SO, rep = field rep. Tables marked relay-only in shared/relay.ts are written only by the server's relay, never by a phone.",
+  "_stock": "stockMoves: stock travels as movements (lot, delta), never as an overwritten total. Add-only. Every role that writes batches writes them; the server keeps each lot's qty = the sum of its movements."
 }

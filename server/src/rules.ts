@@ -30,7 +30,10 @@ export function cleanText(v: unknown): unknown {
 const META = new Set(['id', 'tenantId', 'updatedAt', 'createdAt', 'dirty']);
 /** what a delivery phone writes on a bill: the delivery result (and the stock lots on its lines) */
 const DELIVERY_FIELDS = new Set(['deliveryStatus', 'delivery', 'tripId', 'stopNo', 'vanId', 'printedAt']);
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// key order never matters (Postgres stores a record's keys in its own order; a phone sends them in the order it built them)
+const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object'
+  ? Object.fromEntries(Object.keys(v as Doc).sort().filter(k => (v as Doc)[k] !== undefined).map(k => [k, canon((v as Doc)[k])])) : v;
+const same = (a: unknown, b: unknown) => JSON.stringify(canon(a ?? null)) === JSON.stringify(canon(b ?? null));
 const linesNoLots = (l: unknown) => (Array.isArray(l) ? l : []).map(x => { const { batches: _b, ...rest } = (x ?? {}) as Doc; void _b; return rest; });
 const ORDER_RANK: Record<string, number> = { new: 0, needs_ok: 0, approved: 1, picked: 2, billed: 3, cancelled: 3 };
 const decided = (s: unknown) => s === 'approved' || s === 'rejected';
@@ -80,6 +83,22 @@ export function distributorRule(role: string, userId: string, table: string, dat
   return null;
 }
 
+/** A bill saved by the owner or office from a copy made BEFORE the driver's delivery result reached it (no result, or an
+ *  older one) keeps that result: the delivery status, the result itself and the lots on its lines (the pieces the driver
+ *  sent back to stock are never put on the bill again). Everything else in their copy is theirs. A copy that already
+ *  carries the result (they saw it) wins as it is. Field-level merge for the delivery phone's fields only. */
+export function keepDeliveryResult(role: string, data: Doc, existing: Doc | undefined): Doc {
+  if (role !== 'owner' && role !== 'office') return data;
+  const had = existing?.delivery as Doc | undefined;
+  if (!existing || !had || typeof had !== 'object') return data;
+  const mine = data.delivery as Doc | undefined;
+  if (mine && typeof mine === 'object' && String(mine.at ?? '') >= String(had.at ?? '')) return data;
+  const out: Doc = { ...data, deliveryStatus: existing.deliveryStatus, delivery: had };
+  // the lots follow the driver's result while the bill charges the same; a bill whose charge changed keeps its own lines
+  if (same(linesNoLots(data.lines), linesNoLots(existing.lines))) out.lines = existing.lines;
+  return out;
+}
+
 // ---------------------------------------------------------------- money fields (every role, owner too)
 const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
 /** the app's own list (app/src/core/db.ts guard): every money field, when present, is a real number */
@@ -121,6 +140,11 @@ export function billLotsOk(d: Doc): boolean {
     for (const b of l.batches as Doc[]) if (!b || typeof b.batchId !== 'string' || !b.batchId || !Number.isInteger(b.qty) || (b.qty as number) < 0) return false;
   }
   return true;
+}
+
+/** a stock movement as a phone sends it: a lot, and a whole number of pieces in (+) or out (−), never 0 */
+export function badMove(d: Doc): boolean {
+  return typeof d.batchId !== 'string' || !d.batchId || !Number.isInteger(d.delta) || d.delta === 0;
 }
 
 // ---------------------------------------------------------------- staff privacy (what a person downloads)
