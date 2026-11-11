@@ -5,7 +5,7 @@ import { billingState, isUpgrade, istToday, makeLicence, PACKS, sealLicence, TIE
 import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, readToken, signToken, verifyPin, type Claims } from './auth.js';
-import { badMoney, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
+import { badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
 import { clearHits, hit, isLocked } from './limits.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
@@ -150,7 +150,9 @@ export async function buildApp(pool: pg.Pool) {
   // Sync: push this phone's changes, pull everything newer than the phone's cursor.
   app.post('/v1/sync', async req => {
     const c = await auth(req);
-    const b = req.body as { cursor?: number; changes?: { table: string; id: string; updatedAt: string; data: Record<string, unknown> }[] };
+    const b = req.body as { cursor?: number; moves?: number; changes?: { table: string; id: string; updatedAt: string; data: Record<string, unknown> }[] };
+    // a phone that sends stock as movements (this app); an older app sends whole lots (see 'batches' below)
+    const movesPhone = b.moves === 1;
     const changes = (Array.isArray(b.changes) ? b.changes : []).slice(0, 2000);
     const canWrite = new Set(WRITE[c.r] ?? []);
     const accepted: string[] = [];
@@ -190,6 +192,9 @@ export async function buildApp(pool: pg.Pool) {
       // too big, or a clock running ahead: not about the rules, so the phone keeps its own copy (held, tried again later —
       // a clock a few minutes fast goes through once real time catches up) instead of being given the server's copy
       const keepTheirs = new Set<string>();
+      // stock movements to apply after the records are saved (a new lot first): key = the phone's record, or null for a
+      // movement the server makes itself (a whole lot from an older app)
+      const moves: { key: string | null; id: string; data: Record<string, unknown>; up: string }[] = [];
       for (const [i, ch] of changes.entries()) {
         const key = `${ch?.table}|${ch?.id}`;
         if (!ch || typeof ch.table !== 'string' || relayOnly(kind, ch.table)) { refuse(key); continue; } // only the relay writes these (privacy wall)
@@ -237,6 +242,8 @@ export async function buildApp(pool: pg.Pool) {
             if (twin) { refuse(key); continue; }
           }
           if (ch.table === 'products') data = keepCompanyFields(data as never, ex as never);
+          // an owner or office copy made before the driver's delivery result never wipes it
+          if (ch.table === 'invoices') data = keepDeliveryResult(c.r, data, ex);
           if (ch.table === 'shops') data = keepCreditLimit(c.r, data, ex);
         }
         data = keepOwnerOnly(c.r, OWNER_ONLY[ch.table], data, ex);
@@ -266,6 +273,27 @@ export async function buildApp(pool: pg.Pool) {
           } catch (e) { await client.query('ROLLBACK TO SAVEPOINT staff'); app.log.warn({ code: CODE(e) }, 'staff login'); refuse(key); continue; }
           data.pin = ''; // never store PINs inside documents
         }
+        // STOCK: a movement is add-only (sent again → already counted); it is applied below, after the lots are saved
+        if (ch.table === 'stockMoves') {
+          if (ex) { accepted.push(key); continue; }
+          if (badMove(data)) { refuse(key); continue; }
+          moves.push({ key, id: ch.id, data: { ...data, by: c.u }, up: ch.updatedAt });
+          continue;
+        }
+        // a lot record never sets the qty: the server's qty (the sum of the lot's movements) stays. An older app (no
+        // movements) or a lot marked legacyQty (changed on a phone before it updated, never sent) still wins as a whole
+        // lot, as before — kept as a movement of the difference, so qty = sum of movements always holds.
+        if (ch.table === 'batches') {
+          const was = ex && Number.isFinite(Number(ex.qty)) ? Number(ex.qty) : 0, theirs = Number(data.qty);
+          const legacy = !movesPhone || data.legacyQty === true;
+          delete data.legacyQty;
+          data.qty = was;
+          const s0 = stored.get(key);
+          if (legacy && Number.isInteger(theirs) && theirs !== was && (!s0 || new Date(s0.updated_at).getTime() <= Date.parse(ch.updatedAt))) {
+            const at = new Date().toISOString();
+            moves.push({ key: null, id: `whole:${ch.id}:${newId()}`, up: at, data: { batchId: ch.id, productId: data.productId, delta: theirs - was, reason: 'whole lot (older app)', by: c.u, at, createdAt: at, updatedAt: at } });
+          }
+        }
         rows.push({ table: ch.table, id: ch.id, data: JSON.stringify(data), up: ch.updatedAt });
         accepted.push(key); // older copies are accepted but ignored: newest already stored (its copy goes back below)
       }
@@ -279,6 +307,21 @@ export async function buildApp(pool: pg.Pool) {
           [c.t, rows.map(r => r.table), rows.map(r => r.id), rows.map(r => r.data), rows.map(r => r.up)])).rows;
         written.push(...done.map(r => ({ table: r.tbl as string, id: r.id as string })));
       }
+      // STOCK MOVEMENTS: qty = qty + delta, in this transaction. Pieces coming in first (a push may carry stock in and
+      // the bill that uses it); a movement that would take a lot below zero is refused — that record only.
+      const lotsTouched = new Set(rows.filter(r => r.table === 'batches').map(r => r.id));
+      for (const m of moves.map((m, i) => ({ m, i })).sort((a, b) => Number(Number(b.m.data.delta) > 0) - Number(Number(a.m.data.delta) > 0) || a.i - b.i).map(x => x.m)) {
+        const lotId = String(m.data.batchId), delta = Number(m.data.delta);
+        const r = await client.query(`UPDATE docs SET data = jsonb_set(data, '{qty}', to_jsonb(COALESCE((data->>'qty')::numeric, 0)::int + $3::int)), version = nextval('docs_version_seq')
+          WHERE tenant_id=$1 AND tbl='batches' AND id=$2 AND COALESCE((data->>'qty')::numeric, 0) + $3::int >= 0 RETURNING id`, [c.t, lotId, delta]);
+        if (!r.rowCount) { if (m.key) refuse(m.key); continue; }
+        await client.query(`INSERT INTO docs(tenant_id,tbl,id,data,updated_at) VALUES ($1,'stockMoves',$2,$3,$4) ON CONFLICT (tenant_id,tbl,id) DO NOTHING`,
+          [c.t, m.id, JSON.stringify({ ...m.data, id: m.id, tenantId: c.t }), m.up]);
+        if (m.key) accepted.push(m.key);
+        written.push({ table: 'stockMoves', id: m.id });
+        if (!lotsTouched.has(lotId)) written.push({ table: 'batches', id: lotId });
+        lotsTouched.add(lotId);
+      }
       const wrote = new Set(written.map(w => `${w.table}|${w.id}`));
       // only copies this person may read anyway (a company manager or rep: their scope comes with the normal pull)
       const readable = new Set(kind === 'company' && c.r !== 'cadmin' ? [] : READ[c.r] ?? []);
@@ -287,6 +330,14 @@ export async function buildApp(pool: pg.Pool) {
         const [table, ...rest] = k.split('|');
         if (!readable.has(table) || !mayDownload(c.r, c.u, table, s0.data)) continue;
         current.push({ table, id: rest.join('|'), updatedAt: new Date(s0.updated_at).toISOString(), data: forRole(c.r, table, s0.data) });
+      }
+      // every lot this push touched goes back as the server holds it now (the true qty), so every phone converges
+      if (lotsTouched.size && readable.has('batches')) {
+        const fresh = (await client.query(`SELECT id, data, updated_at FROM docs WHERE tenant_id=$1 AND tbl='batches' AND id = ANY($2)`, [c.t, [...lotsTouched]])).rows;
+        for (const f of fresh) {
+          const at = current.findIndex(x => x.table === 'batches' && x.id === f.id); if (at >= 0) current.splice(at, 1);
+          current.push({ table: 'batches', id: f.id, updatedAt: new Date(f.updated_at).toISOString(), data: forRole(c.r, 'batches', f.data) });
+        }
       }
       // noted for the relay in the same transaction: a crash after the save can't lose them
       queued = await queueRelay(client, c.t, kind, written);
@@ -304,11 +355,12 @@ export async function buildApp(pool: pg.Pool) {
     const tables = (READ[c.r] ?? []).filter(t => !(isCo && c.r === 'cadmin' && BIG_TABLES.includes(t)));
     // a page is cut by size as well as rows (records with photos): the first row always comes, so it always moves on
     const rows = (await pool.query(
-      // the history log is 80% of all data: phones get only its last 3 days (morning summary, undo); the full log stays here
+      // the history log is 80% of all data: phones get only its last 3 days (morning summary, undo); the full log stays here.
+      // Stock movements too: a lot's true qty comes with the lot itself
       `SELECT tbl, id, data, updated_at, version, run, total FROM (
          SELECT *, sum(sz) OVER (ORDER BY version) AS run, sum(sz) OVER () AS total FROM (
            SELECT tbl, id, data, updated_at, version, pg_column_size(data) AS sz FROM docs WHERE tenant_id=$1 AND version > $2 AND tbl = ANY($3)
-             AND (tbl <> 'audit' OR updated_at > now() - interval '3 days')
+             AND (tbl NOT IN ('audit', 'stockMoves') OR updated_at > now() - interval '3 days')
              AND ($5::text[] IS NULL OR tbl <> ALL($6) OR data->>'dbLinkId' = ANY($5))
              AND (NOT $7 OR tbl NOT IN ('secondary','secondaryReturns') OR data->>'date' >= $8)
              -- staff privacy: another person's advances, leaves, expenses, orders or travel claims never reach this phone

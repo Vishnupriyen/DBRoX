@@ -4,7 +4,7 @@ import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
   Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt, TesraxDay,
-  OpeningDue, StaffRequest,
+  OpeningDue, StaffRequest, StockMove,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -54,6 +54,7 @@ class RoxDB extends Dexie {
   tesraxDays!: Table<TesraxDay, string>;
   openingDues!: Table<OpeningDue, string>;
   requests!: Table<StaffRequest, string>;
+  stockMoves!: Table<StockMove, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
   constructor(name = 'dbrox') {
@@ -117,6 +118,13 @@ class RoxDB extends Dexie {
     this.version(7).stores({ receipts: `${common}, companyId, status`, inbound: `${common}, companyId, date` });
     this.version(8).stores({ tesraxDays: `${common}, day, staffId` });
     this.version(9).stores({ openingDues: `${common}, shopId, date`, requests: `${common}, status, kind` });
+    // stock travels as movements (round 5). A lot changed on this phone and not yet sent is sent once as a whole lot
+    // (legacyQty: the server keeps the difference as a movement); every lot gets its opening movement on this phone.
+    this.version(10).stores({ stockMoves: `${common}, batchId, at` }).upgrade(async tx => {
+      const at = new Date().toISOString();
+      await tx.table('batches').toCollection().modify((b: Batch) => { if (b.dirty === 1) b.legacyQty = true; });
+      for (const b of await tx.table('batches').toArray() as Batch[]) if (b.qty) await tx.table('stockMoves').put({ id: `open:${b.id}`, tenantId: b.tenantId, createdAt: at, updatedAt: at, dirty: 0, batchId: b.id, productId: b.productId, delta: b.qty, reason: 'opening (moved to movements)', by: 'server', at });
+    });
   }
 }
 export { RoxDB };
@@ -224,6 +232,10 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
         || [...last.values()].some(x => x.table === 'purchases' && x.rec.id !== rec.id && (x.rec as unknown as { companyId: string }).companyId === r.companyId && String((x.rec as unknown as { billNo: string }).billNo ?? '').trim().toUpperCase() === key);
       if (same) throw new GuardError(`Company bill ${String(r.billNo).trim()} of this company is already entered.`);
     }
+    if (table === 'stockMoves') {
+      if (!Number.isInteger(r.delta) || r.delta === 0 || typeof r.batchId !== 'string' || !r.batchId) throw new GuardError('A stock movement is a whole number of pieces for one lot.');
+      if (await db.stockMoves.get(rec.id)) throw new GuardError('A stock movement is never changed: make a new one.');
+    }
     if (table === 'batches') {
       if (!fin(r.qty) || !Number.isInteger(r.qty)) throw new GuardError(`Stock count must be a whole number (got ${String(r.qty)}).`);
       if ((r.qty as number) < 0) throw new GuardError('Not enough stock for this. Stock can never go below zero — check the stock position first.');
@@ -307,13 +319,15 @@ export class ChangeSet {
   }
   get size() { return this.writes.length; }
   async commit(label: string): Promise<string> {
-    const tables = Array.from(new Set(this.writes.map(w => w.table)));
+    const tables = Array.from(new Set([...this.writes.map(w => w.table), ...(this.writes.some(w => w.table === 'batches') ? ['stockMoves' as TableName] : [])]));
     // the guard reads a credit note's bill (never more credited than charged): it must be in the same transaction
     const reads = tables.includes('creditNotes') && !tables.includes('invoices') ? [db.invoices] : [];
     const dexTables = [...tables.map(t => db.table(t)), ...reads, db.audit];
+    let writes = this.writes;
     await db.transaction('rw', dexTables, async () => {
-      await guard(this.writes); // the laws: if any write breaks one, nothing at all is saved
-      for (const w of this.writes) {
+      writes = [...this.writes, ...await stockMovesFor(this.writes, label)];
+      await guard(writes); // the laws: if any write breaks one, nothing at all is saved
+      for (const w of writes) {
         const before = await db.table(w.table).get(w.rec.id);
         await db.table(w.table).put(w.rec);
         if (this.opts.noAudit) continue;
@@ -323,10 +337,34 @@ export class ChangeSet {
         } as AuditEntry));
       }
     });
-    for (const h of hooks) await h(db, this.writes.map(w => ({ table: w.table, id: w.rec.id })));
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: this.writes.length, quiet: !!this.opts.noAudit, tables: [...new Set(this.writes.map(w => w.table))], what: describeSave(label, this.writes) } }));
+    for (const h of hooks) await h(db, writes.map(w => ({ table: w.table, id: w.rec.id })));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbrox:commit', { detail: { label, batchId: this.batchId, n: writes.length, quiet: !!this.opts.noAudit, tables: [...new Set(writes.map(w => w.table))], what: describeSave(label, writes) } }));
     return this.batchId;
   }
+}
+
+/**
+ * STOCK MOVES AS MOVEMENTS: one movement for every lot whose qty this save changes (final qty − qty before), written in
+ * the same save — so no path that changes stock (billing, edit, cancel, returns, delivery, stock in, opening stock,
+ * count, damage, GRN, purchase, split) can forget one. The server adds these up; a lot's qty is never sent as a total.
+ * A lot still marked legacyQty (changed before this app version, not yet sent) keeps the mark and goes once as a whole lot.
+ */
+async function stockMovesFor(writes: { table: TableName; rec: Base; action: string }[], label: string) {
+  const lots = new Map<string, { rec: Batch; action: string }>();
+  for (const w of writes) if (w.table === 'batches') lots.set(w.rec.id, { rec: w.rec as Batch, action: w.action });
+  if (!lots.size) return [];
+  const cause = writes.find(w => w.table !== 'batches' && w.table !== 'stockMoves' && w.table !== 'audit');
+  const out: { table: TableName; rec: Base; action: string }[] = [];
+  for (const [id, { rec, action }] of lots) {
+    const was = await db.batches.get(id);
+    if (was?.legacyQty) { rec.legacyQty = true; continue; }
+    const delta = Number(rec.qty) - Number(was?.qty ?? 0);
+    if (!delta || !Number.isFinite(delta)) continue; // a lot whose qty did not change (expiry, MRP); a bad qty is the guard's
+    out.push({ table: 'stockMoves', action: 'stock movement', rec: stamp<StockMove>({
+      batchId: id, productId: rec.productId, delta, reason: `${label}: ${action}`, src: cause ? `${cause.table}:${cause.rec.id}` : undefined, by: currentUser, at: nowIso(),
+    } as StockMove) });
+  }
+  return out;
 }
 
 /** what a save was, for the Undo bubble: "Billed Annai Super Market ₹3,743" (the screen adds the shop names) */

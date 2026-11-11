@@ -132,8 +132,9 @@ export interface Batch extends Base {
   batch: string;
   expiry: string;
   mrp: number;
-  qty: number;
+  qty: number; // this phone's running total: the server's qty (the sum of the lot's movements) + this phone's unsent movements
   godown: string;
+  legacyQty?: boolean; // changed on this phone before stock moved as movements and not yet sent: sent once as a whole lot
 }
 
 export interface Scheme extends Base {
@@ -260,6 +261,18 @@ export interface OpeningDue extends Base {
 
 /** a staff member's return or stock write-off: nothing changes stock or money until the owner (or office) approves it on
  *  their own phone. A return becomes a credit note with a server number; a write-off takes the pieces out of stock. */
+/** One change of a lot's stock (+ in, − out). Stock travels between phones and the server as these, never as an
+ *  overwritten total: ChangeSet.commit writes one for every change of a lot's qty, in the same save. Add-only. */
+export interface StockMove extends Base {
+  batchId: string;
+  productId?: string;
+  delta: number;   // whole pieces, never 0
+  reason: string;  // what the save did ('stock out', 'stock in', 'count adjust …')
+  src?: string;    // the record that caused it ('invoices:<id>')
+  by: string;
+  at: string;
+}
+
 export interface StaffRequest extends Base {
   kind: 'return' | 'damage' | 'count';
   by: string; role: string; date: string;
@@ -513,7 +526,7 @@ export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests' | 'stockMoves';
 
 /** TESRAX report: one record per staff per day (small to sync; the owner reads every staff's days).
  *  Counts every message to TESRAX: its speed on the real phone, whether it was understood, and what happened to the table it prepared. */
