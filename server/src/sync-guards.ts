@@ -27,9 +27,10 @@ export function driverTripWrite(userId: string, next: Doc, prev?: Doc): string |
   return 'Trip transition is not permitted';
 }
 
-export function driverInvoiceWrite(userId: string, next: Doc, prev: Doc | undefined, trip: Doc | undefined): string | null {
+export function driverInvoiceWrite(userId: string, next: Doc, prev: Doc | undefined, trip: Doc | undefined, startedOrEnding = false): string | null {
   if (!prev) return 'Driver cannot create invoices';
   if (!trip || trip.driverId !== userId || trip.id !== prev.tripId) return 'Invoice is not on an assigned trip';
+  if (trip.status !== 'out' && !startedOrEnding) return 'Delivery requires a started assigned trip';
   if (!unchanged(next, prev, [
     'id', 'tenantId', 'number', 'companyId', 'shopId', 'orderId', 'date', 'kind',
     'taxable', 'cgst', 'sgst', 'igst', 'roundOff', 'total', 'schemeSaving',
