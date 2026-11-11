@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { freePort } from './fixtures.js';
 import { chmodSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +9,7 @@ import { join } from 'node:path';
 let pgServer: EmbeddedPostgres;
 let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
-const port = 54329;
+const port = await freePort();
 
 beforeAll(async () => {
   const dir = join(tmpdir(), 'dbrox-pg-' + Date.now()); void mkdtempSync; void chmodSync;

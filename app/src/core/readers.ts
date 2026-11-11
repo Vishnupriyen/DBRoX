@@ -210,6 +210,38 @@ export function readShopRows(rows: string[][]) {
   }));
 }
 
+// ---------- opening balances (the day a distributor starts on Hanubix) ----------
+const isTotalRow = (s: string) => /^\s*(sub\s*|grand\s*)?total\b/i.test(s);
+/** old dues per shop: bill-wise (bill no + date + balance) or one amount per shop (with a date, or the "as on" date) */
+export function readOpeningDueRows(rows: string[][]) {
+  const m = mapColumns(rows, {
+    shop: ['shop', 'shop name', 'party', 'party name', 'customer', 'retailer', 'outlet', 'name'],
+    ref: ['bill no', 'bill number', 'invoice no', 'inv no', 'voucher no', 'ref no', 'ref', 'bill'],
+    date: ['date', 'bill date', 'invoice date', 'inv date'],
+    amount: ['balance', 'due', 'pending', 'outstanding', 'closing balance', 'balance amount', 'bal amt', 'amount'],
+  }, ['shop', 'amount']);
+  if (!m) return null;
+  const g = (r: string[], f: string) => (m.map[f] != null ? r[m.map[f]] ?? '' : '');
+  return rows.slice(m.headerRow + 1).filter(r => g(r, 'shop') && !isTotalRow(g(r, 'shop')) && g(r, 'amount').trim() !== '')
+    .map(r => ({ shop: g(r, 'shop').trim(), ref: g(r, 'ref').trim(), date: toIsoDate(g(r, 'date')), amount: num(g(r, 'amount')) }));
+}
+/** opening stock per product and batch (no purchase bill: nothing is owed to the company for it) */
+export function readOpeningStockRows(rows: string[][]) {
+  const m = mapColumns(rows, {
+    item: ['product', 'item', 'item name', 'product name', 'description', 'sku name', 'name'],
+    code: ['code', 'sku', 'item code'],
+    batch: ['batch', 'batch no', 'lot'],
+    expiry: ['expiry', 'exp', 'exp date', 'best before'],
+    mrp: ['mrp'],
+    qty: ['qty', 'quantity', 'stock', 'pcs', 'closing stock', 'units'],
+    rate: ['rate', 'buy rate', 'purchase rate', 'cost', 'landing'],
+  }, ['item', 'qty']);
+  if (!m) return null;
+  const g = (r: string[], f: string) => (m.map[f] != null ? r[m.map[f]] ?? '' : '');
+  return rows.slice(m.headerRow + 1).filter(r => g(r, 'item') && !isTotalRow(g(r, 'item')) && g(r, 'qty').trim() !== '')
+    .map(r => ({ item: g(r, 'item').trim(), code: g(r, 'code').trim(), batch: g(r, 'batch').trim(), expiry: toIsoDate(g(r, 'expiry')), mrp: num(g(r, 'mrp')), qty: num(g(r, 'qty')), rate: num(g(r, 'rate')) }));
+}
+
 // Excel out: any table the user sees can be downloaded.
 export async function downloadSheet(name: string, header: string[], rows: (string | number)[][]) {
   const XLSX = await xlsx();

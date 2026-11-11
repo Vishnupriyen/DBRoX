@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, X, Printer, Lock, Minus, Plus } from 'lucide-react';
 import { db } from '../core/db';
 import { approvePicked, billingLockedBy, rejectOrder } from '../core/pipeline';
-import { inr, plural } from '../core/i18n';
+import { inr, plural, showTime } from '../core/i18n';
 import { askText } from './dialog';
 import { Pack } from './Pack';
 import { PrintBill } from './PrintBill';
@@ -60,7 +60,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? ''} {o.pickedAt?.slice(11, 16)}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 17 }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? ''} {showTime(o.pickedAt)}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {diffs ? <div className="muted">{plural(diffs, 'line')} {'changed by the picker — shown in red'}</div> : <div className="muted">{'Packed exactly as ordered'}</div>}

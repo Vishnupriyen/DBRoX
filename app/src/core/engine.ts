@@ -129,6 +129,8 @@ export const W = {
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
   claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export'],
   needsOk: ['needs ok', 'approval', 'waiting'],
+  openingDues: ['old dues', 'old due', 'opening balance', 'opening balances', 'opening dues', 'old balance', 'old outstanding', 'old bills'],
+  openingStock: ['opening stock', 'old stock', 'stock on hand', 'closing stock'],
   scheme: ['scheme', 'offer'],
 };
 
@@ -171,6 +173,7 @@ Examples:
 • "HUL Surf 5% off till 30 Nov" · "Good Day buy 24 get 2"
 • "tally export" · "gstr1 october" · "e-invoice" · "claim file"
 • (attach product or shop list Excel) "add products" / "add shops"
+• (attach old dues or opening stock Excel) "old dues" / "opening stock"
 Several things at once: "Murugan paid 500, send 2 case surf". After a table you can just say "make it 600", "for Selvam", "add 2 vim", "no".
 Short forms, typos and numbers in words work too: "murugan 5k pd", "selvam bal", "rcvd 500 frm kumar mart".`;
 
@@ -197,6 +200,12 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (has(text, W.bank)) {
       if (!can(role, 'bank')) return deny();
       return need('accountant', mods) ?? bankProposal(file);
+    }
+    // the day a distributor starts: old shop dues and opening stock from the owner's Excel (owner / office only)
+    if (isSheet(file) && (has(text, W.openingDues) || has(text, W.openingStock))) {
+      if (role !== 'owner' && role !== 'office') return deny();
+      const { openingDuesProposal, openingStockProposal } = await import('./opening');
+      return has(text, W.openingStock) ? openingStockProposal(file) : openingDuesProposal(file);
     }
     if (has(text, W.products) && isSheet(file)) return importProducts(file);
     if (has(text, W.shops) && isSheet(file)) return importShops(file);

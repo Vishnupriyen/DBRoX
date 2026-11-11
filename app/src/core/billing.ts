@@ -100,6 +100,9 @@ export async function refreshSchemeClaims(cs: ChangeSet, inv: Invoice, cns: Cred
   }
 }
 
+// one rule for a bill line's stock lots: core/lots.ts (the guard in db.ts uses it too)
+export { billLotsProblem } from './lots';
+
 // ---------- stock: oldest expiry first (FEFO) ----------
 export function pickBatches(batches: Batch[], productId: string, qty: number, date = today()) {
   const usable = batches
@@ -221,7 +224,9 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
       // the picker's batch first (what is physically in the van), the rest oldest-expiry first
       const picks: ReturnType<typeof pickBatches>['picks'] = [];
       let need = l.qty + line.freeQty;
-      const chosen = l.batchId ? batches.find(b => b.id === l.batchId && b.qty > 0) : undefined;
+      // the same rule as every other lot taken for a bill: this product's, in stock, not expired (an expired lot the picker
+      // chose is never sold — the bill takes the oldest good lots instead)
+      const chosen = l.batchId ? batches.find(b => b.id === l.batchId && b.productId === p.id && b.qty > 0 && b.expiry >= date) : undefined;
       if (chosen) { const take = Math.min(chosen.qty, need); picks.push({ batchId: chosen.id, batch: chosen.batch, qty: take, expiry: chosen.expiry }); need -= take; }
       if (need > 0) picks.push(...pickBatches(batches.filter(b => b.id !== chosen?.id), p.id, need, date).picks);
       for (const pk of picks) {

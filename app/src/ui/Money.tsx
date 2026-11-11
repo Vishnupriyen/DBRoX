@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Check, X, Phone, AlertTriangle, Landmark, MessageSquareText, Download, FileCheck2, ChevronRight, Wallet } from 'lucide-react';
 import { ChangeSet, db, today, activeShops, ymd } from '../core/db';
 import { profitAndLoss } from '../core/pnl';
-import { inr, showDate, showMonth, plural } from '../core/i18n';
+import { inr, showDate, showMonth, plural, showTime } from '../core/i18n';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from '../core/exports';
 import { downloadWorkbook } from '../core/readers';
-import { ask, askText, notify } from './dialog';
+import { ask, askText, confirmBox, notify } from './dialog';
+import { bounceCheque } from '../core/pipeline';
+import { period, salesSummary } from '../core/reports';
 import { companyPayables, recordCompanyPayment } from '../core/payables';
 import type { BankLine, Expense, Payment } from '../core/types';
 import { ShopStatement } from './ShopStatement';
@@ -44,14 +46,19 @@ export function Cheques() {
   useEffect(() => { (async () => { const shops = new Map((await activeShops()).map(s => [s.id, s.name])); const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name])); const inv = new Map((await db.invoices.toArray()).map(i => [i.id, i.number])); setRows((await db.payments.toArray()).filter(p => p.mode !== 'cash' && p.status !== 'cancelled').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60).map(p => ({ ...p, shop: shops.get(p.shopId) ?? '', by: staff.get(p.collectedBy) ?? '', bills: p.allocations.map(a => inv.get(a.invoiceId) ?? '').filter(Boolean).join(', ') }))); })(); }, [tick]);
   const dup = (p: Payment) => rows.some(q => q.id !== p.id && q.shopId === p.shopId && q.amount === p.amount && q.date === p.date);
   const setRef = async (p: Payment) => { const r = await askText('Reference number', p.ref ?? ''); if (!r) return; const cs = new ChangeSet(); cs.put('payments', { ...p, ref: r }, 'reference'); await cs.commit('Reference'); setTick(x => x + 1); };
-  const bounce = async (p: Payment) => { const cs = new ChangeSet(); cs.put('payments', { ...p, status: 'bounced' }, 'cheque bounced'); await cs.commit('Bounced'); setTick(x => x + 1); };
+  const bounce = async (p: Payment) => {
+    if (!await confirmBox(`Cheque of ${inr(p.amount)} from ${(p as Payment & { shop: string }).shop} bounced?`, 'The bills it paid open again and the shop owes this money again.', 'Yes, bounced')) return;
+    const why = await askText('Why did it bounce?', 'Funds insufficient'); if (!why) return;
+    try { await bounceCheque(p.id, why); } catch (e) { await notify('Not saved', (e as Error).message); }
+    setTick(x => x + 1);
+  };
   if (open) return <ShopStatement shopId={open} onBack={() => setOpen(null)} />;
   return (
     <div className="stack">
       <div className="list">
         {rows.map(p => <div key={p.id} className="item" style={{ flexWrap: 'wrap' }}>
           <div className={`avatar ${p.status === 'bounced' ? 'bad' : !p.ref && !p.confirmPhoto ? 'gold' : 'ok'}`}>{p.mode === 'upi' ? 'U' : 'C'}</div>
-          <div className="grow"><div className="t"><button className="link" style={{ fontSize: 15, fontWeight: 700, padding: 0 }} onClick={() => setOpen(p.shopId)}>{p.shop}</button> · {inr(p.amount)}</div><div className="s">{showDate(p.date)} {p.createdAt.slice(11, 16)} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{'no reference'}</span>} · {'bills'} {p.bills || '—'} · {'by'} {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{'bounced'}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {'same amount twice'}</span>}</div></div>
+          <div className="grow"><div className="t"><button className="link" style={{ fontSize: 15, fontWeight: 700, padding: 0 }} onClick={() => setOpen(p.shopId)}>{p.shop}</button> · {inr(p.amount)}</div><div className="s">{showDate(p.date)} {showTime(p.createdAt)} · {p.mode.toUpperCase()} {p.ref || <span className="badge warn">{'no reference'}</span>} · {'bills'} {p.bills || '—'} · {'by'} {p.by}{p.status === 'bounced' ? ' · ' : ''}{p.status === 'bounced' && <span className="badge bad">{'bounced'}{p.bounce?.reason ? `: ${p.bounce.reason}` : ''}</span>}{p.mode === 'cheque' && p.chequeDate && p.chequeDate > today() && <span className="badge warn" style={{ marginLeft: 6 }}>{'dated'} {showDate(p.chequeDate)}</span>}{dup(p) && <span className="badge bad" style={{ marginLeft: 6 }}><AlertTriangle size={11} /> {'same amount twice'}</span>}</div></div>
           {!p.ref && <button className="btn small" onClick={() => setRef(p)}>{'Add ref'}</button>}
           {p.mode === 'cheque' && p.status !== 'bounced' && <button className="btn small" onClick={() => bounce(p)}><X size={14} /> {'Bounced'}</button>}
           {p.confirmPhoto && <img src={p.confirmPhoto} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />}
@@ -232,7 +239,9 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     const turnover = (await db.invoices.toArray()).filter(i => !i.cancelled).reduce((a, i) => a + i.total, 0);
     if (turnover > 50000000) flags.push({ text: 'Turnover crossed ₹5 crore — e-invoicing is mandatory', tone: 'bad' });
     const next = new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 11); const daysLeft = Math.ceil((next.getTime() - Date.now()) / 86400000);
-    setD({ sales: r2(invs.reduce((a, i) => a + i.taxable, 0)), tax: r2(invs.reduce((a, i) => a + i.cgst + i.sgst + i.igst, 0)), bills: invs.length, flags, due: ymd(next), daysLeft });
+    // the month's sales net of credit notes: the same figure as Reports and GSTR-1 (core/reports.ts)
+    const net = await salesSummary(period('month'));
+    setD({ sales: net.net.taxable, tax: net.tax, bills: invs.length, flags, due: ymd(next), daysLeft });
   })(); }, []);
   if (!d) return null;
   const run = async (f: () => Promise<{ text: string }>) => { const r = await f(); void notify('GST', r.text); };
@@ -240,7 +249,7 @@ export function Gst({ go }: { go?: (p: string) => void }) {
     <div className="stack">
       <div className="card" style={{ background: 'var(--navy)', color: 'var(--on-navy)' }}>
         <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{showMonth(m)}</div>
-        <div style={{ fontSize: 17, lineHeight: 1.5 }}>{`Sales ${inr(d.sales)} on ${plural(d.bills, 'bill')} · tax to pay ${inr(d.tax)} · ${d.flags.length ? `${d.flags.length} ${d.flags.length === 1 ? 'thing' : 'things'} to fix` : 'nothing to fix'} · file GSTR-1 by ${showDate(d.due)} (${d.daysLeft} days).`}</div>
+        <div style={{ fontSize: 17, lineHeight: 1.5 }}>{`Sales ${inr(d.sales)} (after credit notes) on ${plural(d.bills, 'bill')} · tax to pay ${inr(d.tax)} · ${d.flags.length ? `${d.flags.length} ${d.flags.length === 1 ? 'thing' : 'things'} to fix` : 'nothing to fix'} · file GSTR-1 by ${showDate(d.due)} (${d.daysLeft} days).`}</div>
       </div>
       {d.flags.map((f, i) => <button key={i} className={`flag ${f.tone ?? ''}`} onClick={() => f.page && go?.(f.page)} style={{ textAlign: 'left' }}><AlertTriangle style={{ color: f.tone === 'bad' ? 'var(--bad)' : 'var(--warn)', flex: 'none' }} /><span className="grow">{f.text}</span>{f.page && <ChevronRight />}</button>)}
       {!d.flags.length && <div className="alert ok"><Check /><div>{'Everything is in order for filing.'}</div></div>}

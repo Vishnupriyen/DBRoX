@@ -6,9 +6,8 @@ import { r2 } from '../core/ledger';
 import { PhotoButton } from './PhotoButton';
 import { Pack } from './Pack';
 import { askText, confirmBox, notify } from './dialog';
-import { countLot } from '../core/billing';
-import { costValue } from '../core/credit';
-import type { Batch, ClaimEntry, Company, Product } from '../core/types';
+import { countOrRequest, damageOrRequest } from '../core/requests';
+import type { Batch, Company, Product } from '../core/types';
 
 const months = () => { const out: string[] = []; const d = new Date(); for (let i = 0; i < 36; i++) { const x = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(ymd(x).slice(0, 7)); } return out; };
 const isOwner = async () => { const me = await db.staff.get(session().userId); return me?.role === 'owner' || me?.role === 'office'; };
@@ -121,7 +120,7 @@ export function StockPosition() {
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small" onClick={async () => { const n = await askText('How many pieces in the second lot?'); const q = Number(n); if (!q || q >= b.qty) return; const cs = new ChangeSet(); cs.put('batches', { ...b, qty: b.qty - q }, 'split'); cs.put<Batch>('batches', { productId: b.productId, batch: b.batch + 'B', expiry: b.expiry, mrp: b.mrp, qty: q, godown: b.godown }, 'split lot'); await cs.commit('Lot split'); setTick(x => x + 1); }}><Split size={14} /> {'Split'}</button>
                   <button className="btn small" onClick={async () => { const m = await askText('New expiry month (MM/YY)'); if (!m || !/^\d{2}\/\d{2}$/.test(m)) return; const exp = monthEnd(`20${m.slice(3)}-${m.slice(0, 2)}`); const cs = new ChangeSet(); cs.put('batches', { ...b, expiry: exp }, `expiry changed ${b.expiry} → ${exp}`); await cs.commit('Expiry changed'); setTick(x => x + 1); }}><Tag size={14} /> {'Change expiry'}</button>
-                  <button className="btn small" onClick={async () => { const n = await askText('Counted pieces on the shelf?'); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText('Remark for the difference'); if (!why) return; const cs = new ChangeSet(); try { countLot(cs, b, q, why); } catch (e) { void notify('Count not saved', (e as Error).message); return; } await cs.commit('Stock count'); setTick(x => x + 1); }}><Boxes size={14} /> {'Count'}</button>
+                  <button className="btn small" onClick={async () => { const n = await askText('Counted pieces on the shelf?'); const q = Number(n); if (Number.isNaN(q) || n === null) return; if (q === b.qty) return; const why = await askText('Remark for the difference'); if (!why) return; const cs = new ChangeSet(); try { const c = await countOrRequest(cs, [{ batchId: b.id, productId: b.productId, system: b.qty, counted: q }], why); await cs.commit('Stock count'); if (c.requested) void notify('Sent to the owner', `This count writes off about ${inr(c.value)}, above the limit. Stock changes when the owner approves.`); } catch (e) { void notify('Count not saved', (e as Error).message); return; } setTick(x => x + 1); }}><Boxes size={14} /> {'Count'}</button>
                   <button className="btn small" onClick={async () => { const m = await askText('New MRP for this lot', String(b.mrp)); const v = Number(m); if (!m || !v) return; const cs = new ChangeSet(); cs.put('batches', { ...b, mrp: v }, `mrp ${b.mrp} → ${v}`); await cs.commit('MRP changed'); setTick(x => x + 1); }}><Tag size={14} /> MRP</button>
                   <button className="btn small" onClick={async () => { const m = await askText('Batch number', b.batch); if (m === null) return; const cs = new ChangeSet(); cs.put('batches', { ...b, batch: m }, `batch ${b.batch} → ${m}`); await cs.commit('Batch changed'); setTick(x => x + 1); }}><Tag size={14} /> {'Batch'}</button>
                 </div>
@@ -218,13 +217,12 @@ export function Damages() {
   };
   const saveOnce = async (sel: Product) => {
     const cs = new ChangeSet();
-    // valued at the buying rate — on a staff phone (no buying rate) the owner's phone fills the value in later
-    const v = costValue(sel, qty);
-    cs.put<ClaimEntry>('claimEntries', { companyId: sel.companyId, month: today().slice(0, 7), kind, productId: sel.id, qty, amount: v.amount, valuePending: v.pending || undefined, note: kind, photo } as ClaimEntry, 'damage');
-    // reduce stock from the oldest lot
-    const lots = (await db.batches.toArray()).filter(b => b.productId === sel.id && b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
-    let left = qty; for (const b of lots) { if (left <= 0) break; const take = Math.min(b.qty, left); cs.put('batches', { ...b, qty: b.qty - take }, 'damaged out'); left -= take; }
-    await cs.commit('Damage entry'); setSel(null); setQty(0); setPhoto(undefined); setQ(''); setTick(x => x + 1);
+    // valued at the buying rate (on a staff phone the owner's phone fills the value in later); stock out from the oldest
+    // lot; above the owner's write-off limit it waits for the owner (core/requests.ts)
+    const d = await damageOrRequest(cs, [{ productId: sel.id, qty, kind, fromStock: true, note: kind }], photo);
+    await cs.commit('Damage entry');
+    if (d.requested) void notify('Sent to the owner', `About ${inr(d.value)} — above the write-off limit. Stock changes when the owner approves.`);
+    setSel(null); setQty(0); setPhoto(undefined); setQ(''); setTick(x => x + 1);
   };
   return (
     <div className="stack">

@@ -1,8 +1,10 @@
 import Dexie, { type Table } from 'dexie';
+import { billLotsProblem } from './lots';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
   Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt, TesraxDay,
+  OpeningDue, StaffRequest,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -50,6 +52,8 @@ class RoxDB extends Dexie {
   travelClaims!: Table<TravelClaim, string>;
   receipts!: Table<Receipt, string>;
   tesraxDays!: Table<TesraxDay, string>;
+  openingDues!: Table<OpeningDue, string>;
+  requests!: Table<StaffRequest, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
   constructor(name = 'dbrox') {
@@ -112,6 +116,7 @@ class RoxDB extends Dexie {
     this.version(6).stores({ travelClaims: `${common}, staffId, month, status` });
     this.version(7).stores({ receipts: `${common}, companyId, status`, inbound: `${common}, companyId, date` });
     this.version(8).stores({ tesraxDays: `${common}, day, staffId` });
+    this.version(9).stores({ openingDues: `${common}, shopId, date`, requests: `${common}, status, kind` });
   }
 }
 export { RoxDB };
@@ -184,7 +189,7 @@ const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
 const MONEY_KEYS = ['amount', 'total', 'taxable', 'tax', 'cgst', 'sgst', 'igst', 'roundOff', 'rate', 'mrp', 'purchaseRate', 'discount', 'gross',
   'advance', 'paid', 'credited', 'received', 'recovered', 'credit', 'debit', 'schemeSaving', 'budget', 'salary', 'batta', 'kmAmount', 'daAmount', 'expenses'];
 const MONEY_REQUIRED: Partial<Record<TableName, string[]>> = {
-  claimEntries: ['amount'], claims: ['amount'], purchases: ['total'], advances: ['amount'], creditNotes: ['total'],
+  claimEntries: ['amount'], claims: ['amount'], purchases: ['total'], advances: ['amount'], creditNotes: ['total'], openingDues: ['amount'],
 };
 function badMoney(table: TableName, r: Record<string, unknown>): string | null {
   for (const k of MONEY_REQUIRED[table] ?? []) if (!fin(r[k])) return k;
@@ -231,13 +236,16 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
       if (same.some(x => x.id !== rec.id) || writes.some(x => x.table === 'invoices' && x.rec.id !== rec.id && (x.rec as unknown as { number: string }).number === r.number))
         throw new GuardError(`Bill number ${String(r.number)} is already used. A bill number can never repeat.`);
       const bad = badMoney('invoices', r); if (bad) throw new GuardError(`Bill amount "${bad}" is not a valid number.`);
-      const isNew = !(await db.invoices.get(rec.id));
-      for (const l of (r.lines as { qty: number; freeQty?: number; name?: string; batches: { qty: number }[] }[]) ?? []) {
-        if (!fin(l.qty) || l.qty < 0) throw new GuardError('A bill line has an invalid quantity.');
-        if (l.batches.some(b => !fin(b.qty) || b.qty < 0)) throw new GuardError('A bill line has an invalid batch quantity.');
-        // a new bill charges only for pieces taken out of stock lots (a shop is never billed for goods that weren't there)
-        if (isNew && l.batches.reduce((a, b) => a + b.qty, 0) !== l.qty + (l.freeQty ?? 0)) throw new GuardError(`Not enough stock for ${l.name ?? 'an item'} on this bill. A bill can only charge for pieces that are in stock.`);
-      }
+      if (r.opening) throw new GuardError('An old due is not a bill: it is kept with the opening balances.');
+      const prev = await db.invoices.get(rec.id);
+      const lines = (r.lines as { qty: number; freeQty?: number; name?: string; batches: { qty: number }[] }[]) ?? [];
+      for (const l of lines) if (!fin(l.qty) || l.qty < 0) throw new GuardError('A bill line has an invalid quantity.');
+      // one rule for the stock lots of every bill line, new or edited (billing.ts billLotsProblem; the server holds it too)
+      if (!r.cancelled) { const lot = billLotsProblem(lines, prev?.lines); if (lot) throw new GuardError(lot); }
+    }
+    if (table === 'openingDues') {
+      if (!fin(r.amount) || (r.amount as number) <= 0) throw new GuardError('An old due must be more than ₹0.');
+      if (!r.shopId) throw new GuardError('An old due needs its shop.');
     }
     if (table === 'creditNotes') {
       if (!fin(r.total) || (r.total as number) < 0) throw new GuardError('Credit note amount is not valid.');
@@ -328,23 +336,38 @@ const sameRecord = (a: unknown, b: unknown) => {
   const strip = (r: unknown) => { const { dirty: _d, ...rest } = r as Record<string, unknown>; void _d; return JSON.stringify(rest); };
   return strip(a) === strip(b);
 };
-// Returns the number of records put back, 0 if it was already undone, or -1 if it can't be undone safely because
-// something later changed the same records (e.g. another bill took stock from the same batch).
+// Returns the number of records put back, 0 if it was already undone, -1 if it can't be undone safely because
+// something later changed the same records (e.g. another bill took stock from the same batch), or -2 (UNDO_SYNCED) if
+// the action has already reached the office: then it is cancelled the normal way, never undone on one phone only.
+export const UNDO_SYNCED = -2;
+export const UNDO_SYNCED_MSG = 'This has reached the office — cancel it instead.';
+/** the words for an undo that could not be done */
+export const undoRefusal = (n: number) => n === UNDO_SYNCED ? UNDO_SYNCED_MSG
+  : "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead.";
 export async function undoBatch(batchId: string): Promise<number> {
   const entries = await db.audit.where('batchId').equals(batchId).toArray();
   if (!entries.length || entries.some(e => e.undone)) return 0;
   const tables = Array.from(new Set(entries.map(e => e.table)));
+  // sent to the server already (the history entry, or a record as this action left it): other phones have it
+  if (entries.some(e => e.dirty === 0)) return UNDO_SYNCED;
   for (const e of entries) {
     if (e.table === 'settings') continue; // the bill counter only moves forward; never re-issue a number
     // compare the record itself, not its save time: two saves in the same millisecond share a timestamp
     const cur = await db.table(e.table).get(e.recordId);
     if (sameRecord(withoutPhotos(cur), e.after) === false) return -1;
+    if (cur && cur.dirty === 0) return UNDO_SYNCED;
   }
   await db.transaction('rw', [...tables.map(t => db.table(t)), db.audit], async () => {
     // the log itself is add-only on the server: "undone" is this phone's own mark (an unsent entry still goes as it is)
     for (const e of entries.slice().reverse()) {
       if (e.table === 'settings') { await db.audit.put({ ...e, undone: true }); continue; }
       if (e.before) await db.table(e.table).put({ ...(photosFrom(e.before, await db.table(e.table).get(e.recordId)) as object), updatedAt: nowIso(), dirty: 1 });
+      else if (e.table === 'invoices') {
+        // a numbered bill is never deleted: it stays, cancelled, with no stock on it (every used number shows as a bill
+        // or a cancelled bill); its stock goes back with the lots' own history entries
+        const inv = await db.invoices.get(e.recordId);
+        if (inv) await db.invoices.put({ ...inv, lines: inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b, qty: 0 })) })), cancelled: { at: nowIso(), by: currentUser, reason: 'Undone' }, updatedAt: nowIso(), dirty: 1 });
+      }
       else await db.table(e.table).delete(e.recordId);
       await db.audit.put({ ...e, undone: true });
     }

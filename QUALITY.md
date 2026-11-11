@@ -22,6 +22,8 @@ checks the final state of every record. If one rule breaks, **nothing** in that 
 | Every money amount, in every table (and inside lines), is a real number | "Money amount … is not a valid number" |
 | The same company bill number is never entered twice for one company | "Company bill … of this company is already entered" |
 | The bill number prefix is 1–4 letters or digits | "Bill number prefix: 1 to 4 letters or digits only" |
+| Every bill line carries its stock lots; when what a bill charges is set (new or edited) the lots hold exactly those pieces — one rule for every path (`core/lots.ts`, held by the server too) | "A bill line … has no stock lots" / "Not enough stock for …" |
+| A shop's old due (opening balance) is more than ₹0 and is never saved as a bill | "An old due must be more than ₹0" / "An old due is not a bill" |
 
 **New rule = add it to `guard()` + add a test in `tests/regressions.test.ts`.**
 

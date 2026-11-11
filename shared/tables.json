@@ -43,7 +43,9 @@
     "workDays",
     "travelClaims",
     "receipts",
-    "tesraxDays"
+    "tesraxDays",
+    "openingDues",
+    "requests"
   ],
   "read": {
     "owner": "*",
@@ -67,7 +69,8 @@
       "leaves",
       "advances",
       "dayPlans",
-      "liteEntries"
+      "liteEntries",
+      "openingDues"
     ],
     "godown": [
       "settings",
@@ -105,7 +108,8 @@
       "advances",
       "dayPlans",
       "liteEntries",
-      "expenses"
+      "expenses",
+      "openingDues"
     ],
     "cadmin": "*",
     "manager": [
@@ -187,7 +191,9 @@
       "leaves",
       "advances",
       "primaryOrders",
-      "receipts"
+      "receipts",
+      "openingDues",
+      "requests"
     ],
     "salesman": [
       "orders",
@@ -200,7 +206,8 @@
       "liteEntries",
       "expenses",
       "audit",
-      "tesraxDays"
+      "tesraxDays",
+      "requests"
     ],
     "godown": [
       "orders",
@@ -214,7 +221,8 @@
       "advances",
       "audit",
       "tesraxDays",
-      "receipts"
+      "receipts",
+      "requests"
     ],
     "delivery": [
       "invoices",
@@ -229,7 +237,8 @@
       "liteEntries",
       "expenses",
       "audit",
-      "tesraxDays"
+      "tesraxDays",
+      "requests"
     ],
     "cadmin": "*",
     "manager": [

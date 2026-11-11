@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { freePort } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +11,7 @@ let pgServer: EmbeddedPostgres;
 let pool: pg.Pool;
 type App = Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let app: App;
-const port = 54377;
+const port = await freePort();
 
 beforeAll(async () => {
   process.env.CRON_KEY = 'cron-safety-key';

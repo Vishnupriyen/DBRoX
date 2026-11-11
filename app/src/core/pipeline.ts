@@ -15,6 +15,23 @@ export async function bookOrder(cs: ChangeSet, shop: Shop, lines: OrderLine[], b
   return cs.put<Order>('orders', { shopId: shop.id, salesmanId: by, source: 'salesman', lines, date: today(), status: 'new', issues: check.issues, invoiceIds: [], ...extra }, 'order booked');
 }
 
+/** a company rep's order that just arrived through the link: the same checks as a salesman's order (stock short, low rate,
+ *  new shop, cash-only dues, credit limit, overdue), on the owner's or office phone. Safe to run again (each order once). */
+export async function flagArrivedOrders() {
+  const me = await db.staff.get(session().userId);
+  if (me && me.role !== 'owner' && me.role !== 'office') return 0;
+  const due = (await db.orders.where('status').equals('new').toArray()).filter(o => o.flagsPending);
+  if (!due.length) return 0;
+  const cs = new ChangeSet({ noAudit: true });
+  for (const o of due) {
+    const shop = await db.shops.get(o.shopId); if (!shop) continue;
+    const check = await checkOrder(shop, o.lines);
+    cs.put<Order>('orders', { ...o, issues: [...new Set([...o.issues, ...check.issues])], flagsPending: false });
+  }
+  if (cs.size) await cs.commit('Rep orders checked');
+  return cs.size;
+}
+
 export async function cancelMyOrder(orderId: string) {
   const o = (await db.orders.get(orderId))!;
   if (o.status !== 'new') throw new Error('Already approved — ask the owner');
@@ -296,7 +313,9 @@ export async function dayChecklist(date = today()) {
   const cashOpen = pays.filter(p => p.mode === 'cash' && !p.settled && p.status === 'ok' && p.date <= date);
   const unapprovedExpenses = expenses.filter(e => !(e as { approved?: boolean }).approved && e.category !== 'advance');
   const shortfallsOpen = (await db.advances.toArray()).filter(a => a.kind === 'shortfall' && a.status === 'approved' && (a.recovered ?? 0) < a.amount);
-  return { tripsOpen, noResult, diffs, refs, waitingOrders, newShops, dupes, cashOpen, unapprovedExpenses, shortfallsOpen };
+  // staff returns and write-offs waiting for a decision (they change nothing until approved)
+  const requests = await db.requests.where('status').equals('waiting').toArray();
+  return { tripsOpen, noResult, diffs, refs, waitingOrders, newShops, dupes, cashOpen, unapprovedExpenses, shortfallsOpen, requests };
 }
 
 // Owner's choice for a bill with delivery differences: re-issue the same number with delivered quantities, or a credit note.
@@ -317,6 +336,18 @@ export async function cancelPayment(paymentId: string, reason: string) {
   const cs = new ChangeSet();
   cs.put('payments', { ...p, status: 'cancelled', note: reason }, 'payment cancelled');
   await cs.commit('Payment cancelled');
+}
+
+/** a cheque bounced: asked to confirm, with the reason; it stops counting and the bills it paid are open again */
+export async function bounceCheque(paymentId: string, reason: string) {
+  const p = await db.payments.get(paymentId);
+  if (!p || p.mode !== 'cheque') throw new Error('That is not a cheque payment.');
+  if (p.status === 'bounced') throw new Error('This cheque is already marked bounced.');
+  if (p.status === 'cancelled') throw new Error('This payment was cancelled.');
+  if (!reason.trim()) throw new Error('Say why the cheque bounced (e.g. "funds insufficient").');
+  const cs = new ChangeSet();
+  cs.put('payments', { ...p, status: 'bounced', bounce: { at: nowIso(), by: session().userId, reason: reason.trim() } }, `cheque bounced: ${reason.trim()}`);
+  return cs.commit('Cheque bounced');
 }
 
 /**

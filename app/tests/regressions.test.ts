@@ -116,3 +116,19 @@ describe('review fixes', () => {
     expect(monthEnd('2028-02')).toBe('2028-02-29');
   });
 });
+
+// Round 3 (11 Nov 2026): the guard's new rules (QUALITY.md table)
+describe('round 3 guard rules', () => {
+  it('a bill line without its stock lots is refused with a plain message (not a crash)', async () => {
+    const inv = (await db.invoices.toArray()).find(i => !i.cancelled && i.lines.length)!;
+    const cs = new ChangeSet(); cs.put('invoices', { ...inv, lines: inv.lines.map(l => ({ ...l, batches: undefined })) });
+    await expect(cs.commit('x')).rejects.toThrow(/has no stock lots/);
+  });
+  it('an old due of ₹0 (or a NaN one) is refused', async () => {
+    const shop = (await db.shops.toArray())[0];
+    for (const amount of [0, Number.NaN]) {
+      const cs = new ChangeSet(); cs.put('openingDues', { shopId: shop.id, ref: 'X', date: today(), amount });
+      await expect(cs.commit('x')).rejects.toThrow(/old due|Money amount/);
+    }
+  });
+});

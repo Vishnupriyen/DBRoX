@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare } from 'lucide-react';
 import { ChangeSet, db } from '../core/db';
-import { approveOrder, rejectOrder, shopHistory } from '../core/pipeline';
+import { approveOrder, flagArrivedOrders, rejectOrder, shopHistory } from '../core/pipeline';
 import { allOutstanding } from '../core/ledger';
 import { inr, plural } from '../core/i18n';
 import { askText } from './dialog';
@@ -18,6 +18,7 @@ export function OrdersReceived() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     (async () => {
+      await flagArrivedOrders(); // a rep's order that just came in gets its stock / credit flags first
       const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
       const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
       const cos = new Map((await db.companies.toArray()).map(c => [c.id, c.name]));

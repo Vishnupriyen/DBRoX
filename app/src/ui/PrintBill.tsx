@@ -1,7 +1,7 @@
 import { inr, showDate } from '../core/i18n';
 import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
-import { db, getSettings } from '../core/db';
+import { db, getSettings, localDay } from '../core/db';
 import { r2 } from '../core/ledger';
 import { balanceBefore, markPrinted } from '../core/credit';
 import { cnTaxLines, shopStateCode, stateLabel, UQC } from '../core/gst';
@@ -62,7 +62,7 @@ export function PrintBill({ invoice, creditNote, onClose }: { invoice?: Invoice;
             {creditNote && <div>Against invoice <b>{creditNote.invoiceNumber ?? inv?.number ?? ''}</b> dated {(creditNote.invoiceDate ?? inv?.date ?? '').split('-').reverse().join('-')}</div>}
           </div>
         </div>
-        {invoice?.cancelled && <div style={{ margin: '8px 0', padding: 6, border: '1px solid #999', fontWeight: 800 }}>CANCELLED on {showDate(invoice.cancelled.at.slice(0, 10))} — {invoice.cancelled.reason}. This bill is not payable.</div>}
+        {invoice?.cancelled && <div style={{ margin: '8px 0', padding: 6, border: '1px solid #999', fontWeight: 800 }}>CANCELLED on {showDate(localDay(invoice.cancelled.at))} — {invoice.cancelled.reason}. This bill is not payable.</div>}
         <div style={{ margin: '8px 0', padding: 6, border: '1px solid #999' }}>
           <b>{invoice ? 'Bill to' : 'Recipient'}: {shop.name}</b> · {shop.area}{shop.address ? ` · ${shop.address}` : ''}{shop.gstin ? ` · GSTIN ${shop.gstin}` : ' · Unregistered'} · State: {stateLabel(pos)}
           <div>Place of supply: {stateLabel(pos)} · Tax payable on reverse charge: No{creditNote ? ` · Reason: ${creditNote.reason}` : ''}</div>

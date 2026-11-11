@@ -23,11 +23,11 @@ describe('RoX Engine', () => {
     const surfId = r.proposal!.rows[0].productId as string;
     const live = (await db.batches.where('productId').equals(surfId).toArray()).filter(b => b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry));
     const booked = await commit(r.proposal!);
-    // pipeline: booked → godown packs what it has → owner approves → bills
+    // pipeline: the owner's own order is approved as it is booked (BA TRUST15) → godown packs what it has → owner bills
     const o = (await db.orders.get(booked.orderId!))!;
-    expect(o.status).toBe('new');
-    await approveOrder(o.id); // owner approves first (sees shop history)
-    expect((await db.orders.get(o.id))!.status).toBe('approved');
+    expect(o.status).toBe('approved');
+    expect(booked.message).toMatch(/approved and sent to the godown/);
+    await expect(approveOrder(o.id)).rejects.toThrow(/already approved/);
     const pick = await suggestPick(o);
     expect(pick.every(x => x.available === x.ordered)).toBe(true);
     await pickOrder(o.id, pick.map(x => ({ productId: x.productId, qty: x.available })));

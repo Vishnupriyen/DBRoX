@@ -116,3 +116,30 @@ describe('company → distributor', () => {
     expect(await companyToDb(link, 'orders', { ...o, lines: [{ productId: 'P1', qty: 1 }] }, db, co, ctx)).toEqual([]);
   });
 });
+
+// Round 3 (11 Nov 2026): owner decision 1 (limit 0 = cash only) and BA TRUST19 (rep orders: flags and cancel)
+describe('round 3: shops a rep asks for, rep orders and their cancel', () => {
+  it('a shop a company rep asks for arrives cash only (limit 0) until the owner sets a limit', async () => {
+    const { db, co, link } = world();
+    const [w] = await companyToDb(link, 'shopRequests', { id: 'r1', dbLinkId: 'L1', name: 'New Kadai', repName: 'Arun' }, db, co, ctx);
+    expect(w.doc).toMatchObject({ creditLimit: 0, cashOnly: true, approved: false });
+  });
+  it('a rep order arrives marked to be checked like a salesman order', async () => {
+    const { db, co, link } = world(); linked(db);
+    const [w] = await companyToDb(link, 'orders', { id: 'o1', dbLinkId: 'L1', shopId: 's1', date: '2026-11-10', repName: 'Arun', lines: [{ productId: 'P1', qty: 12 }] }, db, co, ctx);
+    expect(w.doc.flagsPending).toBe(true);
+  });
+  it('a distributor cancel reaches the rep as "cancelled by distributor" with the reason; nothing else of the order crosses', async () => {
+    const { db, co, link } = world();
+    co.put('orders', { id: 'o1', dbLinkId: 'L1', shopId: 's1', repId: 'rep1', status: 'new', lines: [{ productId: 'P1', qty: 12, rate: 90 }] });
+    const live = { id: 'o1', source: 'company', status: 'approved', issues: ['Stock short: x'], lines: [{ productId: 'd1', qty: 12, rate: 95 }] };
+    expect(await dbToCompany(link, 'orders', live, db, co, ctx)).toEqual([]);
+    const [w] = await dbToCompany(link, 'orders', { ...live, status: 'cancelled', issues: ['Stock short: x', 'Cancelled: shop closed for Deepavali'] }, db, co, ctx);
+    expect(w.tbl).toBe('orders');
+    expect(w.doc).toMatchObject({ id: 'o1', status: 'cancelled', cancelledBy: 'distributor', cancelReason: 'shop closed for Deepavali', repId: 'rep1' });
+    expect((w.doc.lines as Doc[])[0]).toMatchObject({ productId: 'P1', rate: 90 }); // the company's own copy, not the distributor's prices
+    // another distributor's order with the same id is never touched
+    co.put('orders', { id: 'o2', dbLinkId: 'L9', status: 'new', lines: [] });
+    expect(await dbToCompany(link, 'orders', { id: 'o2', source: 'company', status: 'cancelled', issues: ['Cancelled: x'] }, db, co, ctx)).toEqual([]);
+  });
+});

@@ -112,6 +112,8 @@ export async function syncNow(): Promise<string> {
     if (!r.more) break;
   }
   if ((await db.meta.get('archiveDone'))?.value === 'pending' && msg.startsWith('Synced')) await fetchArchive();
+  // company reps' orders that came in: stock and credit flags, like a salesman's order (owner / office phone only)
+  try { const { flagArrivedOrders } = await import('./pipeline'); await flagArrivedOrders(); } catch { /* tried again next sync */ }
   return msg;
 }
 
@@ -160,6 +162,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     const token = localStorage.getItem('dbrox.token') ?? '';
     const cursor = Number((await db.meta.get('cursor'))?.value ?? 0);
     await numberPendingCreditNotes();
+    try { const { numberPendingReceipts } = await import('./receipts'); await numberPendingReceipts(); } catch { /* numbered at a later sync */ }
     const changes: Change[] = [];
     let bytes = 0, full = false;
     for (const t of SYNC_TABLES) {

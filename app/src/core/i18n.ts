@@ -85,6 +85,22 @@ export function showDate(iso?: string | null) {
   const thisYear = String(new Date().getFullYear());
   return `${d} ${MON[m - 1]}${y === thisYear ? '' : ` ${y}`}`;
 }
+/** the Indian clock time of a saved moment (createdAt, at): "09:05". Never the UTC time stored in the timestamp —
+ *  between 00:00 and 05:30 in India that is still the previous evening. (The phone's own time zone, which is IST.) */
+export function showTime(iso?: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+/** a saved moment's Indian date and time, sortable: "2026-11-11T09:05:07" */
+export function localStamp(iso?: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 /** a month as people say it: "Nov 2026" (input YYYY-MM) */
 export function showMonth(ym?: string | null) {
   if (!ym || !/^\d{4}-\d{2}/.test(ym)) return ym ?? '';

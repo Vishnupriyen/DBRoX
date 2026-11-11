@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Phone, MapPin, Receipt, IndianRupee, FileMinus, Printer } from 'lucide-react';
 import { db, localDay } from '../core/db';
-import { invoiceBalances, shopOutstanding } from '../core/ledger';
-import { inr } from '../core/i18n';
+import { invoiceBalances, openingAsBill, paymentCounts, shopOutstanding } from '../core/ledger';
+import { inr, localStamp } from '../core/i18n';
 import { PrintBill } from './PrintBill';
 import type { CreditNote, Invoice, Payment, Shop } from '../core/types';
 
@@ -20,14 +20,16 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
     const s = await db.shops.get(shopId); setShop(s ?? null); if (!s) return;
     setStaff(new Map((await db.staff.toArray()).map(x => [x.id, x.name.split(' ')[0]])));
     const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled);
-    const pays = (await db.payments.where('shopId').equals(shopId).toArray()).filter(p => p.status === 'ok');
+    const pays = (await db.payments.where('shopId').equals(shopId).toArray()).filter(p => p.status === 'ok' && paymentCounts(p)); // a post-dated cheque counts from its date
+    const old = await db.openingDues.where('shopId').equals(shopId).toArray();
     const cns = await db.creditNotes.where('shopId').equals(shopId).toArray();
     const o = await shopOutstanding(shopId); const bal = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
     setDue({ total: o.total, overdue: o.overdue, days: Math.max(0, ...bal.map(b => b.overdueDays)), advance: o.advance });
     const all: Row[] = [
-      ...invs.map(i => ({ at: i.date + 'T' + (i.createdAt.slice(11) || '00:00:00'), kind: 'bill' as const, ref: i.number, debit: i.total, credit: 0, note: `${i.lines.length} ${'items'} · ${i.deliveryStatus}`, inv: i })),
-      ...pays.map((p: Payment) => ({ at: p.date + 'T' + (p.createdAt.slice(11) || '00:00:00'), kind: 'payment' as const, ref: `${p.mode.toUpperCase()}${p.ref ? ' ' + p.ref : ''}`, debit: 0, credit: p.amount, note: `${'by'} ${p.collectedBy}` })),
-      ...cns.map((c: CreditNote) => ({ at: c.date + 'T' + (c.createdAt.slice(11) || '00:00:00'), kind: 'cn' as const, ref: c.number, debit: 0, credit: c.total, note: c.reason, cn: c })),
+      ...invs.map(i => ({ at: i.date + 'T' + (localStamp(i.createdAt).slice(11) || '00:00:00'), kind: 'bill' as const, ref: i.number, debit: i.total, credit: 0, note: `${i.lines.length} ${'items'} · ${i.deliveryStatus}`, inv: i })),
+      ...pays.map((p: Payment) => ({ at: p.date + 'T' + (localStamp(p.createdAt).slice(11) || '00:00:00'), kind: 'payment' as const, ref: `${p.mode.toUpperCase()}${p.ref ? ' ' + p.ref : ''}`, debit: 0, credit: p.amount, note: `${'by'} ${p.collectedBy}` })),
+      ...old.map(o => ({ at: o.date + 'T00:00:00', kind: 'bill' as const, ref: openingAsBill(o).number, debit: o.amount, credit: 0, note: 'opening balance' })),
+      ...cns.map((c: CreditNote) => ({ at: c.date + 'T' + (localStamp(c.createdAt).slice(11) || '00:00:00'), kind: 'cn' as const, ref: c.number, debit: 0, credit: c.total, note: c.reason, cn: c })),
     ].sort((a, b) => b.at.localeCompare(a.at));
     setRows(all);
   })(); }, [shopId]);

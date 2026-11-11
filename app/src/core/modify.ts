@@ -1,8 +1,8 @@
-import { inr, showDate, plural } from './i18n';
+import { inr, showDate, showTime, plural } from './i18n';
 // TESRAX changes things after the fact: an order, a bill, a payment, an expense, a stock count, a shop's details,
 // a product's rate, or the last thing saved. Each one is a table the person checks and approves with ✓. Nothing
 // changes before that, and every change is saved through the same laws (guard) and can be undone.
-import { db, daysFrom, newId, session } from './db';
+import { db, daysFrom, localDay, newId, session, UNDO_SYNCED_MSG } from './db';
 import { bestProduct, hasWord as has, lev, norm, parseItemLines, toPieces } from './match';
 import { orderRow, productOptions, shopOptions, type Row } from './proposals';
 import { r2 } from './ledger';
@@ -112,12 +112,14 @@ async function undoLast(_role: Role): Promise<Reply> {
   if (!last) return { text: "There's nothing of yours to undo from today.", tone: 'warn' };
   const entries = mine.filter(a => a.batchId === last.batchId && a.table !== 'settings');
   const label = last.action.split(':')[0];
+  // already sent to the office: other phones have it, so it is cancelled the normal way (never undone on one phone)
+  if (mine.some(a => a.batchId === last.batchId && a.dirty === 0)) return { text: `"${label}" (${showTime(last.at)}): ${UNDO_SYNCED_MSG}`, tone: 'warn' };
   const rows: Row[] = entries.map(e => ({ table: e.table, change: e.action.split(': ').slice(1).join(': ') || e.action, what: describe(e.table, e.after) }));
   return {
-    text: `The last thing you saved was "${label}" at ${last.at.slice(11, 16)}. Tap ✓ to undo it.`,
+    text: `The last thing you saved was "${label}" at ${showTime(last.at)}. Tap ✓ to undo it.`,
     proposal: {
       id: newId(), kind: 'undo', title: `Undo: ${label}`,
-      fields: [{ key: 'label', label: 'Saved', value: label, readonly: true }, { key: 'at', label: 'At', value: last.at.slice(0, 16).replace('T', ' '), readonly: true }],
+      fields: [{ key: 'label', label: 'Saved', value: label, readonly: true }, { key: 'at', label: 'At', value: `${showDate(localDay(last.at))} ${showTime(last.at)}`, readonly: true }],
       columns: [{ key: 'table', label: 'Record', readonly: true, width: 90 }, { key: 'change', label: 'Change', readonly: true, width: 150 }, { key: 'what', label: 'Details', readonly: true, width: 180 }],
       rows, meta: { batchId: last.batchId },
     },
