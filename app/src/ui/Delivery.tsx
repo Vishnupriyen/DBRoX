@@ -26,7 +26,7 @@ export function Delivery() {
     (async () => {
       const me = await db.staff.get(session().userId);
       const trips = (await db.trips.where('date').equals(today()).toArray()).filter(x => x.status !== 'done');
-      const mine = trips.find(x => me?.role !== 'delivery' || x.driverId === me.id || (me.vanId && x.vanId === me.vanId)) ?? trips[0] ?? null;
+      const mine = me?.role === 'delivery' ? trips.find(x => x.driverId === me.id) ?? null : trips.find(x => x.driverId === session().userId) ?? null;
       setTrip(mine);
       if (!mine) { setStops([]); return; }
       const invs = (await db.invoices.where('tripId').equals(mine.id).toArray()).filter(i => !i.cancelled);
