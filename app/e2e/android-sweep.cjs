@@ -27,8 +27,13 @@ const SHOTS = process.env.SHOTS !== '0';
     await p.evaluate(() => localStorage.removeItem('dbrox.session')); await p.reload(); await p.waitForSelector('text=Demo logins', { timeout: 60000 }); await p.waitForTimeout(800);
     const isCo = who.startsWith('co:'); if (isCo) who = who.slice(3);
     const side = isCo ? 'Company demo' : 'Distributor demo';
-    await p.click(`text=${side}`).catch(() => {}); await p.waitForTimeout(1000);
-    await p.waitForSelector(`text=${who}`, { timeout: 60000 }); await p.waitForTimeout(500);
+    // switching side reloads the page; on a slow emulator a tap can land before the button is live — tap again until the names show
+    for (let t = 0; ; t++) {
+      await p.click(`text=${side}`, { timeout: 15000 }).catch(() => {}); await p.waitForTimeout(1000);
+      if (await p.waitForSelector(`text=${who}`, { timeout: 30000 }).then(() => true, () => false)) break;
+      if (t === 3) throw new Error(`login list for ${who} never showed after 4 taps on "${side}"`);
+    }
+    await p.waitForTimeout(500);
     await p.click(`text=${who}`); await p.waitForTimeout(1500);
     const gate = await p.$('.gate .big-btn');
     if (gate) { await gate.click(); await p.waitForTimeout(1000); if (await p.$('.gate')) report.push({ who: who.split(' ')[0], page: 'check-in', issues: ['CHECK-IN still waiting after 1 s'] }); await p.waitForTimeout(500); }
