@@ -3,7 +3,7 @@ import { PhotoButton } from './PhotoButton';
 import { Upload, Check, Store, Download, ArrowLeft, DoorClosed, X, Route } from 'lucide-react';
 import { ChangeSet, db, session, today, activeShops } from '../core/db';
 import { orderStops } from '../core/pipeline';
-import { inr, speak, t } from '../core/i18n';
+import { inr, speak, t, showTime } from '../core/i18n';
 import { downloadWorkbook, isSheet, readSheet, readShopRows } from '../core/readers';
 import { norm } from '../core/match';
 import type { DayPlan, LiteEntry, Shop } from '../core/types';
@@ -162,8 +162,8 @@ export function LiteExport() {
     const names = new Map((await activeShops()).map(s => [s.id, s]));
     const staff = new Map((await db.staff.toArray()).map(s => [s.id, s.name]));
     await downloadWorkbook(`Hanubix-day-${today()}`, [
-      { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
-      { name: 'Collections', header: ['Shop', 'Amount', 'Mode', 'Ref', 'Time', 'By'], rows: es.filter(e => e.kind === 'payment').map(e => [names.get(e.shopId)?.name ?? '', e.amount ?? 0, e.mode ?? '', e.ref ?? '', e.createdAt.slice(11, 16), staff.get(e.by) ?? e.by]) },
+      { name: 'Deliveries', header: ['Shop', 'Area', 'Result', 'Time', 'By'], rows: es.filter(e => e.kind !== 'payment').map(e => [names.get(e.shopId)?.name ?? '', names.get(e.shopId)?.area ?? '', e.kind, showTime(e.createdAt), staff.get(e.by) ?? e.by]) },
+      { name: 'Collections', header: ['Shop', 'Amount', 'Mode', 'Ref', 'Time', 'By'], rows: es.filter(e => e.kind === 'payment').map(e => [names.get(e.shopId)?.name ?? '', e.amount ?? 0, e.mode ?? '', e.ref ?? '', showTime(e.createdAt), staff.get(e.by) ?? e.by]) },
     ]);
   };
   return (

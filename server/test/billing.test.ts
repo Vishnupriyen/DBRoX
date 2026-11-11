@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
-import { billNo, issueNumbers, realBill } from './fixtures.js';
+import { billNo, freePort, issueNumbers, realBill } from './fixtures.js';
 import { billingState, makeLicence, sealLicence, openLicence, publicKeySpki, isUpgrade, istToday } from '../src/licence.js';
 
 describe('billing rules (dates → status)', () => {
@@ -49,8 +49,9 @@ describe('billing rules (dates → status)', () => {
 describe('billing on the real server', () => {
   let pgServer: EmbeddedPostgres; let pool: pg.Pool;
   let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
-  const port = 54331;
+  let port = 0;
   beforeAll(async () => {
+    port = await freePort();
     process.env.ADMIN_KEY = 'admin-test-key'; process.env.CRON_KEY = 'cron-test-key'; process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
     pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'hanubix-pg-billing-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });
     await pgServer.initialise(); await pgServer.start(); await pgServer.createDatabase('dbrox');

@@ -11,9 +11,21 @@ export const issueNumbers = (pool: pg.Pool, tenantId: string, prefix?: string) =
 export function realBill<T extends Record<string, unknown>>(inv: T): T {
   const lines = ((inv.lines as Record<string, number>[] | undefined) ?? []).map(l => {
     const taxable = Number(l.taxable ?? 0), tax = r2(Number(l.total ?? taxable) - taxable);
-    return { ...l, taxable, cgst: r2(tax / 2), sgst: r2(tax - r2(tax / 2)), igst: 0, total: r2(taxable + tax) };
+    // a real bill line carries the stock lots its pieces came from (the server refuses a line without them)
+    const lots = Array.isArray((l as Record<string, unknown>).batches) ? {} : { batches: [{ batchId: `lot-${String(l.productId ?? 'x')}`, batch: 'T1', qty: Number(l.qty ?? 0) + Number(l.freeQty ?? 0), expiry: '2099-12-31' }] };
+    return { ...l, ...lots, taxable, cgst: r2(tax / 2), sgst: r2(tax - r2(tax / 2)), igst: 0, total: r2(taxable + tax) };
   });
   const taxable = r2(lines.reduce((a, l) => a + l.taxable, 0)), cgst = r2(lines.reduce((a, l) => a + l.cgst, 0)), sgst = r2(lines.reduce((a, l) => a + l.sgst, 0));
   const exact = r2(taxable + cgst + sgst), total = Math.round(exact);
   return { ...inv, lines, taxable, cgst, sgst, igst: 0, roundOff: r2(total - exact), total };
+}
+
+/** a free local port for this test file's own Postgres (test files run side by side, and other working copies too) */
+export async function freePort(): Promise<number> {
+  const { createServer } = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.unref(); s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => { const a = s.address(); const p = typeof a === 'object' && a ? a.port : 0; s.close(() => resolve(p)); });
+  });
 }

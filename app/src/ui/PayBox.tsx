@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Check, QrCode, AlertTriangle } from 'lucide-react';
+import { Check, QrCode, AlertTriangle, Send } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ChangeSet, getSettings, session, today } from '../core/db';
 import { invoiceBalances, r2 } from '../core/ledger';
 import { inr, showDate, t } from '../core/i18n';
 import { PhotoButton } from './PhotoButton';
 import { collectionCheck } from '../core/credit';
+import { receiptNumber, receiptText } from '../core/receipts';
+import { shareText } from '../core/files';
 import { confirmBox, notify } from './dialog';
 import type { Payment, Shop } from '../core/types';
 
@@ -21,6 +23,9 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
   const [photo, setPhoto] = useState<string>();
   const [qr, setQr] = useState<string>();
   const [showQr, setShowQr] = useState(false);
+  const [chequeDate, setChequeDate] = useState(today());
+  const [receipt, setReceipt] = useState<{ p: Payment; text: string } | null>(null);
+  // from Collect (no bill named) every open bill is ticked; the person unticks what the shop is not paying
   useEffect(() => { invoiceBalances(shop.id).then(bs => { const list = bs.filter(b => b.balance > 0.5).sort((a, b) => a.invoice.date.localeCompare(b.invoice.date)).map(b => ({ id: b.invoice.id, number: b.invoice.number, date: b.invoice.date, balance: b.balance })); setBills(list); if (!preferInvoiceIds.length && list.length) setSel(new Set(list.map(b => b.id))); }); }, [shop.id]);
   useEffect(() => { (async () => { const s = await getSettings(); if (!s.upiId) { setQr(undefined); return; } setQr(await QRCode.toDataURL(`upi://pay?pa=${s.upiId}&pn=${encodeURIComponent(s.firmName)}&am=${amount || ''}&cu=INR`, { width: 480, margin: 1 })); })(); }, [amount]);
 
@@ -47,9 +52,21 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
     let left = amount; const allocations: { invoiceId: string; amount: number }[] = [];
     for (const b of chosen) { if (left <= 0) break; const a = Math.min(b.balance, left); allocations.push({ invoiceId: b.id, amount: r2(a) }); left = r2(left - a); }
     const cs = new ChangeSet();
-    cs.put<Payment>('payments', { shopId: shop.id, amount, mode, ref, date: today(), collectedBy: session().userId, shopConfirmed: true, confirmPhoto: photo, allocations, advance: r2(left), settled: false, status: 'ok' }, shortBy > 0 ? `collection (short by ${shortBy})` : 'collection');
-    await cs.commit('Collection'); onDone({ amount, mode });
+    // every collection gets a running receipt number the shop is shown (and can be sent on WhatsApp)
+    const receiptNo = await receiptNumber(cs);
+    const p = cs.put<Payment>('payments', { shopId: shop.id, amount, mode, ref, ...(mode === 'cheque' ? { chequeDate } : {}), date: today(), collectedBy: session().userId, shopConfirmed: true, confirmPhoto: photo, allocations, advance: r2(left), settled: false, status: 'ok', receiptNo }, shortBy > 0 ? `collection (short by ${shortBy})` : 'collection');
+    await cs.commit('Collection');
+    setReceipt({ p, text: await receiptText(p) });
   };
+
+  if (receipt) return (
+    <div className="card stack">
+      <div className="alert ok"><Check /><div><b>{'Receipt'} {receipt.p.receiptNo?.includes('/PENDING-') ? '' : receipt.p.receiptNo}</b> · {inr(receipt.p.amount)}</div></div>
+      <div className="muted" style={{ whiteSpace: 'pre-line' }}>{receipt.text}</div>
+      <button className="btn" onClick={() => void shareText(receipt.text, shop.phone)}><Send /> {'Send on WhatsApp'}</button>
+      <button className="btn primary" onClick={() => onDone({ amount: receipt.p.amount, mode: receipt.p.mode })}><Check /> {t('done')}</button>
+    </div>
+  );
 
   return (
     <div className="card stack">
@@ -73,7 +90,11 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
           <div className="field"><label>{'UPI ref (last 4 digits)'}</label><input value={ref} onChange={e => setRef(e.target.value)} /></div>
           <PhotoButton facing="environment" onPhoto={setPhoto} label={'Photo of payment screen'} />
         </>}
-        {mode === 'cheque' && <div className="field"><label>{'Cheque no · bank · date'}</label><input value={ref} onChange={e => setRef(e.target.value)} placeholder="123456 SBI 12/11" /></div>}
+        {mode === 'cheque' && <>
+          <div className="field"><label>{'Cheque no · bank'}</label><input value={ref} onChange={e => setRef(e.target.value)} placeholder="123456 SBI" /></div>
+          <div className="field"><label>{'Cheque date'}</label><input type="date" value={chequeDate} onChange={e => setChequeDate(e.target.value || today())} /></div>
+          {chequeDate > today() && <div className="alert"><AlertTriangle /><div>{'Post-dated: the bills stay open until'} {showDate(chequeDate)}</div></div>}
+        </>}
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>{t('shopConfirm')}</p>
         <button className="btn ok-huge" disabled={!canSave || saving} onClick={save} aria-label="Shop confirms payment">{'Money paid'} <Check size={40} /></button>
       </>}

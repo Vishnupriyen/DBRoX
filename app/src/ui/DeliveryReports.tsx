@@ -2,7 +2,7 @@ import { printPage } from '../core/files';
 import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
-import { inr, plural, showDate } from '../core/i18n';
+import { inr, plural, showDate, showTime } from '../core/i18n';
 import { r2 } from '../core/ledger';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 
@@ -17,7 +17,7 @@ export function DeliveryStatus() {
     <div className="stack">
       <button className="link" onClick={() => setOpen(null)}>← {'back'}</button>
       <div className="card stack">
-        <div><b>{rows.find(r => r.id === open.id)?.shop}</b><div className="muted">{open.number} · {inr(open.total)} · {open.delivery?.at.slice(11, 16)}</div></div>
+        <div><b>{rows.find(r => r.id === open.id)?.shop}</b><div className="muted">{open.number} · {inr(open.total)} · {showTime(open.delivery?.at)}</div></div>
         <div className="row" style={{ gap: 8 }}>
           {/* older bills kept the shop photo twice (photo + shopPhoto): either one */}
           {(open.delivery?.shopPhoto ?? open.delivery?.photo) && <img src={open.delivery.shopPhoto ?? open.delivery.photo} alt="Shop" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}

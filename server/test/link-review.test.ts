@@ -3,13 +3,14 @@ process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import { freePort } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let pgServer: EmbeddedPostgres;
 let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
-const port = 54333;
+const port = await freePort();
 beforeAll(async () => {
   process.env.RELAY_INLINE = '1';
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-review-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });

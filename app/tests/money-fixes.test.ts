@@ -107,14 +107,18 @@ describe('credit notes (GST A2/A3, BLOCK6, BLOCK8)', () => {
     const extra = (await db.invoices.toArray()).filter(i => i.extraOf === inv.id);
     expect(extra.flatMap(i => i.lines).reduce((a, l) => a + l.qty, 0)).toBe(4); // 2 extra on each line
   });
-  it('a return above the owner\'s limit from a staff phone is not saved — the owner must make it', async () => {
+  it('a return above the owner\'s limit from a staff phone makes no credit note — it goes to the owner as a request (manager decision, round 3)', async () => {
     const inv = await bill(tn, [{ productId: surf.id, qty: 30, rate: 112 }]);
     setSession(owner.tenantId, salesman.id);
     try {
       const p = returnProposal(tn, inv, [{ productId: surf.id, qty: 20 }]);
-      expect(hasErrors(await validate(p))).toBe(true);
-      await expect(commit(p)).rejects.toThrow(/owner/);
+      const v = await validate(p);
+      expect(hasErrors(v)).toBe(false);
+      expect(v.summary).toMatch(/owner to approve/);
+      await commit(p);
       expect(await db.creditNotes.where('invoiceId').equals(inv.id).count()).toBe(0);
+      const req = (await db.requests.toArray()).find(r => r.rows.some(x => x.invoiceId === inv.id))!;
+      expect(req).toMatchObject({ kind: 'return', status: 'waiting', ownerOnly: true, by: salesman.id });
     } finally { asOwner(); }
   });
 });

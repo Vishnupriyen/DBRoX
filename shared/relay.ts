@@ -98,11 +98,12 @@ export async function companyToDb(link: Link, tbl: string, doc: Doc, db: Store, 
       if (p) lines.push({ productId: p.id, qty: l.qty, rate: p.rate });
     }
     if (!lines.length) return [];
-    out.push({ tbl: 'orders', doc: { ...keep(doc), shopId: shop.id, source: 'company', companyId: link.companyIdInDb, companyRep: doc.repName, lines, status: 'new', issues: [], date: doc.date, invoiceIds: [], visitId: undefined } });
+    // flagsPending: the distributor's phone checks it on arrival exactly like a salesman's order (stock, credit, overdue)
+    out.push({ tbl: 'orders', doc: { ...keep(doc), shopId: shop.id, source: 'company', companyId: link.companyIdInDb, companyRep: doc.repName, lines, status: 'new', issues: [], flagsPending: true, date: doc.date, invoiceIds: [], visitId: undefined } });
   }
   if (tbl === 'shopRequests' && doc.dbLinkId === link.id) {
     if (await db.get('shops', doc.id)) return [];
-    out.push({ tbl: 'shops', doc: { ...keep(doc), name: doc.name, area: doc.area ?? '', beat: doc.beat ?? '', lat: doc.lat, lng: doc.lng, photo: doc.photo, type: 'retail', approved: false, creditLimit: 0, creditDays: 7, cashOnly: false, aliases: [], requestedBy: doc.repName, requestedFor: link.companyIdInDb } });
+    out.push({ tbl: 'shops', doc: { ...keep(doc), name: doc.name, area: doc.area ?? '', beat: doc.beat ?? '', lat: doc.lat, lng: doc.lng, photo: doc.photo, type: 'retail', approved: false, creditLimit: 0, creditDays: 7, cashOnly: true, aliases: [], requestedBy: doc.repName, requestedFor: link.companyIdInDb } }); // limit 0 = cash only until the owner sets one
   }
   // only head office's final word reaches the distributor (an SO's recommendation stays inside the company)
   if (tbl === 'claimDecisions' && doc.dbLinkId === link.id && (doc.status === 'approved' || doc.status === 'rejected')) {
@@ -162,6 +163,14 @@ export async function dbToCompany(link: Link, tbl: string, doc: Doc, db: Store, 
     }
     out.push({ tbl: 'dbClaims', doc: { ...keep(doc), dbLinkId, month: doc.month, kind: doc.kind, amount: doc.amount, status: doc.status, note: doc.note, lines } });
   }
+  // a rep's order cancelled by the distributor: the rep sees "cancelled by distributor" and why (nothing else crosses)
+  if (tbl === 'orders' && doc.source === 'company' && doc.status === 'cancelled') {
+    const mine = await _co.get('orders', doc.id);
+    if (!mine || mine.dbLinkId !== dbLinkId || mine.status === 'cancelled') return [];
+    const why = [...((doc.issues as string[]) ?? [])].reverse().find(x => /^Cancelled/.test(String(x)));
+    const reason = why ? String(why).replace(/^Cancelled( by [a-z]+)?:?\s*/i, '') : '';
+    out.push({ tbl: 'orders', doc: { ...mine, status: 'cancelled', cancelledBy: 'distributor', cancelReason: reason || 'No reason given' } });
+  }
   if (tbl === 'primaryOrders') {
     if (doc.companyId !== link.companyIdInDb) return [];
     const lines: Record<string, unknown>[] = [];
@@ -182,7 +191,7 @@ export async function dbToCompany(link: Link, tbl: string, doc: Doc, db: Store, 
 // everything that crosses when a distributor first accepts (history: last 90 days of bills)
 export const LINK_TABLES = {
   fromCompany: ['products', 'schemes', 'primaryInvoices'],
-  fromDb: ['shops', 'products', 'invoices', 'creditNotes', 'claims', 'primaryOrders', 'receipts'],
+  fromDb: ['shops', 'products', 'invoices', 'creditNotes', 'claims', 'primaryOrders', 'receipts'], // (orders cross only when cancelled: not in the first exchange)
 } as const;
 const HISTORY_TABLES = new Set(['invoices', 'creditNotes']);
 

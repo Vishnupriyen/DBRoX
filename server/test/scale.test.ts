@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
-import { billNo, issueNumbers, realBill } from './fixtures.js';
+import { billNo, freePort, issueNumbers, realBill } from './fixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,7 @@ let pgServer: EmbeddedPostgres; let pool: pg.Pool;
 let app: Awaited<ReturnType<typeof import('../src/app.js').buildApp>>;
 let link: typeof import('../src/link.js');
 let reports: typeof import('../src/reports.js');
-const port = 54335;
+const port = await freePort();
 beforeAll(async () => {
   process.env.RELAY_INLINE = '0'; process.env.COVER_DELAY_MS = '0'; // the real thing: the relay runs in the background
   pgServer = new EmbeddedPostgres({ databaseDir: join(tmpdir(), 'dbrox-scale-' + Date.now()), user: 'postgres', password: 'pw', port, persistent: false });

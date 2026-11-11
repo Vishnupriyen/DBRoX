@@ -28,3 +28,15 @@ const NativePrint = registerPlugin<{ print(o: { name: string }): Promise<void> }
 export async function printPage(name = 'Hanubix') {
   if (isApp()) await NativePrint.print({ name }); else window.print();
 }
+
+/** send a short text (a receipt) — the share sheet in the app (WhatsApp, SMS app…), WhatsApp on the web.
+ *  phone: the shop's 10-digit mobile, so WhatsApp opens that chat */
+export async function shareText(text: string, phone?: string) {
+  if (isApp()) {
+    const { Share } = await import('@capacitor/share');
+    await Share.share({ text, dialogTitle: 'Send receipt' }).catch(() => { /* closed without choosing */ });
+    return;
+  }
+  const to = (phone ?? '').replace(/\D/g, '').slice(-10);
+  window.open(`https://wa.me/${to ? `91${to}` : ''}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+}

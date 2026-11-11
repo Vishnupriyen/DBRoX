@@ -4,7 +4,7 @@ import { Play, Square, MapPin, ShoppingCart, Camera, Ban, Check, Minus, Plus, Ch
 import { db, session, thisMonth, today } from '../core/db';
 import { inr as inrExact, plural, showDate } from '../core/i18n';
 import {
-  applyLeave, countedVisit, dayName, decideLeave, endDay, fieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
+  applyLeave, countedVisit, dayName, decideLeave, endDay, fieldOrderStatus, fieldOrderWords, type FieldOrderStatus, myDay, myShops, NO_ORDER_REASONS, orderValue, placeFieldOrder,
   repSales, requestShop, setTarget, startDay, teamToday, todaysBeat, visitShop, DAY_NAMES, type RepRow,
 } from '../core/field';
 import { myTeam } from '../core/company';
@@ -148,7 +148,7 @@ function ShopVisit({ shop, onBack }: { shop: Shop; onBack: () => void }) {
 
 // ---------------------------------------------------------------- my orders
 export function MyOrders() {
-  const [rows, setRows] = useState<{ o: Order; shop?: Shop; st: { status: 'sent' | 'billed'; value: number } }[] | null>(null);
+  const [rows, setRows] = useState<{ o: Order; shop?: Shop; st: FieldOrderStatus }[] | null>(null);
   useEffect(() => { (async () => {
     const me = session().userId;
     const orders = (await db.orders.toArray()).filter(o => o.repId === me && o.date.slice(0, 7) === thisMonth()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -160,7 +160,7 @@ export function MyOrders() {
   return (
     <div className="stack">
       <div className="list">{rows.map(({ o, shop, st }) => (
-        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[showDate(o.date), `${plural(o.lines.length, 'item')}`, st.status === 'billed' ? 'Billed by distributor' : 'Sent to distributor'].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
+        <div key={o.id} className="item"><div className="grow"><div className="t">{shop?.name ?? 'Shop'}</div><div className="s">{[showDate(o.date), `${plural(o.lines.length, 'item')}`, fieldOrderWords(st)].join(' · ')}</div></div><div className="num">{inr(st.value)}</div></div>
       ))}</div>
       {!rows.length && <div className="card muted">{'No orders this month yet.'}</div>}
     </div>

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Check, Scale, Truck, Banknote, AlertTriangle, ChevronRight, FileText, Receipt } from 'lucide-react';
 import { billingLockedBy, cancelPayment, closeDay, confirmNotDuplicate, dayChecklist, daySummary, differenceMoney, settleDifference } from '../core/pipeline';
 import { ChangeSet, db, today } from '../core/db';
-import { inr, showDate, plural } from '../core/i18n';
+import { inr, showDate, plural, showTime } from '../core/i18n';
 import { confirmBox, notify } from './dialog';
 import { useBack } from './useBack';
 import { billChangeBlock } from '../core/gst';
 import type { Page } from './Home';
 import type { Invoice, Payment } from '../core/types';
+import { Requests } from './Requests';
 
 
 // Owner: the day cannot close until every line is zero. Each line opens the screen that clears it.
@@ -18,6 +19,7 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
   const [tick, setTick] = useState(0);
   const [diffOpen, setDiffOpen] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
+  const [reqOpen, setReqOpen] = useState(false);
   const [staffNames, setStaffNames] = useState<[string, string][]>([]);
   useEffect(() => { db.staff.toArray().then(ss => setStaffNames(ss.map(x => [x.id, x.name]))); }, []);
   const [date, setDate] = useState(today());
@@ -41,11 +43,13 @@ export function DayClose({ go }: { go?: (p: Page) => void }) {
     { n: c.newShops.length, en: 'New shops to approve', page: 'newshops' },
     { n: c.dupes.length, en: 'Possible duplicate collections', action: () => setDupOpen(true) },
     { n: c.unapprovedExpenses.length, en: 'Expenses to approve', page: 'expenses' },
+    { n: c.requests.length, en: 'Staff returns / write-offs to approve', action: () => setReqOpen(true) },
   ];
   const open = items.filter(i => i.n > 0).length;
   const canClose = !s.closed && open === 0 && cashDone;
 
   if (diffOpen) return <Differences invoices={c.diffs} onBack={() => { setDiffOpen(false); setTick(x => x + 1); }} />;
+  if (reqOpen) return <Requests onBack={() => { setReqOpen(false); setTick(x => x + 1); }} />;
   if (dupOpen) return <Duplicates payments={c.dupes} onBack={() => { setDupOpen(false); setTick(x => x + 1); }} />;
 
   return (
@@ -175,7 +179,7 @@ function Duplicates({ payments, onBack }: { payments: Payment[]; onBack: () => v
         <div key={g[0].id} className="card stack" style={{ gap: 8 }}>
           <div><b>{names.get(g[0].shopId)}</b><div className="muted">{inr(g[0].amount)} × {g.length} {'today'}</div></div>
           <div className="list">
-            {g.map(p => <div key={p.id} className="row"><span className="grow">{p.createdAt.slice(11, 16)} · {p.mode} · {names.get(p.collectedBy) ?? ''}</span><button className="btn small" onClick={() => cancel(g, p)}>{'Cancel this one'}</button></div>)}
+            {g.map(p => <div key={p.id} className="row"><span className="grow">{showTime(p.createdAt)} · {p.mode} · {names.get(p.collectedBy) ?? ''}</span><button className="btn small" onClick={() => cancel(g, p)}>{'Cancel this one'}</button></div>)}
           </div>
           <button className="btn primary" onClick={() => real(g)}><Check /> {'Both are real'}</button>
         </div>

@@ -198,8 +198,10 @@ export async function balanceBefore(inv: Invoice) {
   const bills = (await db.invoices.where('shopId').equals(inv.shopId).toArray()).filter(x => !x.cancelled && x.id !== inv.id && before(x));
   const ids = new Set(bills.map(b => b.id));
   const cns = (await db.creditNotes.where('shopId').equals(inv.shopId).toArray()).filter(c => ids.has(c.invoiceId) && c.date <= inv.date);
-  const pays = (await db.payments.where('shopId').equals(inv.shopId).toArray()).filter(p => (p.status === 'ok' || p.status === 'waiting_shop') && p.date < inv.date);
-  return r2(bills.reduce((a, b) => a + b.total, 0) - cns.reduce((a, c) => a + c.total, 0) - pays.reduce((a, p) => a + p.amount, 0));
+  const pays = (await db.payments.where('shopId').equals(inv.shopId).toArray()).filter(p => (p.status === 'ok' || p.status === 'waiting_shop') && p.date < inv.date && !(p.mode === 'cheque' && p.chequeDate && p.chequeDate >= inv.date));
+  // the shop's old dues (opening balance) are part of what it owed before
+  const old = (await db.openingDues.where('shopId').equals(inv.shopId).toArray()).filter(o => o.date <= inv.date);
+  return r2(bills.reduce((a, b) => a + b.total, 0) + old.reduce((a, o) => a + o.amount, 0) - cns.reduce((a, c) => a + c.total, 0) - pays.reduce((a, p) => a + p.amount, 0));
 }
 
 /** a collection bigger than everything the shop owes is usually a typing mistake: ask before saving */

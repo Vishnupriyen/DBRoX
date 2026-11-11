@@ -161,12 +161,18 @@ export async function placeFieldOrder(shopId: string, lines: FieldLine[], visitI
   return o;
 }
 export const orderValue = (o: Order) => r2(o.lines.reduce((a, l) => a + l.qty * l.rate, 0));
-/** sent → billed by the distributor (its bill reached us through the link) */
-export async function fieldOrderStatus(orders: Order[]) {
+export type FieldOrderStatus = { status: 'sent' | 'billed' | 'cancelled'; value: number; reason?: string };
+/** sent → billed by the distributor (its bill reached us through the link), or cancelled by the distributor (with why) */
+export async function fieldOrderStatus(orders: Order[]): Promise<Map<string, FieldOrderStatus>> {
   const billed = new Map<string, number>();
   for (const s of await db.secondary.toArray()) if (s.orderId && !s.cancelled) billed.set(s.orderId, (billed.get(s.orderId) ?? 0) + s.taxable);
-  return new Map(orders.map(o => [o.id, billed.has(o.id) ? { status: 'billed' as const, value: r2(billed.get(o.id)!) } : { status: 'sent' as const, value: orderValue(o) }]));
+  return new Map(orders.map(o => [o.id, billed.has(o.id) ? { status: 'billed' as const, value: r2(billed.get(o.id)!) }
+    : o.status === 'cancelled' ? { status: 'cancelled' as const, value: orderValue(o), reason: o.cancelReason }
+    : { status: 'sent' as const, value: orderValue(o) }]));
 }
+/** how a rep reads the status of an order */
+export const fieldOrderWords = (st: FieldOrderStatus) => st.status === 'billed' ? 'Billed by distributor'
+  : st.status === 'cancelled' ? `Cancelled by distributor${st.reason ? `: ${st.reason}` : ''}` : 'Sent to distributor';
 
 // ---------------------------------------------------------------- new shop request (the distributor approves it)
 export async function requestShop(input: { name: string; area: string; beat: string; dbLinkId: string; photo?: string; pos?: Pos | null }) {

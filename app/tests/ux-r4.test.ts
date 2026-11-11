@@ -10,6 +10,7 @@ import { showDay } from '../src/core/i18n';
 import { describeSave } from '../src/core/db';
 import { differenceMoney } from '../src/core/pipeline';
 import { countedVisit } from '../src/core/field';
+import { approveRequest, waitingRequests } from '../src/core/requests';
 import type { Invoice, Role, Visit } from '../src/core/types';
 
 const ids: Partial<Record<Role, string>> = {};
@@ -113,7 +114,15 @@ describe('a stock count only when a count is said (item 3)', () => {
     const ok = { ...p, fields: p.fields.map(f => f.key === 'again' ? { ...f, value: 5 } : f) };
     expect(hasErrors(await validate(ok))).toBe(false);
     const cs = new ChangeSet(); void cs; // the count itself is saved by the laws as before
-    await commit(ok);
+    const before = await stock(goodDay);
+    const waiting = (await waitingRequests()).length;
+    // round 3: the godown's count writes off far more than the owner's limit, so it waits for the owner (stock unchanged)
+    expect((await commit(ok)).message).toMatch(/sent to the owner/);
+    expect(await stock(goodDay)).toBe(before);
+    const reqs = await waitingRequests();
+    expect(reqs.length).toBe(waiting + 1);
+    as('owner');
+    await approveRequest(reqs[reqs.length - 1].id);
     expect(await stock(goodDay)).toBe(5);
   });
   it('a small difference (1 case or less) needs no second typing', async () => {

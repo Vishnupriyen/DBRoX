@@ -51,6 +51,9 @@ export interface Settings extends Base {
   godownLat?: number; godownLng?: number; // check-in distance is measured from here
   kind?: 'distributor' | 'company';        // a brand's head office uses the same app as a "company"
   travel?: { bike: number; car: number; daLocal: number; daOut: number; limits: Record<string, number> }; // company: ₹ per km, daily allowance, expense limits
+  nextReceiptNo?: number;   // collection receipt counter when there is no server
+  paidLeaves?: number;      // paid leave days a month (salary sheet); 2 when not set
+  writeOffLimit?: number;   // godown damage / count write-offs above this ₹ need the owner's OK; 500 when not set
 }
 
 export interface Staff extends Base {
@@ -170,6 +173,8 @@ export interface Order extends Base {
   picked?: { productId: string; qty: number; batchId?: string; mrp?: number }[]; // what the godown actually packed
   pickedBy?: string;
   pickedAt?: string;
+  flagsPending?: boolean;      // a company rep's order just arrived: checked (stock, credit) on the distributor's phone
+  cancelledBy?: 'distributor'; cancelReason?: string; // company side: the distributor cancelled the rep's order, and why
 }
 
 export interface InvoiceLine {
@@ -224,6 +229,7 @@ export interface Invoice extends Base {
   printedAt?: string;
   cancelled?: { at: string; by: string; reason: string };
   extraOf?: string; // a new bill for extra pieces given at delivery of this bill (a delivered bill is never re-written)
+  opening?: boolean; // never saved: a shop's old due shown as an open bill in balances (ledger.openingAsBill)
 }
 
 /** one credit-note line: paid pieces credited at the bill line's own taxable + tax per piece; free pieces at ₹0 */
@@ -246,6 +252,28 @@ export interface CreditNote extends Base {
   total: number;
 }
 
+/** a shop's old due from before Hanubix (loaded from the owner's Excel): shown and collected like an open bill, never a
+ *  GST bill, never in sales. Bill-wise (the old bill number) or one amount with a date. */
+export interface OpeningDue extends Base {
+  shopId: string; ref: string; date: string; amount: number; loadId?: string;
+}
+
+/** a staff member's return or stock write-off: nothing changes stock or money until the owner (or office) approves it on
+ *  their own phone. A return becomes a credit note with a server number; a write-off takes the pieces out of stock. */
+export interface StaffRequest extends Base {
+  kind: 'return' | 'damage' | 'count';
+  by: string; role: string; date: string;
+  status: 'waiting' | 'approved' | 'rejected';
+  reason: string;
+  value: number;          // ₹ shown to the person deciding (returns: the credit; write-offs: pieces at buying or selling rate)
+  ownerOnly?: boolean;    // above the owner's limit: the owner decides, not the office
+  shopId?: string;
+  rows: Record<string, string | number>[]; // return: invoiceId, productId, qty, restock · damage: productId, qty, kind, fromStock, note · count: batchId, productId, system, counted
+  photo?: string;
+  decidedBy?: string; decidedAt?: string; rejectReason?: string;
+  result?: string;        // what approving made (credit note numbers / stock moved)
+}
+
 export interface Payment extends Base {
   shopId: string;
   amount: number;
@@ -263,6 +291,9 @@ export interface Payment extends Base {
   correctionOf?: string; // this payment replaces a wrong one (kept, cancelled, for the audit trail)
   dupOk?: boolean;       // the owner checked: the same amount twice from this shop today is real, not a double entry
   note?: string;
+  receiptNo?: string;    // R/FY/n — the running receipt number the shop is shown (from the server; numbered at next sync when offline)
+  chequeDate?: string;   // a cheque: the date written on it (post-dated: it clears no dues before this day)
+  bounce?: { at: string; by: string; reason: string };
 }
 
 export interface Purchase extends Base {
@@ -482,7 +513,7 @@ export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests';
 
 /** TESRAX report: one record per staff per day (small to sync; the owner reads every staff's days).
  *  Counts every message to TESRAX: its speed on the real phone, whether it was understood, and what happened to the table it prepared. */

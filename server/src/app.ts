@@ -5,7 +5,7 @@ import { billingState, isUpgrade, istToday, makeLicence, PACKS, sealLicence, TIE
 import type pg from 'pg';
 import { config } from './config.js';
 import { hashPin, readToken, signToken, verifyPin, type Claims } from './auth.js';
-import { billAddsUp, cleanText, distributorRule, keepCreditLimit, keepOwnerOnly, numberIssued, weakPin } from './rules.js';
+import { badMoney, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
 import { clearHits, hit, isLocked } from './limits.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
@@ -135,7 +135,9 @@ export async function buildApp(pool: pg.Pool) {
     // company head office: credit-note numbers for claim settlements only
     // credit notes: every role that can make one (returns at the door, in the shop, at the godown; head office claims)
     const cnRoles = ['owner', 'office', 'salesman', 'delivery', 'godown', 'cadmin'];
-    if (!(c.r === 'owner' || c.r === 'office' || (kind === 'cn' && cnRoles.includes(c.r)))) throw err(403, 'Only the owner or office can make bills'); const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
+    // collection receipts: everyone who collects money (salesman, delivery) numbers their own receipts
+    const receiptRoles = ['owner', 'office', 'salesman', 'delivery'];
+    if (!(c.r === 'owner' || c.r === 'office' || (kind === 'cn' && cnRoles.includes(c.r)) || (kind === 'receipt' && receiptRoles.includes(c.r)))) throw err(403, 'Only the owner or office can make bills'); const n = Math.min(Math.max(1, Number(b.count ?? 1)), 20);
     const st = await stateFor(c.t);
     if (st?.status === 'locked' && kind === 'bill') throw err(402, LOCKED_MSG);
     if (st && kind === 'bill' && !st.mods.has('bill')) throw err(403, 'Billing is not in your plan.');
@@ -209,13 +211,42 @@ export async function buildApp(pool: pg.Pool) {
         if (kind === 'company' && ['claimDecisions', 'travelClaims', 'expenses', 'leaves', 'workDays'].includes(ch.table)) {
           if (companyRule(c.r, c.u, ch.table, { ...data, updatedAt: ch.updatedAt } as never, ex as never, ch.updatedAt)) { refuse(key); continue; }
         }
+        // every money amount is a real number, whoever sends it (a NaN or text never reaches the books)
+        if (badMoney(ch.table, data)) { refuse(key); continue; }
         if (kind === 'distributor') {
           if (distributorRule(c.r, c.u, ch.table, data, ex)) { refuse(key); continue; }
-          if (ch.table === 'invoices' && !billAddsUp(data)) { refuse(key); continue; }
+          if (ch.table === 'invoices' && (!billAddsUp(data) || !billLotsOk(data))) { refuse(key); continue; }
+          // a bill's credit notes together never come to more than it charged (the bill and earlier notes, here or in this push)
+          if (ch.table === 'creditNotes') {
+            const invId = String(data.invoiceId ?? '');
+            const pushedBill = rows.filter(r => r.table === 'invoices' && r.id === invId).pop();
+            const bill = pushedBill ? JSON.parse(pushedBill.data) as Record<string, unknown> : stored.get(`invoices|${invId}`)?.data
+              ?? (await client.query(`SELECT data FROM docs WHERE tenant_id=$1 AND tbl='invoices' AND id=$2`, [c.t, invId])).rows[0]?.data;
+            const here = rows.filter(r => r.table === 'creditNotes' && r.id !== ch.id).map(r => JSON.parse(r.data) as Record<string, unknown>).filter(x => x.invoiceId === invId);
+            const before = Number((await client.query(`SELECT COALESCE(sum((data->>'total')::numeric), 0) AS t FROM docs WHERE tenant_id=$1 AND tbl='creditNotes' AND data->>'invoiceId'=$2 AND id <> ALL($3::text[])`,
+              [c.t, invId, [ch.id, ...here.map(x => String(x.id))]])).rows[0].t);
+            if (creditNoteRoom(data, bill, before + here.reduce((a, x) => a + Number(x.total ?? 0), 0))) { refuse(key); continue; }
+          }
+          // the same company bill number is entered once per company
+          if (ch.table === 'purchases' && String(data.billNo ?? '').trim()) {
+            const no = String(data.billNo).trim().toUpperCase(), co = String(data.companyId ?? '');
+            const pushed = rows.filter(r => r.table === 'purchases' && r.id !== ch.id).map(r => JSON.parse(r.data) as Record<string, unknown>);
+            const twin = pushed.some(x => String(x.companyId ?? '') === co && String(x.billNo ?? '').trim().toUpperCase() === no)
+              || (await client.query(`SELECT 1 FROM docs WHERE tenant_id=$1 AND tbl='purchases' AND id <> ALL($2::text[]) AND data->>'companyId'=$3 AND upper(btrim(data->>'billNo'))=$4 LIMIT 1`,
+                [c.t, [ch.id, ...pushed.map(x => String(x.id))], co, no])).rowCount;
+            if (twin) { refuse(key); continue; }
+          }
           if (ch.table === 'products') data = keepCompanyFields(data as never, ex as never);
           if (ch.table === 'shops') data = keepCreditLimit(c.r, data, ex);
         }
         data = keepOwnerOnly(c.r, OWNER_ONLY[ch.table], data, ex);
+        // a collection receipt number: issued by this server and used once (a receipt still waiting for its number may sync)
+        if (ch.table === 'payments' && typeof data.receiptNo === 'string' && data.receiptNo && !data.receiptNo.includes('/PENDING-') && (!ex || ex.receiptNo !== data.receiptNo)) {
+          const num = data.receiptNo;
+          const mine = (await client.query('SELECT doc_id FROM doc_numbers WHERE tenant_id=$1 AND tbl=$2 AND number=$3', [c.t, 'paymentReceipts', num])).rows[0];
+          if (mine ? mine.doc_id !== ch.id : !(await numberIssued(client, c.t, 'receipts', num))) { refuse(key); continue; }
+          if (!mine) await client.query('INSERT INTO doc_numbers(tenant_id, tbl, number, doc_id) VALUES ($1,$2,$3,$4)', [c.t, 'paymentReceipts', num, ch.id]);
+        }
         // bill and credit-note numbers: issued by this server, and each used by one record only, for ever
         if ((ch.table === 'invoices' || ch.table === 'creditNotes') && (!ex || ex.number !== data.number)) {
           const num = String(data.number ?? '');
@@ -254,7 +285,7 @@ export async function buildApp(pool: pg.Pool) {
       for (const k of new Set([...rejected, ...accepted.filter(a => !wrote.has(a))])) {
         const s0 = stored.get(k); if (!s0 || keepTheirs.has(k)) continue;
         const [table, ...rest] = k.split('|');
-        if (!readable.has(table)) continue;
+        if (!readable.has(table) || !mayDownload(c.r, c.u, table, s0.data)) continue;
         current.push({ table, id: rest.join('|'), updatedAt: new Date(s0.updated_at).toISOString(), data: forRole(c.r, table, s0.data) });
       }
       // noted for the relay in the same transaction: a crash after the save can't lose them
@@ -280,9 +311,12 @@ export async function buildApp(pool: pg.Pool) {
              AND (tbl <> 'audit' OR updated_at > now() - interval '3 days')
              AND ($5::text[] IS NULL OR tbl <> ALL($6) OR data->>'dbLinkId' = ANY($5))
              AND (NOT $7 OR tbl NOT IN ('secondary','secondaryReturns') OR data->>'date' >= $8)
+             -- staff privacy: another person's advances, leaves, expenses, orders or travel claims never reach this phone
+             AND NOT EXISTS (SELECT 1 FROM unnest($10::text[], $11::text[]) AS o(t, f) WHERE o.t = tbl AND COALESCE(data->>o.f, '') <> $12)
              ORDER BY version LIMIT $4) a) b
        WHERE run - sz <= $9 ORDER BY version`,
-      [c.t, cursor, tables, config.pullLimit, scope, BIG_TABLES, isCo, new Date(Date.now() + 5.5 * 3600e3 - 60 * 86400e3).toISOString().slice(0, 10), config.pullBytes])).rows;
+      [c.t, cursor, tables, config.pullLimit, scope, BIG_TABLES, isCo, new Date(Date.now() + 5.5 * 3600e3 - 60 * 86400e3).toISOString().slice(0, 10), config.pullBytes,
+        Object.keys(OWN_ROWS[c.r] ?? {}), Object.values(OWN_ROWS[c.r] ?? {}), c.u])).rows;
     const maxVersion = rows.length ? Number(rows[rows.length - 1].version) : cursor;
     const cut = rows.length > 0 && Number(rows[rows.length - 1].run) < Number(rows[rows.length - 1].total);
     // a token running out within 7 days is renewed here (a phone in daily use never has to log in again)
@@ -506,7 +540,7 @@ export async function buildApp(pool: pg.Pool) {
     const tbl = String(b.tbl ?? ''), month = String(b.month ?? '');
     if (!archiveTables(c.r).includes(tbl) || !/^\d{4}-\d{2}$/.test(month)) throw err(403, 'Not available');
     const rows = await archiveMonth(pool, c.t, tbl, month);
-    return { changes: rows.map(r => ({ table: tbl, id: r.id, updatedAt: r.updatedAt, data: forRole(c.r, tbl, r.data) })) };
+    return { changes: rows.filter(r => mayDownload(c.r, c.u, tbl, r.data)).map(r => ({ table: tbl, id: r.id, updatedAt: r.updatedAt, data: forRole(c.r, tbl, r.data) })) };
   });
 
   app.post('/v1/cron/daily', async req => {

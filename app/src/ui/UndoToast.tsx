@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Undo2 } from 'lucide-react';
-import { db, sideNow, undoBatch } from '../core/db';
+import { db, sideNow, undoBatch, undoRefusal } from '../core/db';
 
 // On the company side, these reach the distributors at once: taking them back on one side only would leave the two
 // sides different, so no undo is offered (change or cancel them instead). Location readings and visits are records, not actions.
@@ -24,7 +24,7 @@ export function UndoToast({ page }: { page?: string }) {
     window.addEventListener('dbrox:commit', on); return () => { window.removeEventListener('dbrox:commit', on); window.clearTimeout(timer); };
   }, []);
   if (!cur) return null;
-  return <div className="toast" role="status"><span>{cur.label}</span><button onClick={async () => { const n = await undoBatch(cur.batchId); setCur(null); if (n < 0) { void notify("Can't undo", "Can't undo this: something changed after it (for example a later bill used the same stock). Edit or cancel the bill instead."); return; } window.dispatchEvent(new CustomEvent('dbrox:undone', { detail: n })); }}><Undo2 size={14} style={{ verticalAlign: -2 }} /> {t('undo')}</button></div>;
+  return <div className="toast" role="status"><span>{cur.label}</span><button onClick={async () => { const n = await undoBatch(cur.batchId); setCur(null); if (n < 0) { void notify("Can't undo", undoRefusal(n)); return; } window.dispatchEvent(new CustomEvent('dbrox:undone', { detail: n })); }}><Undo2 size={14} style={{ verticalAlign: -2 }} /> {t('undo')}</button></div>;
 }
 
 /** "Billed Annai Super Market ₹3,743", "Collected Kumar Mart ₹500", "Billed 3 shops ₹9,120" */

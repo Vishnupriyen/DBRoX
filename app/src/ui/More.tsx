@@ -107,13 +107,14 @@ function SettingsPage({ editable }: { editable: boolean }) {
   if (!s) return null;
   const f = (k: keyof Settings, label: string, type = 'text') => (
     <div className="field" style={{ marginBottom: 8 }}><label>{label}</label>
-      <input type={type} readOnly={!editable} value={String(s[k] ?? '')} onChange={e => { setSaved(false); setS({ ...s, [k]: type === 'number' ? Number(e.target.value) : e.target.value }); }} /></div>
+      <input type={type} readOnly={!editable} value={String(s[k] ?? '')} onChange={e => { setSaved(false); setS({ ...s, [k]: type === 'number' ? (e.target.value === '' ? undefined : Number(e.target.value)) : e.target.value }); }} /></div>
   );
   return (
     <div className="card">
       <h3>{t('settings')}</h3>
       {f('firmName', 'Firm name')}{f('gstin', 'GSTIN')}{f('address', 'Address (with 6-digit PIN)')}{f('phone', 'Phone')}
       {f('returnApprovalLimit', 'Returns above ₹ need owner OK', 'number')}{f('discountAlertPct', 'Alert when rate is below standard by %', 'number')}
+      {f('writeOffLimit', 'Damage / stock count write-offs above ₹ need owner OK (500 if empty)', 'number')}
       <div className="field" style={{ marginBottom: 8 }}><label>Bill size</label>
         <select disabled={!editable} value={s.billFormat} onChange={e => setS({ ...s, billFormat: e.target.value as Settings['billFormat'] })}>
           <option value="A5">A5</option><option value="A4">A4</option><option value="dotmatrix">Dot-matrix</option></select></div>
@@ -123,6 +124,7 @@ function SettingsPage({ editable }: { editable: boolean }) {
       <div className="toggle"><span>Driver takes a second photo of the signed bill / GRN</span><button className={`switch ${s.grnPhoto !== false ? 'on' : ''}`} disabled={!editable} aria-label="GRN photo" onClick={() => setS({ ...s, grnPhoto: s.grnPhoto === false })} /></div>
       <h3 style={{ marginTop: 14 }}>Staff check-in</h3>
       {f('checkInBy', 'Check-in after this time is "late" (HH:MM)')}
+      {f('paidLeaves', 'Paid leave days a month (2 if empty)', 'number')}
       <div className="row" style={{ gap: 8 }}>{f('godownLat', 'Godown latitude', 'number')}{f('godownLng', 'Godown longitude', 'number')}</div>
       <button className="btn small" onClick={async () => { const { getPos } = await import('./Beat'); const p = await getPos(); if (p) setS({ ...s, godownLat: p.lat, godownLng: p.lng }); else void notify('Location', 'Could not read the phone location.'); }}>Use my location now</button>
       {f('serverUrl', 'Hanubix server address (for sync and photo reading)')}

@@ -124,7 +124,10 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await p.click('button[aria-label="Shop confirms delivery"]'); await p.waitForTimeout(800); await shot('driver-collect-bills');
   await p.click('button:has-text("Full")'); await p.waitForTimeout(200); await p.click('.segmented button:has-text("UPI")'); await p.waitForTimeout(600); await shot('driver-collect-qr');
   must(await p.locator('input.bigamount[type=text]').count() && (await p.getAttribute('input.bigamount', 'placeholder')) && await p.locator('.card .row:has(input.bigamount) span', { hasText: '₹' }).count(), 'amount box: ₹ in front, the due amount as the hint, no spinner arrows');
-  await p.fill('input:visible >> nth=-1', '4471'); await ballClear('button[aria-label="Shop confirms payment"]', 'Money paid ✓'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700); await shot('driver-after');
+  await p.fill('input:visible >> nth=-1', '4471'); await ballClear('button[aria-label="Shop confirms payment"]', 'Money paid ✓'); await p.click('button[aria-label="Shop confirms payment"]'); await p.waitForTimeout(700);
+  // every collection gets a numbered receipt the shop is shown (and can be sent on WhatsApp)
+  if (!(await p.locator('.card', { hasText: 'Receipt R/' }).count())) throw new Error('a collection should show its numbered receipt');
+  await shot('driver-receipt'); await p.click('button.btn.primary:has-text("Done")'); await p.waitForTimeout(500); await shot('driver-after');
   must(/₹[\d,.]+ by UPI/.test(await p.textContent('.main')), 'the collection done screen says "₹… by UPI"');
   await p.click('text=Next shop'); await p.waitForTimeout(300);
   await p.click('.fab'); await p.waitForTimeout(400); await p.fill('textarea', 'diesel 1500'); await p.click('button[aria-label="Send"]'); await p.waitForTimeout(800); await shot('rox-diesel');
