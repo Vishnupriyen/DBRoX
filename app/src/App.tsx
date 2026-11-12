@@ -44,7 +44,8 @@ import { MyDay } from './ui/MyDay';
 import { LiteShops, LitePlan, LiteDelivery, LiteCollect, LiteExport } from './ui/Lite';
 import { More } from './ui/More';
 import { DialogHost, notify } from './ui/dialog';
-import type { Settings, Staff } from './core/types';
+import type { Invoice, Settings, Staff } from './core/types';
+import { PrintBill } from './ui/PrintBill';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, string>> = {
@@ -68,6 +69,13 @@ export default function App() {
   const [page, setPage] = useState<Page | CoPage>('home');
   const [module, setModule] = useState<string | null>(null);
   const [rox, setRox] = useState(false);
+  // TESRAX "send bill SMD/26-27/00005": the bill opens over any screen, ready to print or save as PDF
+  const [printInv, setPrintInv] = useState<Invoice | null>(null);
+  useEffect(() => {
+    const on = async (e: Event) => { const id = (e as CustomEvent<{ invoiceId: string }>).detail?.invoiceId; const inv = id ? await db.invoices.get(id) : undefined; if (inv) { setRox(false); setPrintInv(inv); } };
+    window.addEventListener('hanubix:print-bill', on);
+    return () => window.removeEventListener('hanubix:print-bill', on);
+  }, []);
   const [moreKey, setMoreKey] = useState(0);
   const [soundOn, setSoundOn] = useState(sound.isOn());
   const [checkedIn, setCheckedIn] = useState(true);
@@ -235,6 +243,7 @@ export default function App() {
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{page === 'home' && !module && <section className="signature-hero"><div className="signature-copy"><div className="eyebrow">RETAIL INTELLIGENCE</div><h1>Your day. Under control.</h1><p>Orders to delivery, collections to close. Your next action is always clear.</p></div><div className="signature-engine"><span className="eyebrow">TESRAX</span><TesraxCore size={230} onActivate={openRox} /><p className="signature-hint">Hold to ripple · Double tap to activate</p></div></section>}{body()}<footer className="brand-footer"><PoweredBy /></footer></ErrorBoundary></main>
+      {printInv && <PrintBill invoice={printInv} onClose={() => setPrintInv(null)} />}
       <DialogHost />
       <UndoToast page={`${page}|${module ?? ""}`} />
 

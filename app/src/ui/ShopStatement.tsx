@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Phone, MapPin, Receipt, IndianRupee, FileMinus, Printer } from 'lucide-react';
-import { db, localDay } from '../core/db';
-import { invoiceBalances, openingAsBill, paymentCounts, shopOutstanding } from '../core/ledger';
-import { inr, localStamp } from '../core/i18n';
+import { ArrowLeft, Phone, MapPin, Receipt, IndianRupee, FileMinus, Printer, Share2 } from 'lucide-react';
+import { localDay } from '../core/db';
+import { sendStatement, shopStatement, type StatementRow } from '../core/statement';
+import { inr } from '../core/i18n';
 import { PrintBill } from './PrintBill';
-import type { CreditNote, Invoice, Payment, Shop } from '../core/types';
+import type { CreditNote, Invoice, Shop } from '../core/types';
 
-type Row = { at: string; kind: 'bill' | 'payment' | 'cn'; ref: string; debit: number; credit: number; note: string; inv?: Invoice; cn?: CreditNote };
+type Row = StatementRow;
 
 // One page per shop, reachable from anywhere a shop name appears: dues, every bill, every payment, credit notes, running balance.
 export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () => void }) {
@@ -17,21 +17,8 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
   const [printingCn, setPrintingCn] = useState<CreditNote | null>(null);
   const [staff, setStaff] = useState<Map<string, string>>(new Map());
   useEffect(() => { (async () => {
-    const s = await db.shops.get(shopId); setShop(s ?? null); if (!s) return;
-    setStaff(new Map((await db.staff.toArray()).map(x => [x.id, x.name.split(' ')[0]])));
-    const invs = (await db.invoices.where('shopId').equals(shopId).toArray()).filter(i => !i.cancelled);
-    const pays = (await db.payments.where('shopId').equals(shopId).toArray()).filter(p => p.status === 'ok' && paymentCounts(p)); // a post-dated cheque counts from its date
-    const old = await db.openingDues.where('shopId').equals(shopId).toArray();
-    const cns = await db.creditNotes.where('shopId').equals(shopId).toArray();
-    const o = await shopOutstanding(shopId); const bal = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
-    setDue({ total: o.total, overdue: o.overdue, days: Math.max(0, ...bal.map(b => b.overdueDays)), advance: o.advance });
-    const all: Row[] = [
-      ...invs.map(i => ({ at: i.date + 'T' + (localStamp(i.createdAt).slice(11) || '00:00:00'), kind: 'bill' as const, ref: i.number, debit: i.total, credit: 0, note: `${i.lines.length} ${'items'} · ${i.deliveryStatus}`, inv: i })),
-      ...pays.map((p: Payment) => ({ at: p.date + 'T' + (localStamp(p.createdAt).slice(11) || '00:00:00'), kind: 'payment' as const, ref: `${p.mode.toUpperCase()}${p.ref ? ' ' + p.ref : ''}`, debit: 0, credit: p.amount, note: `${'by'} ${p.collectedBy}` })),
-      ...old.map(o => ({ at: o.date + 'T00:00:00', kind: 'bill' as const, ref: openingAsBill(o).number, debit: o.amount, credit: 0, note: 'opening balance' })),
-      ...cns.map((c: CreditNote) => ({ at: c.date + 'T' + (localStamp(c.createdAt).slice(11) || '00:00:00'), kind: 'cn' as const, ref: c.number, debit: 0, credit: c.total, note: c.reason, cn: c })),
-    ].sort((a, b) => b.at.localeCompare(a.at));
-    setRows(all);
+    const d = await shopStatement(shopId); setShop(d?.shop ?? null); if (!d) return;
+    setStaff(d.staff); setDue(d.due); setRows(d.rows);
   })(); }, [shopId]);
   if (!shop) return null;
   let running = due.total; // walk newest → oldest, showing the balance after each row
@@ -50,7 +37,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
         <div className="kpi navy"><div className="v" style={{ color: due.total > 0 ? undefined : '#7fe0ad' }}>{inr(Math.max(0, due.total))}</div><div className="l">{'balance due'}{due.advance > 0 ? ` · ${'advance'} ${inr(due.advance)}` : ''}</div></div>
         <div className="kpi"><div className="v" style={{ color: due.overdue > 0 ? 'var(--bad)' : undefined }}>{inr(due.overdue)}</div><div className="l">{'overdue'}{due.days ? ` · ${due.days}d` : ''}</div></div>
       </div>
-      <div className="muted">{'Credit'}: {shop.creditLimit ? `${inr(shop.creditLimit)} / ${shop.creditDays}d` : 'cash only'}</div>
+      <div className="row"><div className="muted grow">{'Credit'}: {shop.creditLimit ? `${inr(shop.creditLimit)} / ${shop.creditDays}d` : 'cash only'}</div>{rows.length > 0 && <button className="btn small" onClick={() => sendStatement(shopId)}><Share2 size={16} /> Send statement</button>}</div>
       <div className="list">
         {rows.map((r, i) => { const after = running; running = r.kind === 'bill' ? running - r.debit : running + r.credit; return (
           <button key={i} className="item tap" onClick={() => r.inv ? setPrinting(r.inv) : r.cn && setPrintingCn(r.cn)} disabled={!r.inv && !r.cn}>

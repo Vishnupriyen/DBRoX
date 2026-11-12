@@ -21,6 +21,10 @@ export interface SalaryRow {
   advance: number; shortfall: number; net: number; carry: number; paid: boolean; takes: { id: string; take: number }[];
 }
 
+/** the salary sheet as Excel columns — one list for the Payroll screen's Excel and for TESRAX ("send salary sheet") */
+export const SALARY_HEADER = ['Name', 'Role', 'Days in month', 'Working days counted', 'Present days', 'Paid leave', 'Unpaid leave', 'Absent (no check-in, no leave)', 'Days cut', 'Fixed', 'Cut', 'Batta', 'Advance', 'Shortfall', 'Net'];
+export const salaryCells = (rows: SalaryRow[]) => rows.map(r => [r.s.name, r.s.role, r.daysInMonth, r.workDays, r.present, r.paidLeave, r.unpaidLeave, r.absent, r.cutDays, r.fixed, r.cut, r.batta, r.advance, r.shortfall, r.net]);
+
 export async function salarySheet(month: string): Promise<SalaryRow[]> {
   const st = await getSettings();
   const paidLeaves = st.paidLeaves ?? 2;

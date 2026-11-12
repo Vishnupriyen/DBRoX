@@ -1,4 +1,4 @@
-import { inr, showDate, showDay, plural } from './i18n';
+import { inr, showDate, showDay, showMonth, plural } from './i18n';
 // TESRAX: turns "send + say" into a Proposal (table to approve) or an answer.
 // Understanding is rule-based first (free, offline, English). The AI is only used to
 // read photos, never to decide money.
@@ -12,7 +12,7 @@ import {
 export { orderRow, refreshOrderRow } from './proposals';
 import { isImageOrPdf, isSheet, readBankRows, readBillHeader, readProductRows, readPurchaseRows, readSheet, readShopRows, toIsoDate } from './readers';
 import { NoServerError, fileToDataUrl, looksBlurry, scanFile } from './scan';
-import { MODULES, type ModuleKey, type Product, type Role, type Staff } from './types';
+import { MODULES, type ModuleKey, type Product, type Role, type Shop, type Staff } from './types';
 import { exportClaims, exportEinvoice, exportGstr1, exportTally } from './exports';
 import { costValue, creditValue, openPaid } from './credit';
 import { STATES } from './gst';
@@ -256,6 +256,8 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny('The Tally file'); return need('accountant', mods) ?? exportTally(monthIn(text)); }
   if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny('The GSTR-1 file'); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
   if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny('The e-invoice file'); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
+  // "send salary sheet", "salary sheet excel october": the month's salary sheet as Excel (owner)
+  if (/\b(salary|salaries|payroll)\b/.test(text) && /\b(send|excel|xl|file|download|share|export|whatsapp|mail|email)\b/.test(text) && !/\d{3,}/.test(text)) return salaryFile(role, text);
   { const { reportByVoice } = await import('./reportsVoice'); const rr = await reportByVoice(text, role); if (rr) return rr; } // every owner report by name and period
   if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
@@ -296,6 +298,10 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   // changing what is already saved: an order, bill, payment, expense, stock count, shop or product, or undo
   const mod = await modifyIntent({ text, textIn, shop, rest, role, products: productsAll, isExpense: has(text, W.expense) && !orderish, isDamage: has(text, W.damage) && !orderish, isOrder: orderish, fixOf: correctionIn });
   if (mod) return mod;
+  // "send Murugan Stores statement", "Annai ledger october": the shop's statement, ready to send
+  // "send bill SMD/26-27/00005", "print Murugan Stores last bill": the bill ready to print or save as PDF
+  { const b = await billAsked(text, shop, role); if (b) return b; }
+  if (shop && !orderish && /\b(statement|statements|stmt|ledger|account copy|account statement|soa|khata)\b/.test(text)) return statementReply(shop, role, text);
 
   if (has(text, W.scheme) && !/\d/.test(text) && /\b(any|what|which|list|running|current|this month|available|show|tell|is there|are there)\b/.test(text)) return schemesTable();
   if ((has(text, W.scheme) || /\d\s*%/.test(textIn) || /buy\s*\d+\s*get\s*\d+/.test(text)) && !has(text, W.claimFile)) { if (role !== 'owner' && role !== 'office') return deny(); return schemeProposal(textIn); }
@@ -1000,6 +1006,57 @@ async function outstandingTable(shopId?: string, above?: number): Promise<Reply>
   return {
     text: rows.length ? `${plural(rows.length, 'shop')} owe ${inr(total)} in total.` : 'Nobody owes anything. 🎉',
     table: { name: 'Outstanding', columns: ['Shop', 'Area', 'Pending ₹', 'Overdue ₹', 'Max days overdue', 'Bills'], rows },
+  };
+}
+
+/** the salary sheet of a month as Excel (owner only; before the 11th it is last month's, as on the Payroll screen) */
+async function salaryFile(role: Role, text: string): Promise<Reply> {
+  if (role !== 'owner') return deny('The salary sheet');
+  const { periodIn } = await import('./reportsVoice');
+  const { salarySheet, SALARY_HEADER, salaryCells } = await import('./payroll');
+  const { downloadSheet } = await import('./readers');
+  const named = /\b(this month|last month|previous month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b/.test(text);
+  const cur = today().slice(0, 7), prev = (await import('./reports')).prevMonth(cur);
+  const month = named ? (periodIn(text).month ?? cur) : Number(today().slice(8)) <= 10 ? prev : cur;
+  const rows = await salarySheet(month);
+  const net = r2(rows.reduce((a, r) => a + r.net, 0));
+  return {
+    text: `Salary sheet ${showMonth(month)}: ${plural(rows.length, 'person', 'people')}, net to pay ${inr(net)}.`,
+    actions: rows.length ? [{ label: 'Send salary sheet (Excel)', run: () => { void downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows)); } }] : undefined,
+    link: { label: 'Open Salary', page: 'salary' },
+  };
+}
+
+/** a bill asked for by number, or a shop's last bill, with print / send / pdf / show words */
+async function billAsked(text: string, shop: Shop | undefined, role: Role): Promise<Reply | null> {
+  if (!/\b(print|reprint|send|share|pdf|whatsapp|copy|show|open|resend)\b/.test(text)) return null;
+  const tail = text.match(/\b[a-z]{1,6} \d{2} \d{2} (\d{1,6})\b/)?.[1] ?? text.match(/\b(?:bill|invoice) (?:no |number )?0*(\d{1,6})\b/)?.[1];
+  const wantsLast = !!shop && /\b(last|latest|recent|todays|today s|previous) (bill|invoice)\b|\b(bill|invoice) of\b/.test(text);
+  if (!tail && !wantsLast) return null;
+  if (role === 'godown') return deny('Printing or sending a bill');
+  const all = (await db.invoices.toArray()).filter(i => !i.cancelled);
+  const inv = tail
+    ? all.filter(i => Number(i.number.match(/(\d+)$/)?.[1]) === Number(tail) && (!shop || i.shopId === shop.id)).sort((a, b) => b.date.localeCompare(a.date))[0]
+    : all.filter(i => i.shopId === shop!.id).sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt))[0];
+  if (!inv) return { text: tail ? `I couldn't find bill number ${tail}. Say the number on the bill, e.g. "send bill SMD/26-27/00005".` : `${shop!.name} has no bills yet.`, tone: 'warn' };
+  const sh = await db.shops.get(inv.shopId);
+  return {
+    text: `Bill ${inv.number} · ${sh?.name ?? ''} · ${inr(inv.total)} · ${inv.date.split('-').reverse().join('-')}. Tap to print, or save as PDF and send.`,
+    actions: [{ label: 'Open bill — print / PDF', run: () => { window.dispatchEvent(new CustomEvent('hanubix:print-bill', { detail: { invoiceId: inv.id } })); } }],
+  };
+}
+
+/** a shop's statement: balance in words, the Excel one tap away (not the godown) */
+async function statementReply(shop: Shop, role: Role, text: string): Promise<Reply> {
+  if (role === 'godown') return deny('A shop statement');
+  const { shopStatement, sendStatement } = await import('./statement');
+  const { periodIn } = await import('./reportsVoice');
+  const named = /\b(today|yesterday|week|month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|90 days|quarter)\b/.test(text);
+  const per = named ? periodIn(text) : null;
+  const d = await shopStatement(shop.id); if (!d) return { text: 'Shop not found.', tone: 'error' };
+  return {
+    text: `${shop.name}: balance due ${inr(Math.max(0, d.due.total))}` + (d.due.overdue > 0 ? `, overdue ${inr(d.due.overdue)}` : '') + (d.due.advance > 0 ? `, advance ${inr(d.due.advance)}` : '') + `. ${plural(d.rows.length, 'entry', 'entries')}${per ? ` — statement for ${per.label}` : ''}.`,
+    actions: d.rows.length ? [{ label: 'Send statement (Excel)', run: () => { void sendStatement(shop.id, per?.from, per?.to); } }] : undefined,
   };
 }
 

@@ -6,7 +6,7 @@ import { getPos } from './Beat';
 import { downloadSheet } from '../core/readers';
 import { askText, confirmBox } from './dialog';
 import type { Advance, CheckIn, LeaveRequest, Settings, Staff } from '../core/types';
-import { salarySheet, salaryDaysLine, type SalaryRow } from '../core/payroll';
+import { SALARY_HEADER, salaryCells, salarySheet, salaryDaysLine, type SalaryRow } from '../core/payroll';
 
 const hm = (iso: string) => showTime(iso);
 
@@ -112,7 +112,7 @@ export function Salary() {
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, ['Name', 'Role', 'Days in month', 'Working days counted', 'Present days', 'Paid leave', 'Unpaid leave', 'Absent (no check-in, no leave)', 'Days cut', 'Fixed', 'Cut', 'Batta', 'Advance', 'Shortfall', 'Net'], rows.map(r => [r.s.name, r.s.role, r.daysInMonth, r.workDays, r.present, r.paidLeave, r.unpaidLeave, r.absent, r.cutDays, r.fixed, r.cut, r.batta, r.advance, r.shortfall, r.net]))}><Download size={14} /> Excel</button></div>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows))}><Download size={14} /> Excel</button></div>
       {/* one card per person: fits any phone; the full sheet is the Excel */}
       <div className="list">{rows.map(r => (
         <div key={r.s.id} className="item">
