@@ -56,3 +56,7 @@ body,button,input,select,textarea{font-family:var(--body)}
 /* Montserrat is wider than Arial: the morning card's figures share the row by how many there are (3 on the company side),
    and the small labels are spaced a little tighter, so a long word ("distributors") never runs into the next one */
 .morning .kv{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.morning .kv span{letter-spacing:.02em}
+/* Android's clock/battery bar (12 Nov 2026, owner: "logo and back button are at the very top"): the header, login and
+   check-in start below it — env() is the bar's real height on newer phones; older WebViews are padded by Android itself */
+.top{padding-top:calc(14px + env(safe-area-inset-top, 0px))}
+.login{padding-top:calc(24px + env(safe-area-inset-top, 0px))}.login-hero{padding-top:calc(28px + env(safe-area-inset-top, 0px))}
