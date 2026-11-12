@@ -19,7 +19,7 @@ import { errorLog } from './Safety';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links' | 'tesrax';
 
-export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff'; onPlan?: () => void }) {
+export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff' | 'settings' | 'links' | 'tesrax'; onPlan?: () => void }) {
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   // the app's one back (header arrow or the phone's back button) steps from a More page to the More menu

@@ -55,7 +55,7 @@ const TITLE: Partial<Record<Page, string>> = {
   collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
   bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
   gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
-  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing',
+  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -154,7 +154,7 @@ export default function App() {
 
   const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
   const home = () => { setPage('home'); };
-  const go = (p: string) => { setPage((ALIAS[p] ?? p) as Page); setRox(false); };
+  const go = (p: string) => { if (p.startsWith('module:')) { setPage('home'); setModule(p.slice(7)); } else setPage((ALIAS[p] ?? p) as Page); setRox(false); }; // a module (Bill, Inventory…) opens its tiles on Home
   const company = settings?.kind === 'company';
   const title = page in CO_TITLE ? CO_TITLE[page as CoPage] : TITLE[page as Page];
   const openRox = () => { sound.wake(); setRox(true); };
@@ -208,6 +208,7 @@ export default function App() {
       case 'today': return <Today />;
       case 'salary': return <Salary />;
       case 'staff': return <More role={me.role} onLogout={logout} initial="staff" />;
+      case 'settings': case 'links': case 'tesrax': return <More role={me.role} onLogout={logout} initial={page} />;
       case 'dayclose': return <DayClose go={p => setPage(p)} />;
       case 'lite-shops': return <LiteShops />;
       case 'lite-plan': return <LitePlan onDone={home} />;

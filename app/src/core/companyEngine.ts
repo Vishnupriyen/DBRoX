@@ -28,6 +28,7 @@ const SCREENS: { page: string; name: string; words: string[]; roles?: Role[] }[]
   { page: 'co-team', name: 'Team', words: ['team', 'staff', 'reps', 'my team'] },
   { page: 'fd-team', name: 'Team today', words: ['who did not visit', 'who didn t visit', 'not visited', 'team today', 'live', 'where is'], roles: ['cadmin', 'manager'] },
   { page: 'fd-approvals', name: 'Approvals', words: ['approvals', 'approve', 'leave requests', 'pending leave'], roles: ['cadmin', 'manager'] },
+  { page: 'cl-inbox', name: 'Distributor claims', words: ['distributor claims', 'distributor claim', 'claims', 'claim inbox', 'claims inbox', 'pending claims', 'db claims'], roles: ['cadmin', 'manager'] },
   { page: 'fd-targets', name: 'Targets', words: ['targets', 'target', 'leaderboard'], roles: ['cadmin', 'manager'] },
 ];
 const REP_SCREENS: { page: string; name: string; words: string[] }[] = [
@@ -35,6 +36,7 @@ const REP_SCREENS: { page: string; name: string; words: string[] }[] = [
   { page: 'fd-beat', name: "Today's beat", words: ['beat', 'today s beat', 'my shops', 'visit', 'shops'] },
   { page: 'fd-orders', name: 'My orders', words: ['my orders', 'orders'] },
   { page: 'fd-month', name: 'My month', words: ['my sales', 'sales', 'my target', 'target', 'leave', 'my month'] },
+  { page: 'fd-expenses', name: 'Travel & expenses', words: ['travel and expenses', 'travel expenses', 'travel', 'expenses', 'my expenses', 'travel claim', 'ta da', 'tada', 'expense claim', 'fuel claim'] },
   { page: 'fd-newshop', name: 'New shop', words: ['new shop', 'add shop', 'new outlet'] },
 ];
 
@@ -101,7 +103,8 @@ export async function handleCompany(textIn: string, role: Role): Promise<Reply> 
     const o = await fieldOrder(textIn, role); if (o) return o;
   }
   if (role === 'rep') {
-    const hit = REP_SCREENS.find(x => has(text, x.words));
+    const best = (s: { words: string[] }) => Math.max(0, ...s.words.filter(w => has(text, [w])).map(w => w.length));
+    const hit = REP_SCREENS.filter(s => best(s) > 0).sort((a, b) => best(b) - best(a))[0];
     if (hit) return { text: `Opening ${hit.name}.`, go: hit.page };
     return { text: 'I didn\'t get that. Try "lunch 120", "Murugan Stores 2 case coconut oil" or "my day", or say "help" for everything I can do.', tone: 'warn', missed: true };
   }
@@ -121,7 +124,8 @@ export async function handleCompany(textIn: string, role: Role): Promise<Reply> 
     if (!low.length) return { text: 'Nothing is running low at your distributors.', tone: 'ok' };
     return { text: `${low.length} product${low.length > 1 ? 's are' : ' is'} running low (under half the stock norm).`, table: { name: 'Low stock', columns: ['Distributor', 'Product', 'Stock', 'Days'], rows: low.map(c => [names.get(c.dbLinkId) ?? '', c.name, c.qty, c.days ?? '—']) } };
   }
-  const hit = SCREENS.find(s => has(text, s.words));
+  const best = (s: { words: string[] }) => Math.max(0, ...s.words.filter(w => has(text, [w])).map(w => w.length));
+  const hit = SCREENS.filter(s => best(s) > 0).sort((a, b) => best(b) - best(a))[0];
   if (hit) {
     if (hit.roles && !hit.roles.includes(role)) return { text: `${hit.name} is a head-office screen.`, refused: true };
     return { text: `Opening ${hit.name}.`, go: hit.page };

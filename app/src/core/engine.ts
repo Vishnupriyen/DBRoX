@@ -46,7 +46,7 @@ import { handleCompany } from './companyEngine';
 // Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 export const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
   { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approve orders', 'orders to approve', 'pending orders', 'orders pending', 'orders waiting', 'approval', 'approvals', 'pending approvals', 'needs my approval', 'needs ok', 'waiting for me', 'new orders'] },
-  { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked'] },
+  { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'picked to verify', 'picked orders'] },
   { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'billed bills', 'today bills'] },
   { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['new shops', 'shops to approve'] },
   { page: 'targets', name: 'Targets', roles: ['owner', 'office'], words: ['target', 'targets'] },
@@ -57,7 +57,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'status', name: 'Delivery status', roles: ['owner', 'office'], words: ['delivery status', 'delivered today', 'order status', 'orders status'] },
   { page: 'trips', name: 'Trip reports', roles: ['owner', 'office'], words: ['trip report', 'trip reports', 'trips', 'km'] },
   { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding list', 'who owes', 'dues'] },
-  { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'pending cheques', 'upi list'] },
+  { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'pending cheques', 'upi list', 'cheques and upi', 'cheque and upi', 'upi payments', 'cheques upi'] },
   { page: 'bank', name: 'Bank', roles: ['owner', 'office'], words: ['bank', 'statement'] },
   { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list'] },
   { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'p l', 'pnl', 'p and l', 'profit', 'profit and loss', 'how much profit'] },
@@ -67,7 +67,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export'] },
   { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gst summary', 'gst report', 'gst status', 'gst due', 'tax summary', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
   { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'who is absent', 'absent', 'who is present', 'check in', 'checked in'] },
-  { page: 'salary', name: 'Salary', roles: ['owner'], words: ['salary', 'salary sheet', 'payroll'] },
+  { page: 'salary', name: 'Salary', roles: ['owner'], words: ['salary', 'salary sheet', 'salaries', 'pay sheet'] },
   { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
   { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan route', 'plan'] },
   { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking'] },
@@ -79,11 +79,26 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'billed', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list'] },
   { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection'] },
   { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack'] },
-  { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print'] },
+  { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print', 'load sheet print'] },
   { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading'] },
   { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery'] },
-  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'today beat', 'my shops', 'next shop', 'next shops', 'which shop next', 'shops today'] },
+  { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'beats', 'today beat', 'my shops', 'next shop', 'next shops', 'which shop next', 'shops today'] },
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders'] },
+  { page: 'inbound', name: 'Company bills', roles: ['owner', 'office', 'godown'], words: ['company bills', 'company bill', 'bills from company', 'supplier bills', 'purchase bills', 'bills to receive', 'company invoices'] },
+  { page: 'reorder', name: 'Order to company', roles: ['owner', 'office'], words: ['order to company', 'company order', 'reorder', 're order', 'order company', 'purchase order', 'order from company'] },
+  { page: 'staff', name: 'Staff', roles: ['owner', 'office'], words: ['staff', 'staff list', 'staff and access', 'staff access', 'employees', 'add staff', 'my staff', 'staff page'] },
+  { page: 'settings', name: 'Settings', roles: ['owner', 'office'], words: ['settings', 'setting', 'firm details', 'app settings', 'my settings', 'business details'] },
+  { page: 'links', name: 'Company links', roles: ['owner', 'office'], words: ['company links', 'company link', 'link company', 'linked companies', 'link a company'] },
+  { page: 'tesrax', name: 'TESRAX report', roles: ['owner'], words: ['tesrax report', 'tesrax score', 'tesrax misses', 'tesrax mistakes'] },
+  { page: 'billing', name: 'Plan & billing', roles: ['owner'], words: ['plan and billing', 'plan billing', 'my plan', 'subscription', 'licence', 'license', 'renew', 'renewal', 'app payment'] },
+  { page: 'beat', name: 'Beats', roles: ['owner', 'office'], words: ['beats', 'beat builder', 'beat plan', 'beat list', 'make beat', 'beat setup'] },
+  { page: 'module:bill', name: 'Bill', roles: ['owner', 'office'], words: ['bill module', 'billing module'] },
+  { page: 'module:delivery', name: 'Delivery', roles: ['owner', 'office'], words: ['delivery', 'delivery module', 'deliveries'] },
+  { page: 'module:collection', name: 'Collection', roles: ['owner', 'office'], words: ['collection module', 'collections module'] },
+  { page: 'module:sales', name: 'Sales', roles: ['owner', 'office'], words: ['sales module'] },
+  { page: 'module:inventory', name: 'Inventory', roles: ['owner', 'office'], words: ['inventory', 'inventory module'] },
+  { page: 'module:accountant', name: 'Accountant', roles: ['owner', 'office'], words: ['accountant', 'accounts', 'accountant module', 'accounts module', 'accounting'] },
+  { page: 'module:payroll', name: 'Payroll', roles: ['owner', 'office'], words: ['payroll', 'payroll module', 'hr'] },
 ];
 function screenFor(text: string, role: Role, exact = false): Reply | null {
   if (exact) {
@@ -238,6 +253,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny('The Tally file'); return need('accountant', mods) ?? exportTally(monthIn(text)); }
   if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny('The GSTR-1 file'); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
   if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny('The e-invoice file'); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
+  { const { reportByVoice } = await import('./reportsVoice'); const rr = await reportByVoice(text, role); if (rr) return rr; } // every owner report by name and period
   if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
   // ------------------------ a question about profit: answered in words, the P&L one tap away ------------------------
