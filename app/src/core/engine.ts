@@ -260,6 +260,8 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (/\b(send|excel|xl|file|download|share|export|whatsapp|mail|email|report|sheet)\b/.test(text) && !/\d{3,}/.test(text)) { const f = await screenFileAsked(text, role); if (f) return f; }
   // "send salary sheet", "salary sheet excel october": the month's salary sheet as Excel (owner)
   if (/\b(salary|salaries|payroll)\b/.test(text) && /\b(send|excel|xl|file|download|share|export|whatsapp|mail|email)\b/.test(text) && !/\d{3,}/.test(text)) return salaryFile(role, text);
+  // "outstanding bucket wise", "ageing of outstanding", "debtors ageing", "receivable ageing": dues by age bucket (owner / office)
+  if (/\b(outstanding|dues|due|receivable|receivables|debtors|owes|owe|pending payment|balance)\b/.test(text) && /\b(bucket|buckets|bucketwise|ageing|aging|ageing wise|age wise|30 60 90|0 30|30 days|60 days|90 days|days wise|period wise)\b/.test(text)) return duesAgeing(role);
   { const { reportByVoice } = await import('./reportsVoice'); const rr = await reportByVoice(text, role); if (rr) return rr; } // every owner report by name and period
   if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
@@ -1027,6 +1029,19 @@ async function screenFileAsked(text: string, role: Role): Promise<Reply | null> 
   if (!made) return null;
   const f = made;
   return { text: f.text, actions: [{ label: 'Send as Excel', run: () => { void F.sendFile(f); } }] };
+}
+
+/** outstanding by age bucket: one row a shop, 0–30 / 31–60 / 61–90 / 90+ days, advance taken off; the table's Excel sends it */
+async function duesAgeing(role: Role): Promise<Reply> {
+  if (role !== 'owner' && role !== 'office') return deny('Outstanding by age');
+  const { receivablesAgeing } = await import('./ledger');
+  const a = await receivablesAgeing(), t = a.totals;
+  return {
+    text: `Outstanding by age: ${inr(t.total)} from ${plural(a.rows.length, 'shop')} — 0–30 days ${inr(t.b0_30)}, 31–60 ${inr(t.b31_60)}, 61–90 ${inr(t.b61_90)}, over 90 days ${inr(t.b90)}${t.advance ? `, less advances ${inr(t.advance)}` : ''}.`,
+    table: { name: `Outstanding-by-age-${today()}`, columns: ['Shop', 'Area', '0–30 days', '31–60 days', '61–90 days', '90+ days', 'Advance', 'Total'],
+      rows: [...a.rows.map(r => [r.shop, r.area, r.b0_30, r.b31_60, r.b61_90, r.b90, r.advance ? -r.advance : 0, r.total]), ['Total', '', t.b0_30, t.b31_60, t.b61_90, t.b90, t.advance ? -t.advance : 0, t.total]] },
+    link: { label: 'Open Outstanding', page: 'outstanding' },
+  };
 }
 
 /** the salary sheet of a month as Excel (owner only; before the 11th it is last month's, as on the Payroll screen) */

@@ -91,6 +91,29 @@ export async function allOutstanding(): Promise<Map<string, ShopDue>> {
   return out;
 }
 
+/** outstanding by age bucket: each open bill's balance by days since its bill date (0–30, 31–60, 61–90, 90+); a shop's
+ *  unused advance is shown and taken off, so each shop's total is its balance due everywhere else in the app */
+export async function receivablesAgeing() {
+  const { rows, advanceLeft } = await balancesAndAdvance();
+  const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
+  const t = today(), [ty, tm, td] = t.split('-').map(Number), now = Date.UTC(ty, tm - 1, td);
+  const age = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return Math.round((now - Date.UTC(y, m - 1, dd)) / 86400000); };
+  type Row = { shopId: string; shop: string; area: string; b0_30: number; b31_60: number; b61_90: number; b90: number; advance: number; total: number };
+  const by = new Map<string, Row>();
+  const at = (id: string) => by.get(id) ?? (by.set(id, { shopId: id, shop: shops.get(id)?.name ?? '', area: shops.get(id)?.area ?? '', b0_30: 0, b31_60: 0, b61_90: 0, b90: 0, advance: 0, total: 0 }), by.get(id)!);
+  for (const b of rows) {
+    if (b.balance <= 0.5) continue;
+    const r = at(b.invoice.shopId), a = age(b.invoice.date);
+    const k = a <= 30 ? 'b0_30' : a <= 60 ? 'b31_60' : a <= 90 ? 'b61_90' : 'b90';
+    r[k] = r2(r[k] + b.balance);
+  }
+  for (const [id, adv] of advanceLeft) if (adv > 0 && by.has(id)) at(id).advance = r2(adv);
+  const out = [...by.values()].map(r => ({ ...r, total: r2(r.b0_30 + r.b31_60 + r.b61_90 + r.b90 - r.advance) })).filter(r => Math.abs(r.total) > 0.5 || r.advance > 0)
+    .sort((a, b) => b.b90 - a.b90 || b.total - a.total);
+  const sum = (k: keyof Row) => r2(out.reduce((a, r) => a + (r[k] as number), 0));
+  return { rows: out, totals: { b0_30: sum('b0_30'), b31_60: sum('b31_60'), b61_90: sum('b61_90'), b90: sum('b90'), advance: sum('advance'), total: sum('total') } };
+}
+
 // Payment allocation: oldest bill first (default rule from the definition doc).
 export async function allocateOldestFirst(shopId: string, amount: number) {
   const bills = (await invoiceBalances(shopId)).filter(b => b.balance > 0.5);
