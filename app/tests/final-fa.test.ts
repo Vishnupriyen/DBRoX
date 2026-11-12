@@ -139,10 +139,12 @@ describe('7 period words and report routes', () => {
     expect(r.text).toMatch(/last month|October/i);
     expect(r.link?.page ?? r.go).toBe('reports');
   });
-  it('"day book" and "collections by person this month" open Reports', async () => {
+  // since 12 Nov 2026 (owner: "every report it should send") TESRAX answers with the report itself, Reports one tap away
+  it('"day book" and "collections by person this month" give the report, with Reports one tap away', async () => {
     as('owner');
-    expect((await say('day book')).go).toBe('reports');
-    expect((await say('collections by person this month')).go).toBe('reports');
+    const a = await say('day book'), b = await say('collections by person this month');
+    expect(a.text).toMatch(/^Day book/); expect(a.link?.page).toBe('reports');
+    expect(b.text).toMatch(/^Collections by person/); expect(b.link?.page).toBe('reports');
   });
 });
 

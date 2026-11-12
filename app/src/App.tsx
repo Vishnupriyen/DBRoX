@@ -208,7 +208,7 @@ export default function App() {
       case 'today': return <Today />;
       case 'salary': return <Salary />;
       case 'staff': return <More role={me.role} onLogout={logout} initial="staff" />;
-      case 'settings': case 'links': case 'tesrax': return <More role={me.role} onLogout={logout} initial={page} />;
+      case 'settings': case 'links': case 'tesrax': return <More role={me.role} onLogout={logout} initial={page as 'settings' | 'links' | 'tesrax'} />;
       case 'dayclose': return <DayClose go={p => setPage(p)} />;
       case 'lite-shops': return <LiteShops />;
       case 'lite-plan': return <LitePlan onDone={home} />;
