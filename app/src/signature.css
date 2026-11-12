@@ -18,3 +18,38 @@ h1,h2,h3,h4,.h,.home-greet,.home-back,.morning .t,.engine-chat .say{color:var(--
 .sticky-foot{background:#fff}
 /* text on the dark jade-gold hero card stays readable (light on dark) */
 .kpi.navy{--on-navy:#fff;--on-navy-2:rgba(255,255,255,.85)}
+
+/* ===== LOCKED 12 Nov 2026 (owner): new HANUBIX logo, Montserrat everywhere, dark jade–gold bottom bar with the glowing
+   TESRAX sphere (double tap opens it), no TESRAX block on pages, "Powered by TESRAX" only on the opening screen, Menu. ===== */
+:root{--display:Montserrat,Arial,Helvetica,sans-serif;--body:Montserrat,Arial,Helvetica,sans-serif}
+body,button,input,select,textarea{font-family:var(--body)}
+.hx-logo{display:block;color:#13201b;max-width:100%;height:auto}
+.top{min-height:64px}.top .brand-lockup{color:#13201b}
+@media(max-width:580px){.top .brand-lockup .hx-logo{width:132px}}
+.engine-head .hx-logo{width:120px}
+/* the bottom bar: dark jade → gold, white icons and words, the sphere glowing in the middle */
+.tabs{background:var(--g)!important;border-top:0;box-shadow:0 -4px 18px rgba(6,61,44,.18)}
+.tabs>button:not(.fab),.tabs>button:not(.fab) .ic{color:rgba(255,255,255,.9)}
+.tabs>button:not(.fab).on,.tabs>button:not(.fab).on .ic{color:#fff;font-weight:700}
+.tabs>button:not(.fab).on .ic{background:rgba(255,255,255,.16)}
+.fab,.fab:has(>.tx-core){background:radial-gradient(circle at 50% 45%,#0b4a35,#04281d)!important;box-shadow:0 0 0 4px #fff,0 0 22px 5px rgba(217,179,90,.55)!important}
+/* Menu: screens grouped as the business works */
+.menu-grp{font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)!important;margin:6px 2px 8px}
+.menu-chips{display:flex;flex-wrap:wrap;gap:8px}
+.menu-chip{border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 13px;min-height:44px;font:600 .875rem/1.2 var(--body);color:var(--txt);cursor:pointer}
+.menu-chip:active{background:var(--ok-soft)}
+/* the opening screen */
+.splash{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(120% 80% at 50% 38%,#185d42 0%,#063d2c 55%,#04281d 100%);color:#fff;transition:opacity .45s ease;cursor:pointer}
+.splash.out{opacity:0;pointer-events:none}
+.splash .tx-core{position:relative;z-index:1}
+.splash-halo{position:absolute;top:50%;left:50%;width:300px;height:300px;margin:-215px 0 0 -150px;border-radius:50%;background:radial-gradient(circle,rgba(127,224,173,.22) 0%,rgba(217,179,90,.12) 40%,rgba(0,0,0,0) 70%);animation:hx-pulse 3s ease-in-out infinite}
+.splash-logo{margin-top:20px;color:#fff;opacity:0;animation:hx-fade .7s 1.5s forwards}
+.splash-powered{margin-top:16px;font:500 .75rem/1 var(--body);letter-spacing:.14em;color:rgba(255,255,255,.85);opacity:0;animation:hx-fade .7s 2s forwards}
+.splash-powered b{color:#e0bd63;letter-spacing:.22em;font-weight:700}
+.splash-bar{position:absolute;bottom:48px;width:120px;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+.splash-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#185d42,#e0bd63);animation:hx-load 2.4s .1s forwards}
+@keyframes hx-fade{to{opacity:1}}@keyframes hx-load{to{width:100%}}@keyframes hx-pulse{50%{transform:scale(1.08);opacity:.85}}
+@media(prefers-reduced-motion:reduce){.splash-halo{animation:none}.splash-logo,.splash-powered{animation-duration:.01s;animation-delay:0s}}
+.splash .hx-logo{color:#fff}
+.login .brand-lockup .hx-logo,.login-hero .brand-lockup .hx-logo{width:220px}
+@media(max-width:580px){.top .brand-lockup .hx-logo{width:118px}}

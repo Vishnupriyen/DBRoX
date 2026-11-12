@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, Receipt, FileCheck2, Blocks, Users, Settings as SettingsIcon, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat, Gauge } from 'lucide-react';
+import { Blocks, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat } from 'lucide-react';
 import { TesraxReport } from './TesraxReport';
 import { CompanyLinks } from './CompanyLinks';
 import { SIDE_KEY } from '../core/db';
@@ -19,7 +19,21 @@ import { errorLog } from './Safety';
 
 type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links' | 'tesrax';
 
-export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff' | 'settings' | 'links' | 'tesrax'; onPlan?: () => void }) {
+// The Menu (was "More", 12 Nov 2026): every screen for this role, grouped the way the business works; then the app itself.
+const MENU: { group: string; mod?: ModuleKey; items: { page: string; label: string; owner?: boolean }[] }[] = [
+  { group: 'Bills', mod: 'bill', items: [{ page: 'orders-received', label: 'Orders received' }, { page: 'verify', label: 'Picked — to verify' }, { page: 'billed', label: 'Bills' }] },
+  { group: 'Delivery', mod: 'delivery', items: [{ page: 'plan', label: 'Delivery plan' }, { page: 'live', label: 'Live vans', owner: true }, { page: 'status', label: 'Delivery status' }, { page: 'trips', label: 'Trip reports' }, { page: 'print', label: 'Load sheet' }, { page: 'vans', label: 'Vans & drivers', owner: true }] },
+  { group: 'Money', mod: 'collection', items: [{ page: 'outstanding', label: 'Outstanding' }, { page: 'cash', label: 'Cash with staff', owner: true }, { page: 'cheques', label: 'Cheques & UPI' }, { page: 'dayclose', label: 'Day close', owner: true }] },
+  { group: 'Accounts', mod: 'accountant', items: [{ page: 'bank', label: 'Bank' }, { page: 'expenses', label: 'Expenses' }, { page: 'pnl', label: 'P&L', owner: true }, { page: 'cashflow', label: 'Cash flow', owner: true }, { page: 'gst', label: 'GST' }, { page: 'export', label: 'Export' }] },
+  { group: 'Sales', mod: 'sales', items: [{ page: 'newshops', label: 'New shops' }, { page: 'targets', label: 'Targets' }, { page: 'beat', label: 'Beats' }, { page: 'reports', label: 'Reports' }] },
+  { group: 'Stock', mod: 'inventory', items: [{ page: 'stock', label: 'Stock position' }, { page: 'stockin', label: 'Purchases' }, { page: 'damages', label: 'Damages' }, { page: 'ageing', label: 'Ageing' }, { page: 'claims', label: 'Claims' }, { page: 'stock-reports', label: 'Stock reports' }] },
+  { group: 'Staff', mod: 'payroll', items: [{ page: 'today', label: 'Today' }, { page: 'salary', label: 'Salary', owner: true }, { page: 'staff', label: 'Staff & access' }] },
+  { group: 'Settings', items: [{ page: 'settings', label: 'Settings' }, { page: 'links', label: 'Company links' }, { page: 'tesrax', label: 'TESRAX report', owner: true }, { page: 'billing', label: 'Plan & billing', owner: true }] },
+];
+
+export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff' | 'settings' | 'links' | 'tesrax'; onPlan?: () => void; go?: (p: string) => void }) {
+  const [mods, setMods] = useState<Settings['modules'] | null>(null);
+  useEffect(() => { void getSettings().then(s => setMods(s.modules)); }, []);
   const [page, setPage] = useState<Page>(initial ?? 'menu');
   const boss = role === 'owner' || role === 'office';
   // the app's one back (header arrow or the phone's back button) steps from a More page to the More menu
@@ -39,15 +53,15 @@ export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout
   if (page === 'claims') return <>{back}<Claims /></>;
   if (page === 'links') return <>{back}<CompanyLinks editable={role === 'owner'} /></>;
   if (page === 'tesrax') return <>{back}<TesraxReport /></>;
+  const open = (p: string) => { if (p === 'billing') onPlan?.(); else if (go) go(p); else if (['bills', 'claims', 'staff', 'settings', 'links', 'tesrax'].includes(p)) setPage(p as Page); };
   return (
+    <div className="stack menu">
+      {boss && MENU.filter(g => !g.mod || !mods || mods[g.mod]).map(g => {
+        const items = g.items.filter(i => !i.owner || role === 'owner');
+        return items.length ? <section key={g.group}><h3 className="menu-grp">{g.group}</h3><div className="menu-chips">{items.map(i => <button key={i.page} className="menu-chip" onClick={() => open(i.page)}>{i.label}</button>)}</div></section> : null;
+      })}
+      <section><h3 className="menu-grp">{'App'}</h3>
     <div className="list">
-      {boss && <button className="item" onClick={() => setPage('bills')}><Receipt /> <span className="grow">{t('bills')}</span></button>}
-      {boss && <button className="item" onClick={() => setPage('claims')}><FileCheck2 /> <span className="grow">Claims tracker</span></button>}
-      {boss && <button className="item" onClick={() => setPage('staff')}><Users /> <span className="grow">Staff & access</span></button>}
-      {boss && <button className="item" onClick={() => setPage('links')}><Link2 /> <span className="grow">Company links</span></button>}
-      {role === 'owner' && <button className="item" onClick={() => setPage('tesrax')}><Gauge /> <span className="grow">TESRAX report</span></button>}
-      {role === 'owner' && onPlan && <button className="item" onClick={onPlan}><CreditCard /> <span className="grow">Plan & billing</span></button>}
-      {boss && <button className="item" onClick={() => setPage('settings')}><SettingsIcon /> <span className="grow">{t('settings')}</span></button>}
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
         for (const tb of db.tables) dump[tb.name] = await tb.toArray();
@@ -62,7 +76,8 @@ export function More({ role, onLogout, initial, onPlan }: { role: Role; onLogout
       }}><Trash2 /> <span className="grow">Reset demo data on this phone</span></button>}
       {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('company')}><Repeat /> <span className="grow">Demo: open the company side</span></button>}
       {!ENV_SERVER && role === 'owner' && <button className="item" style={{ color: 'var(--ink-3)' }} onClick={() => setPage('modules')}><Blocks /> <span className="grow">Demo only: switch plan (Hanubix side — never shown to a distributor)</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}>Hanubix · Powered by TESRAX · v0.8</div>
+    </div></section>
+      <div className="muted" style={{ textAlign: 'center', marginTop: 4 }}>Hanubix v0.8</div>
     </div>
   );
 }

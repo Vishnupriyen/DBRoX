@@ -1,4 +1,18 @@
-# HANUBIX approved signature — 11 November 2026
+# HANUBIX approved signature — 11 November 2026, updated 12 November 2026
+
+## 12 November 2026 — founder approval (supersedes the lines below where they differ)
+- **Logo:** the reworked HANUBIX logo (`Logo` in `app/src/ui/Brand.tsx`, also `app/public/hanubix-wordmark.svg`): wide thin geometric
+  letters drawn as lines, A without a crossbar, a **complete B**, even and tighter spacing, RETAIL INTELLIGENCE underneath at exactly
+  the logo's width. Jade-black on white, white on dark. The small header shows the letters only (the tagline is unreadable that small).
+- **Font:** Montserrat everywhere (bundled in the app, works offline), matching the logo's shapes. Arial only as the fallback.
+- **TESRAX:** never a block on a page. It lives in the glowing sphere in the centre of the **dark jade–gold bottom bar** (bright mint→gold
+  particles on dark); a **double tap** opens it full screen, back closes it.
+- **"Powered by TESRAX": once — on the animated opening screen** only (not in the header, login, footer or menus).
+- **Opening screen:** dark jade; scattered particles gather into the sphere, then the logo and "Powered by TESRAX" fade in; about 2.5 s,
+  once per app start, a tap skips it.
+- **Menu** (was More): every screen for the role, grouped Bills · Delivery · Money · Accounts · Sales · Stock · Staff · Settings, then App.
+
+## 11 November 2026
 
 Approved through the interactive previews in the founder conversation.
 

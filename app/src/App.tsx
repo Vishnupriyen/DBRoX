@@ -14,7 +14,7 @@ import { t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
 import { TesraxCore } from './ui/TesraxCore';
-import { Brand, PoweredBy } from './ui/Brand';
+import { Brand } from './ui/Brand';
 import { ErrorBoundary } from './ui/Safety';
 import { Billing } from './ui/Billing';
 import { refreshLicence, type LicenceState } from './core/licence';
@@ -56,7 +56,7 @@ const TITLE: Partial<Record<Page, string>> = {
   collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
   bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
   gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
-  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'More', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report',
+  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'Menu', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -227,7 +227,7 @@ export default function App() {
       case 'billing': return <Billing role={me.role} />;
       case 'inbound': return <CompanyBills />;
       case 'reorder': return <OrderToCompany />;
-      case 'more': return <More key={moreKey} role={me.role} onLogout={logout} onPlan={() => setPage('billing')} />; // tapping More always shows the More menu
+      case 'more': return <More key={moreKey} role={me.role} onLogout={logout} onPlan={() => setPage('billing')} go={go} />; // tapping More always shows the More menu
     }
   };
 
@@ -235,14 +235,14 @@ export default function App() {
     <div className="app">
       <GradDefs />
       <header className="top">
-        {page === 'home' ? <div className="wordmark"><Brand /></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
+        {page === 'home' ? <div className="wordmark"><Brand tagline={false} /></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
         <div className="firm">{page === 'home' ? firm : title}</div>
         <div className="who">{me.name.split(' ')[0]}</div>
         <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
       </header>
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
-      <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{page === 'home' && !module && <section className="signature-hero"><div className="signature-copy"><div className="eyebrow">RETAIL INTELLIGENCE</div><h1>Your day. Under control.</h1><p>Orders to delivery, collections to close. Your next action is always clear.</p></div><div className="signature-engine"><span className="eyebrow">TESRAX</span><TesraxCore size={230} onActivate={openRox} /><p className="signature-hint">Hold to ripple · Double tap to activate</p></div></section>}{body()}<footer className="brand-footer"><PoweredBy /></footer></ErrorBoundary></main>
+      <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       {printInv && <PrintBill invoice={printInv} onClose={() => setPrintInv(null)} />}
       <DialogHost />
       <UndoToast page={`${page}|${module ?? ""}`} />
@@ -251,8 +251,7 @@ export default function App() {
         <div className="engine" role="dialog" aria-label="TESRAX">
           <div className="engine-col">
             <div className="engine-head" onPointerDown={e => { (e.currentTarget as HTMLElement).dataset.y = String(e.clientY); }} onPointerUp={e => { const y0 = Number((e.currentTarget as HTMLElement).dataset.y ?? e.clientY); if (e.clientY - y0 > 70) setRox(false); }}>
-              <Brand powered={false} />
-              <PoweredBy compact />
+              <Brand width={120} tagline={false} />
               <button className="engine-x" onClick={() => { const v = !soundOn; sound.set(v); setSoundOn(v); }} aria-label={soundOn ? 'Sound off' : 'Sound on'}>{soundOn ? <Volume2 /> : <VolumeX />}</button>
               <button className="engine-x" onClick={() => setRox(false)} aria-label="Close"><X /></button>
             </div>
@@ -264,8 +263,8 @@ export default function App() {
       <nav className="tabs">
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{'Home'}</button>
         {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
-        <div className="fab"><TesraxCore size={64} onActivate={openRox} label="TESRAX" /></div>
-        <button className={page === 'more' ? 'on' : ''} onClick={() => { setPage('more'); setMoreKey(k => k + 1); }}><span className="ic"><Menu /></span>{'More'}</button>
+        <div className="fab"><TesraxCore size={62} n={420} onDark onActivate={openRox} label="TESRAX — double tap to open" /></div>
+        <button className={page === 'more' ? 'on' : ''} onClick={() => { setPage('more'); setMoreKey(k => k + 1); }}><span className="ic"><Menu /></span>{'Menu'}</button>
       </nav>
     </div>
   );
@@ -278,7 +277,6 @@ function CompanyMore({ onLogout }: { onLogout: () => void }) {
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">Log out</span></button>
       {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('distributor')}><Repeat /> <span className="grow">Demo: open the distributor side</span></button>}
-      <div className="muted" style={{ textAlign: 'center', marginTop: 10 }}><PoweredBy /></div>
     </div>
   );
 }

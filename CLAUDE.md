@@ -14,11 +14,12 @@ Before saying any work is finished:
 Never report work as done while the gate is red. Never weaken a guard, a law or a sweep check to make it pass —
 fix the cause, or explain to the owner why a check is wrong before changing it.
 
-## Design (locked — founder approval 11 Nov 2026)
-Use `docs/HANUBIX_LOCKED_SIGNATURE.md` as the current design source. White backgrounds, Arial,
-jade headings and quantities, selective dark jade–gold gradients, exact approved HANUBIX wordmark and
-RETAIL INTELLIGENCE. TESRAX is a jade–gold particle sphere with touch ripple/spin, original sounds,
-and double-tap activation. Earlier black/solid-teal/Geist and cyan/violet directions are superseded.
+## Design (locked — founder approval 11 Nov 2026, updated 12 Nov 2026)
+Use `docs/HANUBIX_LOCKED_SIGNATURE.md` as the current design source. White backgrounds, **Montserrat** (bundled),
+jade headings and quantities, selective dark jade–gold gradients, the **reworked HANUBIX logo** (complete B, even spacing) with
+RETAIL INTELLIGENCE. TESRAX lives only in the glowing sphere of the **dark jade–gold bottom bar** and opens on a double tap — never a
+block on a page. "Powered by TESRAX" appears **only on the animated opening screen**. More is now **Menu** (grouped screens).
+Earlier black/solid-teal/Geist, cyan/violet and the 11 Nov hero-sphere/footer lockups are superseded.
 
 ## The AI team (`.claude/agents/`)
 Every change runs through the team, in this order. The main session is the manager: hands out the work, keeps the order,
