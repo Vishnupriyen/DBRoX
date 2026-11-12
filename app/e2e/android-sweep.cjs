@@ -61,7 +61,7 @@ const SHOTS = process.env.SHOTS !== '0';
         await check(`${t.label} › ${s}`);
       }
     }
-    await p.click('nav >> text=More'); await check('More');
+    await p.click('nav >> text=Menu'); await check('Menu');
     await p.dblclick('.fab .tx-core'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1500); await check('Engine help');
     // the phone's back button closes the engine instead of leaving the app
@@ -72,11 +72,11 @@ const SHOTS = process.env.SHOTS !== '0';
     if (st.engine || st.err) report.push({ who: tag, page: 'back button', issues: [`BACK did not close the engine ${JSON.stringify(st)} ${focus}`] });
     // and from a screen: back goes home, never out of the app
     if (!st.err) {
-      await p.click('nav >> text=More').catch(() => {}); await p.waitForTimeout(500);
+      await p.click('nav >> text=Menu').catch(() => {}); await p.waitForTimeout(500);
       await device.shell('input keyevent KEYCODE_BACK'); await p.waitForTimeout(1000);
       const home = await p.$('.home').catch(() => null);
       const f2 = (await device.shell('dumpsys window | grep mCurrentFocus')).toString();
-      if (!home || !/hanubix/.test(f2)) report.push({ who: tag, page: 'back button', issues: [`BACK from More did not go home (${f2.trim()})`] });
+      if (!home || !/hanubix/.test(f2)) report.push({ who: tag, page: 'back button', issues: [`BACK from Menu did not go home (${f2.trim()})`] });
       if (!/hanubix/.test(f2)) { await device.shell('monkey -p com.hanubix.app -c android.intent.category.LAUNCHER 1'); await p.waitForTimeout(2000); }
     }
   }

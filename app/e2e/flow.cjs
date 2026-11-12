@@ -14,7 +14,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   const shot = async (name) => { await p.waitForTimeout(450); await p.screenshot({ path: `${OUT}/flow/${String(++n).padStart(2, '0')}-${name}.png` }); };
   const loginAs = async (who) => { await p.waitForSelector('text=Demo logins'); await p.click(`text=${who}`); await p.waitForTimeout(900); };
   const gate = async () => { if (await p.locator('.gate').count()) { await shot('checkin-gate'); await p.click('.gate .big-btn'); await p.waitForTimeout(800); } };
-  const logout = async () => { await p.click('nav >> text=More'); await p.waitForTimeout(300); await p.click('text=Log out'); await p.waitForTimeout(300); };
+  const logout = async () => { await p.click('nav >> text=Menu'); await p.waitForTimeout(300); await p.click('text=Log out'); await p.waitForTimeout(300); };
   const home = async () => { await p.click('nav >> text=Home'); await p.waitForTimeout(500); };
   const tile = async (t) => { const exact = p.locator('.tile', { hasText: new RegExp('^\\s*' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\d*\\s*$') }); if (await exact.count()) await exact.first().click(); else await p.click(`.tile:has-text("${t}")`); await p.waitForTimeout(700); };
   // UX round 4 checks: the TESRAX core never covers the last button; the Undo bubble says what it undoes and stays on its screen

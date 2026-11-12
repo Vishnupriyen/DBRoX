@@ -124,10 +124,11 @@ if (require.main === module) (async () => {
         await check(`${t.label} › ${s}`);
       }
     }
-    // More menu + engine
-    await p.click('nav >> text=More'); await check('More');
-    for (const item of ['Bills', 'Claims tracker', 'Staff & access', 'Company links', 'Settings', 'Plan & billing']) {
-      if (await p.$(`.item:has-text("${item}")`)) { await p.click(`.item:has-text("${item}")`); await check('More › ' + item); await p.click('nav >> text=More'); await p.waitForTimeout(200); const back = await p.$('button:has-text("← More")'); if (back) await back.click(); }
+    // the Menu (was More, 12 Nov 2026) + engine
+    await p.click('nav >> text=Menu'); await check('Menu');
+    for (const item of ['Bills', 'Claims', 'Staff & access', 'Company links', 'Settings', 'Plan & billing']) {
+      const sel = `.menu-chip:text-is("${item}")`;
+      if (await p.$(sel)) { await p.click(sel); await check('Menu › ' + item); await p.click('nav >> text=Menu'); await p.waitForTimeout(200); }
     }
     await p.dblclick('.fab .tx-core'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1200); await check('Engine help');
