@@ -53,3 +53,6 @@ body,button,input,select,textarea{font-family:var(--body)}
 .splash .hx-logo{color:#fff}
 .login .brand-lockup .hx-logo,.login-hero .brand-lockup .hx-logo{width:220px}
 @media(max-width:580px){.top .brand-lockup .hx-logo{width:118px}}
+/* Montserrat is wider than Arial: the morning card's figures share the row by how many there are (3 on the company side),
+   and the small labels are spaced a little tighter, so a long word ("distributors") never runs into the next one */
+.morning .kv{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.morning .kv span{letter-spacing:.02em}
