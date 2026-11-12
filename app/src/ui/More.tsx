@@ -28,6 +28,7 @@ const MENU: { group: string; mod?: ModuleKey; items: { page: string; label: stri
   { group: 'Sales', mod: 'sales', items: [{ page: 'newshops', label: 'New shops' }, { page: 'targets', label: 'Targets' }, { page: 'beat', label: 'Beats' }, { page: 'reports', label: 'Reports' }] },
   { group: 'Stock', mod: 'inventory', items: [{ page: 'stock', label: 'Stock position' }, { page: 'stockin', label: 'Purchases' }, { page: 'damages', label: 'Damages' }, { page: 'ageing', label: 'Ageing' }, { page: 'claims', label: 'Claims' }, { page: 'stock-reports', label: 'Stock reports' }] },
   { group: 'Staff', mod: 'payroll', items: [{ page: 'today', label: 'Today' }, { page: 'salary', label: 'Salary', owner: true }, { page: 'staff', label: 'Staff & access' }] },
+  { group: 'Business Boost', items: [{ page: 'boost', label: 'Offers and services' }] },
   { group: 'Settings', items: [{ page: 'settings', label: 'Settings' }, { page: 'links', label: 'Company links' }, { page: 'tesrax', label: 'TESRAX report', owner: true }, { page: 'billing', label: 'Plan & billing', owner: true }] },
 ];
 

@@ -46,6 +46,7 @@ import { More } from './ui/More';
 import { DialogHost, notify } from './ui/dialog';
 import type { Invoice, Settings, Staff } from './core/types';
 import { PrintBill } from './ui/PrintBill';
+import { Boost } from './ui/Boost';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, string>> = {
@@ -56,7 +57,7 @@ const TITLE: Partial<Record<Page, string>> = {
   collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
   bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
   gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
-  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'Menu', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report',
+  'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'Menu', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report', boost: 'Business Boost',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
 const ALIAS: Record<string, Page> = { approve: 'orders-received', position: 'cashflow', cash: 'cash', claims: 'claims', bills: 'billed' };
@@ -216,6 +217,7 @@ export default function App() {
       case 'today': return <Today />;
       case 'salary': return <Salary />;
       case 'staff': return <More role={me.role} onLogout={logout} initial="staff" />;
+      case 'boost': return me.role === 'owner' || me.role === 'office' ? <Boost /> : <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
       case 'settings': case 'links': case 'tesrax': return <More role={me.role} onLogout={logout} initial={page as 'settings' | 'links' | 'tesrax'} />;
       case 'dayclose': return <DayClose go={p => setPage(p)} />;
       case 'lite-shops': return <LiteShops />;

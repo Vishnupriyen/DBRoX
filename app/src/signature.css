@@ -76,3 +76,7 @@ html.native-map .live-page{gap:0}
 html.native-map .live-page>*:not(.live-map){background:#fff;margin:0;padding:12px 16px;border-radius:0;border-left:0;border-right:0}
 html.native-map .live-page>.live-map{border-radius:0;border:0}
 html.native-map .live-page{min-height:100%}html.native-map .live-page::after{content:'';flex:1;background:#fff}
+/* Business Boost (12 Nov 2026) */
+.boost-hero{display:flex;gap:12px;align-items:center;background:var(--g);color:#fff}.boost-hero .h,.boost-hero .s{color:#fff!important}.boost-hero svg{width:28px;height:28px;flex:none}
+.boost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.boost-card{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.boost-card .t{font-weight:700}.boost-card .s{flex:1}

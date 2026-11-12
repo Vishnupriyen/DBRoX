@@ -4,7 +4,7 @@ import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
   Territory, DbLink, Secondary, SecondaryReturn, DbStock, PrimaryInvoice, Inbound, Grn, PrimaryOrder, DbClaim, ClaimDecision, ShopRequest, WorkDay, TravelClaim, Receipt, TesraxDay,
-  OpeningDue, StaffRequest, StockMove,
+  OpeningDue, StaffRequest, StockMove, BoostRequest,
 } from './types';
 
 // Offline-first store on the phone (IndexedDB). The server is only for sync and backup.
@@ -55,6 +55,7 @@ class RoxDB extends Dexie {
   openingDues!: Table<OpeningDue, string>;
   requests!: Table<StaffRequest, string>;
   stockMoves!: Table<StockMove, string>;
+  boostRequests!: Table<BoostRequest, string>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
   constructor(name = 'dbrox') {
@@ -125,6 +126,7 @@ class RoxDB extends Dexie {
       await tx.table('batches').toCollection().modify((b: Batch) => { if (b.dirty === 1) b.legacyQty = true; });
       for (const b of await tx.table('batches').toArray() as Batch[]) if (b.qty) await tx.table('stockMoves').put({ id: `open:${b.id}`, tenantId: b.tenantId, createdAt: at, updatedAt: at, dirty: 0, batchId: b.id, productId: b.productId, delta: b.qty, reason: 'opening (moved to movements)', by: 'server', at });
     });
+    this.version(11).stores({ boostRequests: `${common}, kind, status` }); // Business Boost requests (12 Nov 2026)
   }
 }
 export { RoxDB };

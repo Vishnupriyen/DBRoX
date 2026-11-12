@@ -273,6 +273,9 @@ export interface StockMove extends Base {
   at: string;
 }
 
+/** Business Boost: a distributor asked for a service (GST/CA help, working capital, insurance, equipment, data, Tally) */
+export interface BoostRequest extends Base { kind: string; note?: string; status: 'open' | 'done' | 'cancelled'; by: string }
+
 export interface StaffRequest extends Base {
   kind: 'return' | 'damage' | 'count';
   by: string; role: string; date: string;
@@ -527,7 +530,7 @@ export type TableName =
   | 'settings' | 'staff' | 'companies' | 'products' | 'shops' | 'batches' | 'schemes'
   | 'orders' | 'invoices' | 'creditNotes' | 'payments' | 'purchases' | 'expenses'
   | 'bankLines' | 'claimEntries' | 'claims' | 'vans' | 'audit' | 'visits' | 'targets' | 'trips' | 'dayCloses' | 'dayPlans' | 'liteEntries' | 'checkIns' | 'leaves' | 'advances'
-  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests' | 'stockMoves';
+  | 'territories' | 'dbLinks' | 'secondary' | 'secondaryReturns' | 'dbStock' | 'primaryInvoices' | 'inbound' | 'grns' | 'primaryOrders' | 'dbClaims' | 'claimDecisions' | 'shopRequests' | 'workDays' | 'travelClaims' | 'receipts' | 'tesraxDays' | 'openingDues' | 'requests' | 'stockMoves' | 'boostRequests';
 
 /** TESRAX report: one record per staff per day (small to sync; the owner reads every staff's days).
  *  Counts every message to TESRAX: its speed on the real phone, whether it was understood, and what happened to the table it prepared. */

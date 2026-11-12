@@ -126,7 +126,7 @@ if (require.main === module) (async () => {
     }
     // the Menu (was More, 12 Nov 2026) + engine
     await p.click('nav >> text=Menu'); await check('Menu');
-    for (const item of ['Bills', 'Claims', 'Staff & access', 'Company links', 'Settings', 'Plan & billing']) {
+    for (const item of ['Bills', 'Claims', 'Staff & access', 'Company links', 'Settings', 'Plan & billing', 'Offers and services']) {
       const sel = `.menu-chip:text-is("${item}")`;
       if (await p.$(sel)) { await p.click(sel); await check('Menu › ' + item); await p.click('nav >> text=Menu'); await p.waitForTimeout(200); }
     }

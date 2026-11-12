@@ -46,7 +46,8 @@
     "tesraxDays",
     "openingDues",
     "requests",
-    "stockMoves"
+    "stockMoves",
+    "boostRequests"
   ],
   "read": {
     "owner": "*",
@@ -195,7 +196,8 @@
       "primaryOrders",
       "receipts",
       "openingDues",
-      "requests"
+      "requests",
+      "boostRequests"
     ],
     "salesman": [
       "orders",

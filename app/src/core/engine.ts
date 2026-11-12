@@ -92,6 +92,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'tesrax', name: 'TESRAX report', roles: ['owner'], words: ['tesrax report', 'tesrax score', 'tesrax misses', 'tesrax mistakes'] },
   { page: 'billing', name: 'Plan & billing', roles: ['owner'], words: ['plan and billing', 'plan billing', 'my plan', 'subscription', 'licence', 'license', 'renew', 'renewal', 'app payment'] },
   { page: 'beat', name: 'Beats', roles: ['owner', 'office'], words: ['beats', 'beat builder', 'beat plan', 'beat list', 'make beat', 'beat setup'] },
+  { page: 'boost', name: 'Business Boost', roles: ['owner', 'office'], words: ['business boost', 'boost', 'boost services', 'services', 'offers', 'offers and services', 'gst filing', 'ca help', 'working capital', 'business loan', 'stock insurance', 'godown insurance', 'insurance', 'printer', 'barcode scanner', 'tally help'] },
   { page: 'module:bill', name: 'Bill', roles: ['owner', 'office'], words: ['bill module', 'billing module'] },
   { page: 'module:delivery', name: 'Delivery', roles: ['owner', 'office'], words: ['delivery', 'delivery module', 'deliveries'] },
   { page: 'module:collection', name: 'Collection', roles: ['owner', 'office'], words: ['collection module', 'collections module'] },
