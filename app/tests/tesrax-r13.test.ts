@@ -26,6 +26,9 @@ describe('P&L file', () => {
     expect(r.text).toMatch(/^P&L .*: income ₹/);
     const last = f.sheets[0].rows.find(x => x[0] === 'PROFIT' || x[0] === 'LOSS')!;
     expect(last[1]).toBe(Math.abs(t.profit));
+    expect(f.sheets[0].header[1]).toBe('₹ (before GST)');
+    const head = f.sheets[0].rows.slice(0, 5).map(x => x.join(' ')).join('\n');
+    expect(head).toMatch(/Made on/); expect(f.sheets[0].rows.some(x => /GST is not income/.test(String(x[0])))).toBe(true);
   });
   it('"pnl excel today" is today; office and staff are told it is the owner\'s', async () => {
     expect((await say('pnl excel today')).text).toMatch(/^P&L Today/);
@@ -40,8 +43,12 @@ describe('GST summary file', () => {
     const { r, f } = await send('send gst summary october');
     const s = await salesSummary({ from: '2026-10-01', to: '2026-10-31' });
     expect(r.text).toMatch(/^GST Oct 2026: net sales/);
-    expect(f.sheets[0].rows.find(x => x[0] === 'Total tax')![1]).toBe(s.tax);
-    expect(f.sheets[0].rows.find(x => x[0] === 'GSTR-1 due')![1]).toMatch(/11 Nov/);
+    expect(f.sheets[0].rows.find(x => x[0] === 'Tax payable (net of credit notes)')![1]).toBe(s.tax);
+    expect(f.sheets[0].rows.find(x => String(x[0]).startsWith('CGST (net'))![1]).toBe(s.net.cgst);
+    expect(f.sheets[0].rows.find(x => x[0] === 'Less: credit notes — taxable')![1]).toBe(s.credited.taxable); // shown positive
+    expect(f.sheets[0].rows.find(x => String(x[0]).startsWith('GSTR-1 due'))![1]).toMatch(/11 Nov/);
+    const head = f.sheets[0].rows.slice(0, 5).map(x => x.join(' ')).join('\n');
+    expect(head).toMatch(/Period: Oct 2026/); expect(head).toMatch(/Made on/); expect(head).toMatch(/Amounts in ₹/);
   });
 });
 describe('day close, attendance, trips', () => {
@@ -49,7 +56,8 @@ describe('day close, attendance, trips', () => {
     const { r, f } = await send('day close report');
     const d = await daySummary(today());
     expect(r.text).toMatch(/^Day close/);
-    expect(f.sheets[0].rows.find(x => x[0] === 'Sales (after returns)')![1]).toBe(d.sales);
+    expect(f.sheets[0].rows.find(x => x[0] === 'Sales with GST (after returns)')![1]).toBe(d.sales);
+    expect(f.sheets[0].rows.some(x => x[0] === 'Credit notes (with GST)')).toBe(true);
     expect(f.sheets.map(s => s.name)).toEqual(['Summary', 'Vans', 'Cash by staff', 'UPI & cheques']);
   });
   it('"attendance report" is today; "attendance excel october" is the month', async () => {

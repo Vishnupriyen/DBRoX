@@ -1,6 +1,6 @@
 // Files for screens that had none (12 Nov 2026, owner: "every report it should send"): P&L, GST summary, day close,
 // attendance and trip reports. Each uses the SAME figures as its screen; TESRAX sends them ("send p&l", "day close report").
-import { db, getSettings, today } from './db';
+import { db, getSettings, monthEnd, today } from './db';
 import { inr, plural, showDate, showMonth } from './i18n';
 import { r2 } from './ledger';
 import { profitAndLoss, pnlTotals } from './pnl';
@@ -12,6 +12,11 @@ import { downloadWorkbook } from './readers';
 import type { Trip } from './types';
 
 type Sheet = { name: string; header: string[]; rows: (string | number)[][] };
+/** the lines an accountant needs at the top of any file: firm, GSTIN, period, the day it was made */
+async function headBlock(period: string, note = 'Amounts in ₹') {
+  const st = await getSettings();
+  return [[`${st.firmName}${st.gstin ? ` · GSTIN ${st.gstin}` : ' · GSTIN not set'}`, ''], [`Period: ${period}`, ''], [`Made on ${showDate(today())} · ${note}`, ''], ['', '']] as (string | number)[][];
+}
 export interface FileReply { text: string; file: string; sheets: Sheet[] }
 
 /** P&L for today or this month (the P&L screen's periods) */
@@ -19,33 +24,40 @@ export async function pnlFile(period: 'today' | 'month'): Promise<FileReply> {
   const d = await profitAndLoss(period), t = pnlTotals(d);
   const label = period === 'today' ? `Today ${showDate(today())}` : showMonth(today().slice(0, 7));
   const heads: (string | number)[][] = [
-    ['INCOME', ''], ...d.income.map(h => [h.label, h.amount]), ['Total income', t.income], ['', ''],
+    ...await headBlock(label, 'Amounts in ₹, before GST'),
+    ['INCOME', ''], ...d.income.map(h => [h.label, h.amount]), ['Total income (before GST)', t.income], ['', ''],
     ['EXPENSES', ''], ...d.expense.map(h => [h.label, h.amount]), ['Total expenses', t.expense], ['', ''],
-    [t.profit >= 0 ? 'PROFIT' : 'LOSS', Math.abs(t.profit)], ['Profit % of income', `${t.pct}%`],
+    [t.profit >= 0 ? 'PROFIT' : 'LOSS', Math.abs(t.profit)], ['Profit % of income', `${t.pct}%`], ['', ''],
+    ['Note: GST is not income — sales and credit notes are before GST; GST collected is paid to the government.', ''],
   ];
   const items = [...d.income.map(h => ({ h, side: 'Income' })), ...d.expense.map(h => ({ h, side: 'Expense' }))]
     .flatMap(({ h, side }) => h.items.map(i => [side, h.label, i.d ? showDate(i.d) : '', i.t, i.v]));
   return {
     text: `P&L ${label}: income ${inr(t.income)}, expenses ${inr(t.expense)}, ${t.profit >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(t.profit))}.`,
     file: `PnL-${period === 'today' ? today() : today().slice(0, 7)}`,
-    sheets: [{ name: 'P&L', header: [`Profit & loss — ${label}`, '₹'], rows: heads }, { name: 'Details', header: ['Side', 'Head', 'Date', 'Item', '₹'], rows: items }],
+    sheets: [{ name: 'P&L', header: [`Profit & loss — ${label}`, '₹ (before GST)'], rows: heads }, { name: 'Details', header: ['Side', 'Head', 'Date', 'Item', '₹'], rows: items }],
   };
 }
 
 /** GST summary of a month: net sales, tax by type, bills, credit notes, GSTR-1 due date (as the GST screen) */
 export async function gstSummaryFile(month: string): Promise<FileReply> {
-  const end = `${month}-31`;
-  const s = await salesSummary({ from: `${month}-01`, to: end });
+  const s = await salesSummary({ from: `${month}-01`, to: monthEnd(month) });
   const st = await getSettings();
   const due = gstr1Due(`${month}-01`);
+  const tax = (x: { cgst: number; sgst: number; igst: number }) => r2(x.cgst + x.sgst + x.igst);
   const rows: (string | number)[][] = [
+    ...await headBlock(showMonth(month)),
     ['Bills', s.bills], ['Credit notes', s.notes], ['', ''],
-    ['Billed — taxable', s.billed.taxable], ['Credit notes — taxable', -s.credited.taxable], ['Net sales before GST', s.net.taxable], ['', ''],
-    ['CGST', s.net.cgst], ['SGST', s.net.sgst], ['IGST', s.net.igst], ['Total tax', s.tax], ['Net sales with GST', s.net.total], ['', ''],
-    ['GSTR-1 due', showDate(due)],
+    ['Billed — taxable', s.billed.taxable], ['Billed — tax', tax(s.billed)],
+    ['Less: credit notes — taxable', s.credited.taxable], ['Less: credit notes — tax', tax(s.credited)], ['', ''],
+    ['Net sales before GST', s.net.taxable],
+    ['CGST (net of credit notes)', s.net.cgst], ['SGST (net of credit notes)', s.net.sgst], ['IGST (net of credit notes)', s.net.igst],
+    ['Tax payable (net of credit notes)', s.tax], ['Net sales with GST', s.net.total], ['', ''],
+    ['GSTR-1 due (monthly filer)', showDate(due)],
+    ['Quarterly (QRMP) filers: GSTR-1 by the 13th after the quarter ends.', ''],
   ];
   return {
-    text: `GST ${showMonth(month)}: net sales ${inr(s.net.taxable)} before GST on ${plural(s.bills, 'bill')}, tax ${inr(s.tax)}; GSTR-1 due ${showDate(due)}.`,
+    text: `GST ${showMonth(month)}: net sales ${inr(s.net.taxable)} before GST on ${plural(s.bills, 'bill')}, tax ${inr(s.tax)} after credit notes; GSTR-1 due ${showDate(due)} (monthly).`,
     file: `GST-summary-${month}`,
     sheets: [{ name: 'GST summary', header: [`GST summary — ${showMonth(month)}${st.gstin ? ` · GSTIN ${st.gstin}` : ''}`, '₹'], rows }],
   };
@@ -55,8 +67,9 @@ export async function gstSummaryFile(month: string): Promise<FileReply> {
 export async function dayCloseFile(date: string): Promise<FileReply> {
   const d = await daySummary(date);
   const summary: (string | number)[][] = [
-    ['Bills', d.billsToday], ['Sales (after returns)', d.sales], ['Collected', d.collected], ['Cheques still to clear', d.chequesToClear],
-    ['Credit notes', d.creditNotes], ['Cash held from earlier days', d.olderCash], ['Waiting for shop to confirm', d.waiting], ['Day closed', d.closed ? 'yes' : 'no'],
+    ...await headBlock(showDate(date), 'Amounts in ₹, with GST'),
+    ['Bills', d.billsToday], ['Sales with GST (after returns)', d.sales], ['Collected', d.collected], ['Cheques still to clear', d.chequesToClear],
+    ['Credit notes (with GST)', d.creditNotes], ['Cash held from earlier days', d.olderCash], ['Waiting for shop to confirm', d.waiting], ['Day closed', d.closed ? 'yes' : 'no'],
   ];
   const vans = d.trips.map(t => [t.van, t.bills, t.value, t.delivered, t.partial, t.returned]);
   const cash = d.cash.map(c => [c.name, c.n, c.collected, c.handed, c.pending]);
@@ -66,7 +79,7 @@ export async function dayCloseFile(date: string): Promise<FileReply> {
     file: `Day-close-${date}`,
     sheets: [
       { name: 'Summary', header: [`Day close — ${showDate(date)}`, '₹'], rows: summary },
-      { name: 'Vans', header: ['Van', 'Bills', 'Value ₹', 'Delivered', 'Part', 'Returned'], rows: vans },
+      { name: 'Vans', header: ['Van', 'Bills', 'Value ₹ (with GST)', 'Delivered', 'Part', 'Returned'], rows: vans },
       { name: 'Cash by staff', header: ['Staff', 'Payments', 'Collected ₹', 'Handed ₹', 'Still with them ₹'], rows: cash },
       { name: 'UPI & cheques', header: ['Mode', 'Ref', '₹', 'By'], rows: other },
     ],
