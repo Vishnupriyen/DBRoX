@@ -87,6 +87,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
 ];
 function screenFor(text: string, role: Role, exact = false): Reply | null {
   if (exact) {
+    text = text.replace(/^((?:open|show|go to|see|view) (?:the |my |all )?)(?:bill|billing)( screen| page)?$/, '$1bills$2'); // "open bill" = "open bills"
     // only a screen's full name: a phrase of 2+ words found whole, or the whole message being that one word
     const bare = text.replace(/^(show me|go to|open|show|goto|see|view)\s+/, '').replace(/(\s+(screen|page|please|now|this month|today|for this month|for today|open))+$/, '').trim();
     const hit = SCREENS.filter(s => s.words.some(w => !/[^\x00-\x7f]/.test(w) && (w.includes(' ') ? ` ${bare} `.includes(` ${w} `) : bare === w)))
@@ -185,7 +186,7 @@ Short forms, typos and numbers in words work too: "murugan 5k pd", "selvam bal",
 /** one request (handle() in converse.ts splits several and links follow-ups) */
 export async function handleOne(said: string, files: File[]): Promise<Reply> {
   const textIn = cleanSaid(said); // numbers in words, "5k" and shorthand → plain words
-  const text = norm(textIn);
+  const text = spokenCodes(norm(textIn));
   learnNames(await db.products.toArray()); // "5 Star", "Total 10": numbers that are part of names in this catalogue
   const settings = await getSettings();
   const mods = (await licenceState(!!ENV_SERVER_URL, settings)).mods; // what the distributor has paid for, never a phone setting
@@ -234,9 +235,9 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   }
 
   // ------------------------ exports ------------------------
-  if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportTally(monthIn(text)); }
-  if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
-  if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny(); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
+  if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny('The Tally file'); return need('accountant', mods) ?? exportTally(monthIn(text)); }
+  if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny('The GSTR-1 file'); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
+  if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny('The e-invoice file'); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
   if (has(text, W.claimFile)) { if (!can(role, 'claims')) return deny(); return need('inventory', mods) ?? exportClaims(monthIn(text)); }
 
   // ------------------------ a question about profit: answered in words, the P&L one tap away ------------------------
@@ -446,7 +447,11 @@ export function payAmount(r: string): number | undefined {
   return undefined;
 }
 
-function deny(): Reply { return { text: 'Your role cannot do this. Ask the owner.', tone: 'warn', refused: true }; }
+function deny(what?: string): Reply { return { text: what ? `${what} is done by the owner or office. Ask them, or log in as one of them.` : 'Your role cannot do this. Ask the owner.', tone: 'warn', refused: true }; }
+/** voice typing splits short codes: "GST R", "GST R1", "g s t r" → gstr / gstr1 ("gst" alone stays gst) */
+export function spokenCodes(t: string) {
+  return t.replace(/\bg ?s ?t ?r(?: ?(1|one))?\b/g, (_m, one) => (one ? 'gstr1' : 'gstr'));
+}
 
 function monthIn(t: string): string {
   const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
