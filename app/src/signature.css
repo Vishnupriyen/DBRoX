@@ -60,3 +60,6 @@ body,button,input,select,textarea{font-family:var(--body)}
    check-in start below it — env() is the bar's real height on newer phones; older WebViews are padded by Android itself */
 .top{padding-top:calc(14px + env(safe-area-inset-top, 0px))}
 .login{padding-top:calc(24px + env(safe-area-inset-top, 0px))}.login-hero{padding-top:calc(28px + env(safe-area-inset-top, 0px))}
+/* one step smaller (12 Nov 2026, owner: "fonts are very big"): Montserrat reads ~10% larger than Arial at the same size;
+   all text scales together (rem), tap areas set in px stay the same, the phone's large-text setting still applies */
+html{font-size:93.75%}
