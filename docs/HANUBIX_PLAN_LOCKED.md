@@ -30,6 +30,18 @@ typo help, repeat last order first, route-ordered collection, tappable day-close
 no-trip page, offline "will send" note, short New shop form, reports in one place, company rows tappable, Team today call/remind,
 reject reason and approve undo; plus owner alerts, signed-bill photo, beat on a map.
 
+## Business Boost (name locked by the founder, 12 Nov 2026 — built)
+Menu → Business Boost → "Offers and services" (owner and office): offers running now (the real schemes), and six services to
+request — GST filing and CA help, working capital, stock and godown insurance, printers and scanners, staff data plans, Tally help.
+A request is saved once, synced, and opens WhatsApp to the Hanubix team when the support number is set in the build
+(VITE_SUPPORT_WHATSAPP). Credit and insurance only through licensed banks, NBFCs and insurers — Hanubix never lends or sells
+insurance. Later, with the control panel: requests land there, and a "New brands for your area" section. A 10th department,
+"Opportunities and partnerships" (opportunity scout, partnerships manager, catalogue keeper, lead router), runs it.
+
+## Updates without stopping the business (12 Nov 2026 — built)
+Server updates at night with a backup first and automatic step-back if the check fails (`deploy/`); one-step rollback; database
+changes only ever add (a test enforces it); app updates to 1–2 pilots first; old and new phones share the server safely.
+
 ## Later (parked by the founder)
 - ERP integrations: Tally (two-way, connector on the office PC) → Busy → Marg; then with the server: Zoho Books, SAP Business One,
   SAP S/4HANA / ECC for brands (OData, nightly file as fallback); a standard Excel/CSV template and an open API for any other.

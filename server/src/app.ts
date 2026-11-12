@@ -150,7 +150,7 @@ export async function buildApp(pool: pg.Pool) {
   // Sync: push this phone's changes, pull everything newer than the phone's cursor.
   app.post('/v1/sync', async req => {
     const c = await auth(req);
-    const b = req.body as { cursor?: number; moves?: number; changes?: { table: string; id: string; updatedAt: string; data: Record<string, unknown> }[] };
+    const b = req.body as { cursor?: number; moves?: number; tables?: unknown; changes?: { table: string; id: string; updatedAt: string; data: Record<string, unknown> }[] };
     // a phone that sends stock as movements (this app); an older app sends whole lots (see 'batches' below)
     const movesPhone = b.moves === 1;
     const changes = (Array.isArray(b.changes) ? b.changes : []).slice(0, 2000);
@@ -353,7 +353,10 @@ export async function buildApp(pool: pg.Pool) {
     // manager or rep gets only their own distributors' records, and bills of the last 60 days
     const isCo = (kindCache.get(c.t) ?? (kindCache.set(c.t, await tenantKind(pool, c.t)), kindCache.get(c.t))) === 'company';
     const scope = isCo ? await scopeFor(pool, c.t, c.u) : null;
-    const tables = (READ[c.r] ?? []).filter(t => !(isCo && c.r === 'cadmin' && BIG_TABLES.includes(t)));
+    // a phone lists the tables its version knows: an older phone, during a staged update, is never sent a table it can't store
+    // (a list only narrows what the role may read, never widens it; today's phones send no list and get every table)
+    const knows = Array.isArray(b.tables) ? new Set(b.tables.filter((t): t is string => typeof t === 'string')) : null;
+    const tables = (READ[c.r] ?? []).filter(t => !(isCo && c.r === 'cadmin' && BIG_TABLES.includes(t)) && (!knows || knows.has(t)));
     // a page is cut by size as well as rows (records with photos): the first row always comes, so it always moves on
     const rows = (await pool.query(
       // the history log is 80% of all data: phones get only its last 3 days (morning summary, undo); the full log stays here.

@@ -7,6 +7,7 @@ import type { Base, TableName } from './types';
 import shared from '../../../shared/tables.json';
 // Phone and server load the same shared/tables.json, so a table can never exist on one side only.
 const SYNC_TABLES = shared.tables as TableName[];
+const KNOWN = new Set<string>(SYNC_TABLES);
 
 interface Change { table: string; id: string; updatedAt: string; data: Base }
 
@@ -106,6 +107,7 @@ export async function syncNow(): Promise<string> {
   if (!(await db.meta.get('archiveDone')) && Number((await db.meta.get('cursor'))?.value ?? 0) === 0) await db.meta.put({ key: 'archiveDone', value: 'pending' });
   // keep going until everything is sent and received: stopping early left a busy owner's phone showing only a third of
   // the bills after first login (the cap is only a guard against a server that never says "done")
+  await catchUpNewTables();
   for (let i = 0; i < 2000; i++) {
     const r = await syncOnce();
     msg = r.msg;
@@ -151,6 +153,42 @@ export async function fetchArchive(): Promise<number> {
   return saved;
 }
 
+/**
+ * After an app update that adds a table (Business Boost added one), the phone's place in the sync is already past that table's
+ * earlier records — it was not sent them while it did not know the table. So, once, it fetches just the new tables from the
+ * start, with its own place kept separately; the main sync's place never moves back. A brand-new phone, or a phone moving to
+ * the first version that keeps this list, already has every table it knows. A cut-off catch-up carries on at the next sync.
+ */
+async function catchUpNewTables() {
+  const known = (await db.meta.get('knownTables'))?.value as string[] | undefined;
+  if (!known) { await db.meta.put({ key: 'knownTables', value: SYNC_TABLES }); return; }
+  const fresh = SYNC_TABLES.filter(t => !known.includes(t));
+  if (!fresh.length) { if (known.length !== SYNC_TABLES.length) await db.meta.put({ key: 'knownTables', value: SYNC_TABLES }); return; }
+  const url = await server();
+  if (!url || !navigator.onLine || running) return;
+  running = true;
+  try {
+    let from = Number((await db.meta.get('catchUpCursor'))?.value ?? 0);
+    for (let i = 0; i < 2000; i++) {
+      const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ cursor: from, changes: [], moves: 1, tables: fresh }) });
+      if (!r.ok) return; // tried again at the next sync; the main sync reports any login problem
+      const res: { cursor: number; changes: Change[]; more?: boolean } = await r.json();
+      const rows = (res.changes ?? []).filter(c => fresh.includes(c.table as TableName)); // an older server sends every table: the rest already came
+      await db.transaction('rw', [...fresh.map(t => db.table(t)), db.meta], async () => {
+        for (const c of rows) {
+          const cur = await db.table(c.table).get(c.id);
+          if (!cur || (!cur.dirty && cur.updatedAt <= c.updatedAt)) await db.table(c.table).put({ ...c.data, dirty: 0 });
+        }
+        await db.meta.put({ key: 'catchUpCursor', value: res.cursor });
+      });
+      from = res.cursor;
+      if (!res.more) break;
+    }
+    await db.meta.put({ key: 'knownTables', value: SYNC_TABLES });
+    await db.meta.delete('catchUpCursor');
+  } catch { /* no signal: carried on at the next sync */ } finally { running = false; }
+}
+
 async function syncOnce(): Promise<{ msg: string; more: boolean }> {
   const done = (msg: string, more = false) => ({ msg, more });
   const url = await server();
@@ -179,7 +217,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
         if (++n >= 500) { full = true; break; }
       }
     }
-    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes, moves: 1 }) }); // moves: this phone sends stock as movements
+    const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes, moves: 1, tables: SYNC_TABLES }) }); // moves: this phone sends stock as movements; tables: only what this version knows
     if (r.status === 403 && (await r.clone().json().catch(() => ({}))).error === 'Access removed') {
       await wipeLocal(); window.dispatchEvent(new Event('dbrox:logout'));
       return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.');
@@ -205,6 +243,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
         if (refused.has(k)) held.add(k);
       }
       for (const c of res.changes) {
+        if (!KNOWN.has(c.table)) continue; // a table from a newer version (an older server ignores "tables"): never stops the sync
         const cur = await db.table(c.table).get(c.id);
         if (!cur || (!cur.dirty && cur.updatedAt <= c.updatedAt)) await db.table(c.table).put({ ...c.data, dirty: 0 });
       }

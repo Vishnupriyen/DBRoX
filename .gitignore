@@ -6,3 +6,6 @@ dist/
 .DS_Store
 server/shared/
 app/e2e/out/
+deploy/backups/
+deploy/.live-tag
+deploy/.previous-tag

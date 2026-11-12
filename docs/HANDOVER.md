@@ -17,6 +17,11 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   TESRAX opens on double tap, Powered by TESRAX only on the animated opening screen, Menu (grouped), text one step smaller,
   header below Android's status bar.
 - Live vans map: Google's native map on Android when the GitHub secret MAPS_API_KEY is set (free in India); OpenStreetMap until then.
+- **Business Boost** (name locked): Menu group for owner and office — offers running now + six services to request (see plan doc).
+  Waiting: the owner's WhatsApp number for requests → set as the VITE_SUPPORT_WHATSAPP build value.
+- **Updates without stopping the business**: phones tell the server which tables they know (old and new phones share it during a
+  staged rollout; a phone fetches a new table's records once after updating); `deploy/` kit for Hostinger — night-only deploy,
+  backup first, health check with automatic step-back, `rollback.sh`, nightly checked backup to Google Cloud; migrations only add.
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner
