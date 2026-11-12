@@ -22,6 +22,9 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - **Updates without stopping the business**: phones tell the server which tables they know (old and new phones share it during a
   staged rollout; a phone fetches a new table's records once after updating); `deploy/` kit for Hostinger — night-only deploy,
   backup first, health check with automatic step-back, `rollback.sh`, nightly checked backup to Google Cloud; migrations only add.
+- **Older phones**: built for Android System WebView 87+ (late 2020); older shows an "update needed" page (never a blank screen);
+  no CSS :has(). Phone check before a release: Android 9 (WebView 69 → update page), 14 and 16; 16 KB check on every APK; a
+  phone-check issue now fails the run (it always ended green before).
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner
@@ -54,5 +57,5 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   create the Google Maps key and add it as the MAPS_API_KEY secret.
 
 ## Latest APK
-https://github.com/Vishnupriyen/Hanubix/actions/runs/43169494723/artifacts/13921223430 (sign in to GitHub first). Newer pushes build a
+https://github.com/Vishnupriyen/Hanubix/actions/runs/43240572801/artifacts/13954407358 (sign in to GitHub first). Newer pushes build a
 new one automatically.
