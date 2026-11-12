@@ -7,8 +7,10 @@ cd "$(dirname "$0")"
 OUT="${GATE_OUT:-e2e/out}"; rm -rf "$OUT"; mkdir -p "$OUT"
 step() { printf '\n\033[1m▶ %s\033[0m\n' "$1"; }
 step '1/6 Type check';                 npx tsc -b
-step '2/6 Tests (UTC)';                TZ=UTC npx vitest run
-step '3/6 Tests (Asia/Kolkata)';       TZ=Asia/Kolkata CHAOS_SEEDS="${CHAOS_SEEDS:-6}" CHAOS_STEPS="${CHAOS_STEPS:-400}" npx vitest run
+# The two big TESRAX sentence sets (10,000+ messages) do not depend on the time zone: they run once, in Indian time (step 3).
+# Every other test runs in both time zones. (12 Nov 2026: gate 15 → ~7 minutes, nothing checked less.)
+step '2/6 Tests (UTC)';                TZ=UTC npx vitest run --maxWorkers=2 --exclude 'tests/tesrax-5000*.test.ts' --exclude 'tests/tesrax-r10*.test.ts' --exclude 'node_modules/**'
+step '3/6 Tests (Asia/Kolkata)';       TZ=Asia/Kolkata CHAOS_SEEDS="${CHAOS_SEEDS:-6}" CHAOS_STEPS="${CHAOS_STEPS:-400}" npx vitest run --maxWorkers=2  # both processors
 step '4/6 Build';                      npx vite build
 step '5/6 Business day, end to end';
 PORT="${GATE_PORT:-4173}"; export E2E_URL="http://localhost:$PORT"   # GATE_PORT lets two copies run the gate side by side
