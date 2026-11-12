@@ -1,7 +1,7 @@
 // TESRAX in a conversation: one message can ask for several things ("Murugan paid 500, send 2 case surf"), and the
 // next message can refer to the table just shown ("make it 600", "for Selvam", "add 2 vim", "yes", "no").
 // Every part still goes through handleOne(), and nothing is saved before ✓.
-import { db, newId } from './db';
+import { db, getSettings, newId } from './db';
 import { bestProduct, cleanSaid, findShopInText, hasWord as has, learnNames, norm, parseItemLines, protectNames, toPieces } from './match';
 import { dayIn, handleOne, SCREENS, setDry, W, type Reply } from './engine';
 import { categoryOf, orderOps } from './modify';
@@ -12,6 +12,8 @@ export interface Context { last?: Reply }
 
 export async function handle(said: string, files: File[], ctx?: Context): Promise<Reply> {
   if (!files.length && ctx?.last) { const f = await followUp(said, ctx.last); if (f) return f; }
+  // a rep's day of expenses ("lunch 120, bus 45, lodge 800") is one table, not one per comma
+  if (!files.length && (await getSettings()).kind === 'company') { const { repExpenses } = await import('./companyEngine'); const e = /\d/.test(said) ? repExpenses(cleanSaid(said)) : null; if (e) return e; }
   if (!files.length) {
     const groups = await splitIntents(said);
     if (groups.length === 1 && groups[0] !== said) return handleOne(groups[0], []);

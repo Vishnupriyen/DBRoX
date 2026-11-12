@@ -19,10 +19,10 @@ Head office: upload your SAP or Tally sales register in Invoices to distributors
 
 const SCREENS: { page: string; name: string; words: string[]; roles?: Role[] }[] = [
   { page: 'co-sales', name: 'Sales', words: ['sales', 'secondary', 'primary', 'sell through', 'sold'] },
-  { page: 'co-stock', name: 'Stock at distributors', words: ['stock', 'low stock', 'days of stock', 'stock cover', 'inventory'] },
+  { page: 'co-stock', name: 'Stock at distributors', words: ['stock', 'low stock', 'days of stock', 'stock cover', 'inventory', 'stock at distributors', 'stock at distributor', 'distributor stock', 'distributors stock'] },
   { page: 'co-distributors', name: 'Distributors', words: ['distributors', 'distributor', 'invite', 'dbs', 'db list'] },
   { page: 'co-outlets', name: 'Shops', words: ['shops', 'outlets', 'retailers', 'outlet list'] },
-  { page: 'co-invoices', name: 'Invoices to distributors', words: ['invoices', 'invoice', 'sales register', 'primary invoices', 'upload invoices'], roles: ['cadmin'] },
+  { page: 'co-invoices', name: 'Invoices to distributors', words: ['invoices', 'invoice', 'sales register', 'primary invoices', 'upload invoices', 'invoices to distributors', 'invoice to distributors', 'distributor invoices', 'invoices to distributor'], roles: ['cadmin'] },
   { page: 'co-products', name: 'Products & prices', words: ['products', 'price', 'prices', 'price list', 'ptr', 'ptd'], roles: ['cadmin'] },
   { page: 'co-schemes', name: 'Schemes', words: ['schemes', 'scheme', 'offers'], roles: ['cadmin'] },
   { page: 'co-team', name: 'Team', words: ['team', 'staff', 'reps', 'my team'] },
@@ -41,8 +41,8 @@ const REP_SCREENS: { page: string; name: string; words: string[] }[] = [
 ];
 
 // "lunch 120, bus 45, lodge 800" → the rep's expenses (checked against the travel policy in the month's claim)
-const EXP: [RegExp, string][] = [[/\b(lunch|dinner|breakfast|food|meal|meals|tea|snacks|coffee)\b/, 'Food'], [/\b(bus|train|ticket)\b/, 'Bus'], [/\b(auto|rickshaw|cab|taxi|share auto)\b/, 'Auto'], [/\b(lodge|room|hotel|stay)\b/, 'Lodge'], [/\b(phone|recharge|mobile|data)\b/, 'Phone']];
-function repExpenses(text: string): Reply | null {
+const EXP: [RegExp, string][] = [[/\b(lunch|dinner|breakfast|food|meal|meals|tea|snacks|coffee)\b/, 'Food'], [/\b(bus|train|ticket)\b/, 'Bus'], [/\b(auto|rickshaw|cab|taxi|share auto)\b/, 'Auto'], [/\b(lodge|room|hotel|stay)\b/, 'Lodge'], [/\b(phone|recharge|mobile|data)\b/, 'Phone'], [/\b(petrol|diesel|fuel|parking|toll)\b/, 'Other']];
+export function repExpenses(text: string): Reply | null {
   const rows: Row[] = [];
   for (const part of text.split(/,|\n|;|\band\b/)) {
     const t = norm(part); const amt = t.match(/\b(\d+(?:\.\d+)?)\b/); if (!amt) continue;
@@ -111,7 +111,7 @@ export async function handleCompany(textIn: string, role: Role): Promise<Reply> 
   const links = await myLinks(session().userId);
   const ids = new Set(links.map(l => l.id));
   // "sales this month" / "sales of <distributor>": the number, then the screen
-  if (has(text, ['sales', 'sold', 'secondary', 'sell through'])) {
+  if (has(text, ['sales', 'sold', 'secondary', 'sell through']) && !/\b(sales register|primary invoices?)\b/.test(text)) {
     const rows = (await salesByDistributor(thisMonth())).filter(r => ids.has(r.link.id));
     const one = rows.find(r => text.includes(norm(r.link.name)) || norm(r.link.name).split(' ').some(w => w.length > 4 && text.split(' ').includes(w)));
     const pick = one ? [one] : rows;

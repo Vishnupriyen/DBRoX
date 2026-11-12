@@ -95,8 +95,9 @@ export function learnNames(products: Product[]) {
   JOINS = [...joins];
 }
 /** "&"/"and" that belong to a product name are hidden from message splitting */
+const STATIC_JOINS = /\b(profit|p) and (loss|l)\b|\b(plan|cheques?|vans?|staff|travel) and (billing|upi|drivers?|access|expenses)\b/gi;
 export function protectNames(t: string): string {
-  let out = t;
+  let out = t.replace(STATIC_JOINS, m => m.replace(' and ', ' ＋ '));
   for (const j of JOINS) { const i = out.toLowerCase().indexOf(j); if (i >= 0) out = out.slice(0, i) + j.replace(/ (&|and) /, ' ＋ ') + out.slice(i + j.length); }
   return out;
 }
@@ -310,6 +311,20 @@ const SAY: [RegExp, string][] = [
   [/\bbal\b/gi, 'balance'], [/\bo\/s\b/gi, 'outstanding'], [/\b(qty)\b/gi, 'quantity'],
   [/\b(settled|settle|cleared)\b/gi, 'paid'],
   [/\b(sir|bro|boss|madam|mam)\b/gi, ' '],
+  // polite openings add nothing: "can you please book 5 case surf for Kumar Mart", "i want to order 5 case surf"
+  [/^\s*(?:(?:can|could|would|will) you\s+)?(?:kindly\s+)?(?:please\s+)?(?=\w)/i, ''], [/^\s*(?:i|we) (?:want|need|would like|wanna|like) to\s+(?=\w)/i, ''],
+  // short forms and typing slips for screen, report and file names (round 10)
+  [/\b(rpt|reprt|repot|raport)\b/gi, 'report'], [/\b(rpts|reprts|repots)\b/gi, 'reports'], [/\b(rtn|rtrn|retrn|rtns)\b/gi, 'return'],
+  [/\b(colln|collctn|collectn|coln|collcn)\b/gi, 'collection'], [/\bstmt\b/gi, 'statement'], [/\b(stk|stok|stck)\b/gi, 'stock'], [/\b(dmg|damge)\b/gi, 'damage'], [/\b(dmgs|damges)\b/gi, 'damages'],
+  [/\bagng\b/gi, 'ageing'], [/\b(outstdg|outstndg|outstnding)\b/gi, 'outstanding'], [/\bexp\s+(list|report)\b/gi, 'expense $1'], [/\b(expns|expences|expnses|expnse|expence)\b/gi, 'expenses'],
+  [/\bsmry\b/gi, 'summary'], [/\bsalry\b/gi, 'salary'], [/\bsal\s+sheet\b/gi, 'salary sheet'], [/^\s*report\s*$/i, 'reports'], [/\b(attndnce|attendence|attendnce|atendance)\b/gi, 'attendance'], [/\bapprovls\b/gi, 'approvals'],
+  [/\b(ordrs|odrs)\b/gi, 'orders'], [/\bpndg\b/gi, 'pending'], [/\bdel\s+(plan|status)\b/gi, 'delivery $1'], [/\bclm\b/gi, 'claim'], [/\btracer\b/gi, 'tracker'],
+  [/\b(cheq|cheqs|chqs)\b/gi, 'cheques'], [/\blst\b/gi, 'list'], [/\breconcil\b/gi, 'reconcile'], [/\bday\s+clos\b/gi, 'day close'], [/\bcash\s*flw\b/gi, 'cash flow'], [/\bcashflw\b/gi, 'cashflow'],
+  [/\bp\s+n\s+l\b/gi, 'pnl'], [/\bproft\b/gi, 'profit'], [/\b(setings|sttings|settngs|settigs)\b/gi, 'settings'], [/\bstaf\b/gi, 'staff'], [/\b(empolyees|employes|emplyees|empoyees)\b/gi, 'employees'],
+  [/\bsubscripton\b/gi, 'subscription'], [/\b(comp|co)\s+(bills?|invoices?)\b/gi, 'company $2'], [/\b(to|from)\s+co\b/gi, '$1 company'], [/\bshps\b/gi, 'shops'],
+  [/\b(movrs|movrz)\b/gi, 'movers'], [/\bhi\s+margin\b/gi, 'high margin'], [/\blo\s+margin\b/gi, 'low margin'], [/\b(dybook|dbook|day\s+bk|dayboook)\b/gi, 'day book'],
+  [/\bg\s+s\s+t\b/gi, 'gst'], [/\binventry\b/gi, 'inventory'], [/\baccountnt\b/gi, 'accountant'], [/\bpay\s+roll\b/gi, 'payroll'], [/\bpurch\b/gi, 'purchase'], [/\bshet\b/gi, 'sheet'],
+  [/\bn\b/gi, 'and'], [/\bclaims?\s+(excel|sheet)\b/gi, 'claim file'],
   // spelling slips staff make every day
   [/\b(desel|deisel|deisal|disel|diesal|dieseal|deasel)\b/gi, 'diesel'],
   // Tamil typed in English letters (Tanglish), as distributor staff type it

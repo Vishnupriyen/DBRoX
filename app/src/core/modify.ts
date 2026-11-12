@@ -92,7 +92,9 @@ export async function modifyIntent(c: ModCtx): Promise<Reply | null> {
   if (bounce || (cancel && (has(t, PAY) || (c.shop && numbersIn(c.rest).length)))) return paymentCancel(c, bounce);
 
   // expenses: "diesel was 1400 not 1500", "delete the tea expense 120"
-  if (c.isExpense && !c.shop && (cancel || c.fixOf(t) || (edit && numbersIn(c.textIn).length))) return expenseFix(c, cancel);
+  // "add expense diesel 1500" / "enter toll 120" is a new entry; only "change / was / not / instead" says an old one is wrong
+  const newEntry = /^(?:please )?(?:add|new|enter|record|log|note|book|post|put)\b/.test(t) && !/\b(change|changed|correct|correction|instead|wrong|was|not|edit|update|replace|mistake)\b/.test(t);
+  if (c.isExpense && !c.shop && (cancel || c.fixOf(t) || (edit && !newEntry && numbersIn(c.textIn).length))) return expenseFix(c, cancel);
 
   // stock counts: "surf stock is 240 not 288", "physical count surf 240", "6 surf short"
   if (!c.shop && !c.isDamage && !c.isExpense) { const r = await stockFix(c); if (r) return r; }

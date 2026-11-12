@@ -48,34 +48,34 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approve orders', 'orders to approve', 'pending orders', 'orders pending', 'orders waiting', 'approval', 'approvals', 'pending approvals', 'needs my approval', 'needs ok', 'waiting for me', 'new orders'] },
   { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'picked to verify', 'picked orders'] },
   { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'billed bills', 'today bills'] },
-  { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['new shops', 'shops to approve'] },
-  { page: 'targets', name: 'Targets', roles: ['owner', 'office'], words: ['target', 'targets'] },
-  { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my target', 'my targets', 'target', 'targets'] },
+  { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['pending shops', 'new shop requests', 'shop requests', 'new shops', 'shops to approve'] },
+  { page: 'targets', name: 'Targets', roles: ['owner', 'office'], words: ['sales targets', 'sales target', 'target list', 'target', 'targets'] },
+  { page: 'myday', name: 'My day', roles: ['salesman'], words: ['sales target', 'sales targets', 'my target', 'my targets', 'target', 'targets'] },
   { page: 'stockin', name: 'Purchases', roles: ['owner', 'office', 'godown'], words: ['stock in', 'purchases', 'purchase'] },
-  { page: 'ageing', name: 'Ageing', roles: ['owner', 'office', 'godown'], words: ['ageing', 'aging', 'old stock'] },
+  { page: 'ageing', name: 'Ageing', roles: ['owner', 'office', 'godown'], words: ['ageing report', 'aging report', 'ageing list', 'ageing', 'aging', 'old stock'] },
   { page: 'damages', name: 'Damages', roles: ['owner', 'office', 'godown'], words: ['damages', 'damage register', 'damages list', 'damage list'] },
   { page: 'status', name: 'Delivery status', roles: ['owner', 'office'], words: ['delivery status', 'delivered today', 'order status', 'orders status'] },
   { page: 'trips', name: 'Trip reports', roles: ['owner', 'office'], words: ['trip report', 'trip reports', 'trips', 'km'] },
-  { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding list', 'who owes', 'dues'] },
+  { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding screen', 'outstanding page', 'outstanding list', 'who owes', 'dues'] },
   { page: 'cheques', name: 'Cheques & UPI', roles: ['owner', 'office'], words: ['cheques', 'cheque', 'pending cheques', 'upi list', 'cheques and upi', 'cheque and upi', 'upi payments', 'cheques upi'] },
   { page: 'bank', name: 'Bank', roles: ['owner', 'office'], words: ['bank', 'statement'] },
   { page: 'expenses', name: 'Expenses', roles: ['owner', 'office'], words: ['expenses', 'expense list'] },
   { page: 'pnl', name: 'P&L', roles: ['owner'], words: ['p&l', 'p l', 'pnl', 'p and l', 'profit', 'profit and loss', 'how much profit'] },
   { page: 'cashflow', name: 'Cash flow', roles: ['owner'], words: ['cash flow', 'cashflow', 'position', 'net worth', 'loans', 'who will pay', 'what do i owe', 'payables', 'receivables', 'pending cheques'] },
-  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'day book', 'daybook', 'collections by person', 'collection by person', 'collections report', 'collection report'] },
-  { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van list', 'vans', 'add van', 'my vans', 'vans and drivers', 'assign driver'] },
+  { page: 'reports', name: 'Reports', roles: ['owner', 'office'], words: ['report list', 'reports list', 'report menu', 'reports', 'fast movers', 'slow movers', 'fast moving', 'slow moving', 'fast moving items', 'slow moving items', 'not moving', 'dead stock', 'high margin', 'low margin', 'shop wise', 'shop-wise', 'company wise', 'company-wise', 'salesman wise', 'salesman-wise', 'area wise', 'area-wise', 'returns report', 'scheme cost', 'day book', 'daybook', 'collections by person', 'collection by person', 'collections report', 'collection report'] },
+  { page: 'vans', name: 'Vans & drivers', roles: ['owner'], words: ['van and driver', 'vans and driver', 'van and drivers', 'driver list', 'van list', 'vans', 'add van', 'my vans', 'vans and drivers', 'assign driver'] },
   { page: 'export', name: 'Export', roles: ['owner', 'office'], words: ['export', 'tally export'] },
   { page: 'gst', name: 'GST', roles: ['owner', 'office'], words: ['gst', 'gst summary', 'gst report', 'gst status', 'gst due', 'tax summary', 'gstr', 'gstr1', 'gstr-1', 'tax', 'e-invoice'] },
   { page: 'today', name: 'Today (attendance)', roles: ['owner', 'office'], words: ['attendance', 'who is in', 'who came', 'who is absent', 'absent', 'who is present', 'check in', 'checked in'] },
   { page: 'salary', name: 'Salary', roles: ['owner'], words: ['salary', 'salary sheet', 'salaries', 'pay sheet'] },
   { page: 'newshop', name: 'New shop', roles: ['salesman', 'owner', 'office'], words: ['add shop form', 'new shop form', 'onboard shop'] },
   { page: 'plan', name: 'Delivery plan', roles: ['owner', 'office'], words: ['delivery plan', 'plan delivery', 'plan the delivery', 'route plan', 'plan route', 'plan'] },
-  { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking'] },
+  { page: 'live', name: 'Live vans', roles: ['owner'], words: ['live van', 'live', 'live vans', 'where is the van', 'where is van', 'track van', 'track', 'tracking'] },
   { page: 'cash', name: 'Cash with staff', roles: ['owner'], words: ['cash with staff', 'staff cash', 'who has cash', 'who has the cash', 'who has money', 'cash with whom', 'cash with who', 'staff with cash'] },
   { page: 'stock', name: 'Stock position', roles: ['owner', 'office', 'godown'], words: ['stock position', 'stock alert', 'stock alerts', 'out of stock', 'stock list', 'stock screen', 'low stock', 'stock low', 'less stock', 'stock less', 'short stock'] },
   { page: 'claims', name: 'Claims', roles: ['owner', 'office'], words: ['claims', 'claim tracker', 'claims list', 'claim list', 'pending claims'] },
   { page: 'dayclose', name: 'Day close', roles: ['owner'], words: ['day close', 'dayclose', 'close day', 'close the day', 'reconcile', 'reconciliation'] },
-  { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock report'] },
+  { page: 'stock-reports', name: 'Stock reports', roles: ['owner', 'office'], words: ['stock reports', 'stock report'] },
   { page: 'billed', name: 'Bills', roles: ['owner', 'office'], words: ['bills', 'invoices', 'bill list'] },
   { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection'] },
   { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack'] },
@@ -104,9 +104,12 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
   if (exact) {
     text = text.replace(/^((?:open|show|go to|see|view) (?:the |my |all )?)(?:bill|billing)( screen| page)?$/, '$1bills$2'); // "open bill" = "open bills"
     // only a screen's full name: a phrase of 2+ words found whole, or the whole message being that one word
-    const bare = text.replace(/^(show me|go to|open|show|goto|see|view)\s+/, '').replace(/(\s+(screen|page|please|now|this month|today|for this month|for today|open))+$/, '').trim();
-    const hit = SCREENS.filter(s => s.words.some(w => !/[^\x00-\x7f]/.test(w) && (w.includes(' ') ? ` ${bare} `.includes(` ${w} `) : bare === w)))
-      .sort((a, b) => Math.max(...b.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)) - Math.max(...a.words.filter(w => ` ${bare} `.includes(` ${w} `)).map(w => w.length)));
+    // polite and long forms ("can you please show me the dues page") come down to the screen's own name
+    const bare = text.replace(/^(?:(?:can|could|would) you )?(?:please )?(?:i want to see|i want to open|i want|i need|i would like to see|let me see|let me open|take me to|bring up|pull up|give me|send me|show me|go to|goto|open|show|see|view|need)\s+/, '')
+      .replace(/^(?:please )?the\s+/, '').replace(/(\s+(screen|page|please|now|this month|today|for this month|for today|open))+$/, '').trim();
+    const said = (w: string) => ` ${bare} `.includes(` ${w} `) || ` ${bare} `.includes(` ${w}s `) || ` ${bare} `.includes(` ${w}es `);
+    const hit = SCREENS.filter(s => s.words.some(w => !/[^\x00-\x7f]/.test(w) && (w.includes(' ') ? said(w) : (bare === w || bare === w + 's' || bare === w + 'es'))))
+      .sort((a, b) => Math.max(...b.words.filter(said).map(w => w.length), 0) - Math.max(...a.words.filter(said).map(w => w.length), 0));
     if (!hit.length && /\b(open|screen|page|show)\b/.test(text)) {
       const one = bare.replace(/\b(open|screen|page|show|please|the)\b/g, ' ').trim();
       const byName = SCREENS.filter(x => norm(x.name) === one || norm(x.name).split(' ')[0] === one);
@@ -148,7 +151,7 @@ export const W = {
   tally: ['tally'],
   gstr: ['gstr', 'gst return', 'gstr1', 'gstr-1'],
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
-  claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export'],
+  claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export', 'claim excel', 'claims excel', 'claim sheet'],
   needsOk: ['needs ok', 'approval', 'waiting'],
   openingDues: ['old dues', 'old due', 'opening balance', 'opening balances', 'opening dues', 'old balance', 'old outstanding', 'old bills'],
   openingStock: ['opening stock', 'old stock', 'stock on hand', 'closing stock'],
