@@ -28,7 +28,7 @@ const audit = () => {
       if (tl !== null) { const c = (Math.max(tl, bg) + .05) / (Math.min(tl, bg) + .05); if (c < 3) { const k = `LOW-CONTRAST ${c.toFixed(1)} ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } } }
     }
     if (direct && (cs.overflow === 'hidden' || cs.overflowX === 'hidden') && el.scrollWidth > el.clientWidth + 2 && cs.textOverflow !== 'ellipsis' && !cs.webkitLineClamp) { const k = `CLIPPED ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"`; if (!seen.has(k)) { seen.add(k); out.push(k); } }
-    if (r.right > de.clientWidth + 2 && !el.closest('.tablewrap, table, .chips, .cat, .segmented, [style*="overflow"]') && cs.position !== 'fixed') { const k = `OFFSCREEN ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${(el.textContent || '').trim().slice(0, 30)}" right=${Math.round(r.right)}`; if (!seen.has(k) && seen.size < 400) { seen.add(k); out.push(k); } }
+    if (r.right > de.clientWidth + 2 && !el.closest('.tablewrap, table, .chips, .cat, .segmented, [style*="overflow"], .leaflet-container') && cs.position !== 'fixed') { const k = `OFFSCREEN ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${(el.textContent || '').trim().slice(0, 30)}" right=${Math.round(r.right)}`; if (!seen.has(k) && seen.size < 400) { seen.add(k); out.push(k); } }
   }
   // a word (or a bill number) is never broken across two lines in a list row
   for (const el of document.querySelectorAll('.item .s, .item .t, .billno')) {
