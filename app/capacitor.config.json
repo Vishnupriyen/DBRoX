@@ -4,12 +4,10 @@
   "webDir": "dist-apk",
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#063d2c",
-    "minWebViewVersion": 87
+    "backgroundColor": "#063d2c"
   },
   "server": {
-    "androidScheme": "https",
-    "errorPath": "old-phone.html"
+    "androidScheme": "https"
   },
   "plugins": {
     "SystemBars": {

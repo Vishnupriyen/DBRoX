@@ -37,6 +37,10 @@ if [ -n "$WV" ] && [ "$WV" -lt 87 ]; then
     sleep 3; adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
     if adb shell cat /sdcard/ui.xml | grep -q 'This phone needs one update' && adb shell cat /sdcard/ui.xml | grep -q 'Update Android System WebView'; then
       echo "OLD PHONE: the update page shows, with its button"; exit 0; fi
+    # an old WebView may not share page text with Android: ask the WebView itself which page is open (no script needed)
+    SOCK=$(adb shell cat /proc/net/unix | grep -oE 'webview_devtools_remote_[0-9]+' | head -1)
+    if [ -n "$SOCK" ]; then adb forward tcp:9333 localabstract:$SOCK >/dev/null
+      if curl -s http://127.0.0.1:9333/json | grep -q 'old-phone.html'; then echo "OLD PHONE: the update page is open (WebView reports old-phone.html)"; exit 0; fi; fi
   done
   adb exec-out screencap -p > old-phone-screen.png; echo "OLD-PHONE PAGE FAILED: not on screen after 60 s"; exit 1
 fi

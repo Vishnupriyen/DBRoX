@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, apk, design/locked-jade-gold-signature-20261111]
-    paths: ['app/**', '.github/workflows/apk.yml', '.github/scripts/apk-smoke.sh']
+    paths: ['app/**', '.github/workflows/apk.yml', '.github/scripts/apk-smoke.sh', '.github/scripts/check-16kb.py']
 
 jobs:
   build:
@@ -45,7 +45,7 @@ jobs:
   emulator:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 230
     strategy:
       fail-fast: false
       matrix:

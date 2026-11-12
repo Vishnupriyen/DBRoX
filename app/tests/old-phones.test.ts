@@ -28,10 +28,12 @@ describe('works on phones with WebView 87 (late 2020) and newer', () => {
     expect(bad).toEqual([]);
   });
 
-  it('a phone below 87 gets the "update needed" page, never a blank screen — in the APK and in the browser', () => {
+  it('a phone below 87 gets the "update needed" page, never a blank screen — in the APK and in the browser (index.html checks the version)', () => {
+    // never Capacitor's errorPath (found by the independent tester): it opens on ANY failed page load — offline at the payment
+    // page, a server error — so modern phones were told to update; and its version check misreads Android 7 phones
     const cap = JSON.parse(read('capacitor.config.json'));
-    expect(cap.android.minWebViewVersion).toBe(87);
-    expect(cap.server.errorPath).toBe('old-phone.html');
+    expect(cap.server.errorPath).toBeUndefined();
+    expect(cap.android.minWebViewVersion).toBeUndefined();
     expect(existsSync(join(app, 'public', 'old-phone.html'))).toBe(true);
     expect(read('public/old-phone.html')).toMatch(/Update Android System WebView/);
     const guard = /<script>([\s\S]*?)<\/script>/.exec(read('index.html'))![1];
