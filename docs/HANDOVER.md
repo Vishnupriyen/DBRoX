@@ -4,9 +4,8 @@ Start of a new chat: read this file, `CLAUDE.md`, `docs/HANUBIX_LOCKED_SIGNATURE
 Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, one recommendation, and approval before building.
 
 ## First thing to do
-- Run `cd app && npm run gate` once on the latest commit. The last full gate passed on 234f622 (map + smaller text + lowered header);
-  later commits (outstanding by age 5bd0578, plan docs 51843f7) passed all tests and both business-day runs, but the screen sweep
-  step was interrupted by other jobs using the machine — rerun it alone.
+- Nothing to rerun: the full gate passed on GitHub (Quality gate) on 397d6f9, 12 Nov evening — all tests, both business days,
+  332 screens. (The run-failed emails that day were the screen check counting the Live vans map's hidden tiles; fixed.)
 
 ## Done today
 - Midnight rep fix; credit note after a return + short delivery fix; phone check (Android emulator) runs to the end with time limits.
