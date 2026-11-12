@@ -29,6 +29,11 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - **"Set up the team"** — ~30 new agents in 8 departments (Product, TESRAX quality, Security, Reliability and cost, Growth, Customers,
   Money and compliance, Founder's office); rule: nothing goes out without the founder's yes; watchers as plain scripts on the server;
   cheap models for routine work; chief of staff daily list + Monday review as scheduled tasks.
+- **"Set up the departments"** (proposed 12 Nov, waiting): one Head-office chat for the owner (chief of staff turns his words into task
+  cards); a shared task board = GitHub Issues in the repo, one label per department + status; each department a scheduled task that
+  wakes (Product daily + "urgent", TESRAX quality/Security weekly, Customers daily, Growth 3×/week, Money weekly + 1st of month,
+  Founder's office every morning; Reliability/cost as plain scripts on the server), works its cards and moves each to the next
+  department; anything needing the owner goes to "Waiting for Vishnu" and his morning list. Build together with "Set up the team".
 - **"Update both"** — the two decks (Company Deck https://claude.ai/artifact/7ToDDDs9dSb75NwMmhU8jH and Work and Hours
   https://claude.ai/artifact/7aFqUVaVQKVgnmk11uQZ2j): Montserrat + new logo, today's plan, new features; no price/market changes
   without showing the owner.
