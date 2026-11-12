@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Check, Printer, MapPin, AlertTriangle, Truck } from 'lucide-react';
 import { db, today } from '../core/db';
 import { inr, plural, showDate, showTime } from '../core/i18n';
-import { r2 } from '../core/ledger';
+import { tripRows } from '../core/screenFiles';
 import type { Invoice, Product, Trip, Van } from '../core/types';
 
 
@@ -46,18 +46,7 @@ export function DeliveryStatus() {
 // ---------- Trip reports: km planned vs actual, stops, idle, per van ----------
 export function TripReports() {
   const [rows, setRows] = useState<{ t: Trip; van: string; stops: number; done: number; km: number; idleMin: number; fuel: number }[]>([]);
-  useEffect(() => { (async () => {
-    const vans = new Map((await db.vans.toArray()).map(v => [v.id, v.name]));
-    const invs = await db.invoices.toArray();
-    const exp = await db.expenses.toArray();
-    const ts = (await db.trips.toArray()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
-    setRows(ts.map(t => {
-      let km = 0, idle = 0;
-      for (let i = 1; i < t.track.length; i++) { const a = t.track[i - 1], b = t.track[i]; const d = Math.hypot((b.lat - a.lat) * 111, (b.lng - a.lng) * 111 * Math.cos(a.lat * Math.PI / 180)); km += d; if (d < 0.1) idle += (new Date(b.at).getTime() - new Date(a.at).getTime()) / 60000; }
-      const ti = invs.filter(i => i.tripId === t.id);
-      return { t, van: vans.get(t.vanId) ?? '', stops: t.stops.length, done: ti.filter(i => ['delivered', 'partial'].includes(i.deliveryStatus)).length, km: r2(km), idleMin: Math.round(idle), fuel: exp.filter(e => e.vanId === t.vanId && e.date === t.date && e.category === 'diesel').reduce((a, e) => a + e.amount, 0) };
-    }));
-  })(); }, []);
+  useEffect(() => { void tripRows().then(setRows); }, []); // core/screenFiles.ts: the same rows as the Excel TESRAX sends
   return (
     <div className="stack">
       <table className="tbl"><thead><tr><th>{'Date'}</th><th>{'Van'}</th><th>{'Stops'}</th><th>km</th><th>{'Idle'}</th><th>{'Fuel'}</th></tr></thead>

@@ -256,6 +256,8 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (has(text, W.tally)) { if (!can(role, 'accounts')) return deny('The Tally file'); return need('accountant', mods) ?? exportTally(monthIn(text)); }
   if (has(text, W.gstr)) { if (!can(role, 'accounts')) return deny('The GSTR-1 file'); return need('accountant', mods) ?? exportGstr1(monthIn(text)); }
   if (has(text, W.einv)) { if (!can(role, 'accounts')) return deny('The e-invoice file'); return need('accountant', mods) ?? exportEinvoice(monthIn(text)); }
+  // "send p&l", "gst summary excel", "day close report", "attendance excel", "trip report excel": the screen's figures as a file
+  if (/\b(send|excel|xl|file|download|share|export|whatsapp|mail|email|report|sheet)\b/.test(text) && !/\d{3,}/.test(text)) { const f = await screenFileAsked(text, role); if (f) return f; }
   // "send salary sheet", "salary sheet excel october": the month's salary sheet as Excel (owner)
   if (/\b(salary|salaries|payroll)\b/.test(text) && /\b(send|excel|xl|file|download|share|export|whatsapp|mail|email)\b/.test(text) && !/\d{3,}/.test(text)) return salaryFile(role, text);
   { const { reportByVoice } = await import('./reportsVoice'); const rr = await reportByVoice(text, role); if (rr) return rr; } // every owner report by name and period
@@ -475,7 +477,7 @@ export function payAmount(r: string): number | undefined {
   return undefined;
 }
 
-function deny(what?: string): Reply { return { text: what ? `${what} is done by the owner or office. Ask them, or log in as one of them.` : 'Your role cannot do this. Ask the owner.', tone: 'warn', refused: true }; }
+function deny(what?: string, ownerOnly = false): Reply { return { text: what ? (ownerOnly ? `${what} is for the owner only. Ask the owner.` : `${what} is done by the owner or office. Ask them, or log in as one of them.`) : 'Your role cannot do this. Ask the owner.', tone: 'warn', refused: true }; }
 /** voice typing splits short codes: "GST R", "GST R1", "g s t r" → gstr / gstr1 ("gst" alone stays gst) */
 export function spokenCodes(t: string) {
   return t.replace(/\bg ?s ?t ?r(?: ?(1|one))?\b/g, (_m, one) => (one ? 'gstr1' : 'gstr'));
@@ -1009,9 +1011,27 @@ async function outstandingTable(shopId?: string, above?: number): Promise<Reply>
   };
 }
 
+/** P&L, GST summary, day close, attendance and trips as files (the figures of their screens) */
+async function screenFileAsked(text: string, role: Role): Promise<Reply | null> {
+  const F = await import('./screenFiles');
+  const { periodIn } = await import('./reportsVoice');
+  const fileWord = /\b(send|excel|xl|file|download|share|export|whatsapp|mail|email)\b/.test(text);
+  let made: Awaited<ReturnType<typeof F.pnlFile>> | null = null, who: Role[] = ['owner', 'office'], what = '';
+  if (/\b(p ?(&|and|n)? ?l|pnl|profit and loss|profit loss|profit)\b/.test(text) && (fileWord || /\b(p ?l|pnl|profit and loss) (report|sheet)\b/.test(text))) { who = ['owner']; what = 'The P&L'; if (role === 'owner') made = await F.pnlFile(/\btoday\b/.test(text) ? 'today' : 'month'); }
+  else if (/\b(gst|tax) (summary|report|status)\b/.test(text)) { what = 'The GST summary'; if (who.includes(role)) made = await F.gstSummaryFile(periodIn(text).month ?? today().slice(0, 7)); }
+  else if (/\b(day close|dayclose|day closing|closing|day summary|day end|end of day)\b/.test(text)) { who = ['owner']; what = 'The day close'; if (role === 'owner') made = await F.dayCloseFile(/\byesterday\b/.test(text) ? (await import('./db')).daysFrom(-1) : today()); }
+  else if (/\b(attendance|attendence|attndnce|who came)\b/.test(text) && (fileWord || /\b(report|sheet|register)\b/.test(text))) { what = 'Attendance'; if (who.includes(role)) { const p = periodIn(text); const oneDay = /\b(today|yesterday)\b/.test(text) || !/\b(month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/.test(text); made = await F.attendanceFile(oneDay ? p.from : null, p.month ?? today().slice(0, 7)); } }
+  else if (/\b(trip|trips|km|kilometre|kilometer|van) (report|reports|sheet)\b|\btrip report/.test(text) && fileWord) { what = 'Trip reports'; if (who.includes(role)) made = await F.tripFile(); }
+  else return null;
+  if (!who.includes(role)) return deny(what, who.length === 1);
+  if (!made) return null;
+  const f = made;
+  return { text: f.text, actions: [{ label: 'Send as Excel', run: () => { void F.sendFile(f); } }] };
+}
+
 /** the salary sheet of a month as Excel (owner only; before the 11th it is last month's, as on the Payroll screen) */
 async function salaryFile(role: Role, text: string): Promise<Reply> {
-  if (role !== 'owner') return deny('The salary sheet');
+  if (role !== 'owner') return deny('The salary sheet', true);
   const { periodIn } = await import('./reportsVoice');
   const { salarySheet, SALARY_HEADER, salaryCells } = await import('./payroll');
   const { downloadSheet } = await import('./readers');
