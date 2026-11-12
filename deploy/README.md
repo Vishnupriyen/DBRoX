@@ -28,5 +28,6 @@ How updates happen without stopping any distributor. Phones work offline the who
 
 ## Every app update (Play Store)
 - Release to 1–2 pilot distributors first (Play Console → staged rollout), watch a day, then everyone.
-- During that day old and new phones share the server: each phone tells the server which tables it knows and is sent only those.
+- During that day old and new phones share the server: each phone (from the 12 Nov 2026 version on — give the pilots this version
+  before the first distributors go live) tells the server which tables it knows and is sent only those.
   When a phone updates to a version with a new table, it fetches that table's earlier records once by itself.

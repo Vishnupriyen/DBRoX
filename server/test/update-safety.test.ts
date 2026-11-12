@@ -70,14 +70,27 @@ describe('old and new phones on one server', () => {
 describe('a rolled-back server still runs on the newer database', () => {
   // migrations up to 012 were written before this rule; from 013 on they only add (tables, columns with defaults, indexes).
   // Dropping or renaming would break the previous server version during a rollback, and DELETE/TRUNCATE could lose records.
+  // anything that removes, renames, rewrites or tightens: an older server's reads or inserts could fail on it
+  const RISKY = [/\bDROP\s+(TABLE|COLUMN|SCHEMA|CONSTRAINT|DEFAULT|NOT\s+NULL|FUNCTION|VIEW|TYPE|TRIGGER)\b/i, /\bRENAME\b/i, /\bTRUNCATE\b/i,
+    /\bDELETE\s+FROM\b/i, /\bUPDATE\s+\w+(\.\w+)?\s+SET\b/i, /\bALTER\s+COLUMN\b[^;]*\bTYPE\b/i, /\bSET\s+NOT\s+NULL\b/i,
+    /\bADD\s+(CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY|PRIMARY\s+KEY)\b/i, /\bADD\s+COLUMN\b[^;]*\bNOT\s+NULL\b(?![^;]*\bDEFAULT\b)/i];
+  const risky = (sql: string) => RISKY.filter(re => re.test(sql.replace(/--.*$/gm, ''))).map(re => re.source);
+  it('the check itself catches each risky change, and lets additions through', () => {
+    for (const bad of ['DROP TABLE x;', 'ALTER TABLE x DROP COLUMN y;', 'ALTER TABLE x RENAME TO z;', 'TRUNCATE x;', 'DELETE FROM x;',
+      'UPDATE docs SET data = 1;', 'ALTER TABLE x ALTER COLUMN y TYPE int;', 'ALTER TABLE x ALTER COLUMN y SET NOT NULL;',
+      'ALTER TABLE x ADD CONSTRAINT c UNIQUE (y);', 'ALTER TABLE x ADD CHECK (y > 0);', 'ALTER TABLE x DROP CONSTRAINT c;',
+      'ALTER TABLE x ALTER COLUMN y DROP DEFAULT;', 'ALTER TABLE x ADD COLUMN y int NOT NULL;', 'DROP VIEW v;'])
+      expect(risky(bad), bad).not.toEqual([]);
+    for (const ok of ['CREATE TABLE IF NOT EXISTS x (id text PRIMARY KEY);', 'ALTER TABLE x ADD COLUMN IF NOT EXISTS y int NOT NULL DEFAULT 0;',
+      'ALTER TABLE x ADD COLUMN y text;', 'CREATE INDEX IF NOT EXISTS i ON x (y);', '-- DROP TABLE x (a comment)'])
+      expect(risky(ok), ok).toEqual([]);
+  });
   it('every new migration only adds', () => {
     const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'db');
     const bad: string[] = [];
     for (const f of readdirSync(dir).filter(x => x.endsWith('.sql')).sort()) {
       if (Number(f.slice(0, 3)) <= 12) continue;
-      const sql = readFileSync(join(dir, f), 'utf8').replace(/--.*$/gm, '');
-      for (const re of [/\bDROP\s+(TABLE|COLUMN|SCHEMA)\b/i, /\bRENAME\b/i, /\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i, /\bALTER\s+COLUMN\b[^;]*\bTYPE\b/i, /\bADD\s+COLUMN\b[^;]*\bNOT\s+NULL\b(?![^;]*\bDEFAULT\b)/i])
-        if (re.test(sql)) bad.push(`${f}: ${re.source}`);
+      for (const r of risky(readFileSync(join(dir, f), 'utf8'))) bad.push(`${f}: ${r}`);
     }
     expect(bad).toEqual([]);
   });

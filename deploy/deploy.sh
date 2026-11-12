@@ -10,24 +10,35 @@ if [[ "${1:-}" != "--now" ]] && (( 10#$HOUR >= 5 && 10#$HOUR < 23 )); then
 fi
 NEW=$(git -C .. rev-parse --short HEAD)
 PREV=$(cat .live-tag 2>/dev/null || true)
+export TAG=${PREV:-none}
 [[ "$NEW" == "$PREV" ]] && { echo "Version $NEW is already live."; exit 0; }
+healthy() {
+  for _ in $(seq 1 30); do
+    TAG=$1 docker compose exec -T server node -e "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1 && return 0
+    sleep "${HEALTH_WAIT:-2}"
+  done
+  return 1
+}
 
 echo "1/4 Backup before the change"; ./backup.sh
 echo "2/4 Build version $NEW"
-cp -r ../shared ../server/shared
+trap 'rm -rf ../server/shared' EXIT   # the image gets today's shared table list, never a stale copy
+rm -rf ../server/shared && cp -r ../shared ../server/shared
 docker build -q -t "hanubix-server:$NEW" ../server >/dev/null
-rm -rf ../server/shared
-echo "3/4 Switch to $NEW (database changes only ever add, so $PREV keeps working if we go back)"
+echo "3/4 Switch to $NEW (database changes only ever add, so ${PREV:-the earlier version} keeps working if we go back)"
 TAG=$NEW docker compose up -d --no-deps server
 echo "4/4 Check"
-for i in $(seq 1 30); do
-  if docker compose exec -T server node -e "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
-    [[ -n "$PREV" ]] && echo "$PREV" > .previous-tag
-    echo "$NEW" > .live-tag
-    echo "✔ Version $NEW is live. To go back: deploy/rollback.sh"; exit 0
-  fi
-  sleep 2
-done
-echo "✘ Version $NEW did not start — going back to $PREV"
-[[ -n "$PREV" ]] && TAG=$PREV docker compose up -d --no-deps server
+if healthy "$NEW"; then
+  [[ -n "$PREV" ]] && echo "$PREV" > .previous-tag
+  echo "$NEW" > .live-tag
+  echo "✔ Version $NEW is live. To go back: deploy/rollback.sh"; exit 0
+fi
+if [[ -n "$PREV" ]]; then
+  echo "✘ Version $NEW did not start — going back to $PREV"
+  TAG=$PREV docker compose up -d --no-deps server
+  healthy "$PREV" && echo "✔ Back on $PREV." || echo "✘ $PREV did not start either — check: docker compose logs server"
+else
+  echo "✘ Version $NEW did not start and there is no earlier version — stopped. Check: docker compose logs server"
+  TAG=$NEW docker compose stop server
+fi
 exit 1

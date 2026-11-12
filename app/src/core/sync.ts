@@ -168,7 +168,7 @@ async function catchUpNewTables() {
   if (!url || !navigator.onLine || running) return;
   running = true;
   try {
-    let from = Number((await db.meta.get('catchUpCursor'))?.value ?? 0);
+    let from = Number((await db.meta.get('catchUpCursor'))?.value ?? 0), finished = false;
     for (let i = 0; i < 2000; i++) {
       const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ cursor: from, changes: [], moves: 1, tables: fresh }) });
       if (!r.ok) return; // tried again at the next sync; the main sync reports any login problem
@@ -182,8 +182,9 @@ async function catchUpNewTables() {
         await db.meta.put({ key: 'catchUpCursor', value: res.cursor });
       });
       from = res.cursor;
-      if (!res.more) break;
+      if (!res.more) { finished = true; break; }
     }
+    if (!finished) return; // a guard against a server that never says "done": carried on at the next sync, nothing skipped
     await db.meta.put({ key: 'knownTables', value: SYNC_TABLES });
     await db.meta.delete('catchUpCursor');
   } catch { /* no signal: carried on at the next sync */ } finally { running = false; }
