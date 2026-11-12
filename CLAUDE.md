@@ -21,6 +21,10 @@ RETAIL INTELLIGENCE. TESRAX lives only in the glowing sphere of the **dark jade�
 block on a page. "Powered by TESRAX" appears **only on the animated opening screen**. More is now **Menu** (grouped screens).
 Earlier black/solid-teal/Geist, cyan/violet and the 11 Nov hero-sphere/footer lockups are superseded.
 
+## Plan (locked — founder, 12 Nov 2026)
+Follow `docs/HANUBIX_PLAN_LOCKED.md`: Hostinger KVM 2 server, then website → our control panel → distributor dashboard →
+company dashboard; ERP integrations later.
+
 ## The AI team (`.claude/agents/`)
 Every change runs through the team, in this order. The main session is the manager: hands out the work, keeps the order,
 and brings the owner only the finished result and the decisions that are theirs.
