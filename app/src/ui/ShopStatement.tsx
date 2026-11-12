@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Phone, MapPin, Receipt, IndianRupee, FileMinus, Printer, Share2 } from 'lucide-react';
 import { localDay } from '../core/db';
-import { sendStatement, shopStatement, type StatementRow } from '../core/statement';
+import { sendStatement, shopStatement, withBalance, type StatementRow } from '../core/statement';
 import { inr } from '../core/i18n';
 import { PrintBill } from './PrintBill';
 import type { CreditNote, Invoice, Shop } from '../core/types';
@@ -21,7 +21,7 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
     setStaff(d.staff); setDue(d.due); setRows(d.rows);
   })(); }, [shopId]);
   if (!shop) return null;
-  let running = due.total; // walk newest → oldest, showing the balance after each row
+  const shown = withBalance({ shop, rows, due, staff, pending: [] }); // the balance after each row, running forward
   return (
     <div className="stack">
       {printing && <PrintBill invoice={printing} onClose={() => setPrinting(null)} />}
@@ -39,11 +39,11 @@ export function ShopStatement({ shopId, onBack }: { shopId: string; onBack: () =
       </div>
       <div className="row"><div className="muted grow">{'Credit'}: {shop.creditLimit ? `${inr(shop.creditLimit)} / ${shop.creditDays}d` : 'cash only'}</div>{rows.length > 0 && <button className="btn small" onClick={() => sendStatement(shopId)}><Share2 size={16} /> Send statement</button>}</div>
       <div className="list">
-        {rows.map((r, i) => { const after = running; running = r.kind === 'bill' ? running - r.debit : running + r.credit; return (
+        {shown.map((r, i) => { const after = r.balance; return (
           <button key={i} className="item tap" onClick={() => r.inv ? setPrinting(r.inv) : r.cn && setPrintingCn(r.cn)} disabled={!r.inv && !r.cn}>
             <div className={`avatar ${r.kind === 'payment' ? 'ok' : r.kind === 'cn' ? 'gold' : ''}`}>{r.kind === 'bill' ? <Receipt size={18} /> : r.kind === 'payment' ? <IndianRupee size={18} /> : <FileMinus size={18} />}</div>
-            <div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.ref}</div><div className="s">{localDay(r.at)} · {r.note.replace(/by (\w+)/, (_, id) => `${'by'} ${staff.get(id) ?? id}`)}</div></div>
-            <div style={{ textAlign: 'right' }}><div className={`amt num`} style={{ color: r.kind === 'bill' ? undefined : 'var(--ok)' }}>{r.kind === 'bill' ? inr(r.debit) : `−${inr(r.credit)}`}</div><div className="s num">{'bal'} {inr(Math.max(0, after))}</div></div>
+            <div className="grow" style={{ textAlign: 'left' }}><div className="t">{r.ref || 'Rounding (paise)'}</div><div className="s">{localDay(r.at)} · {r.note.replace(/by (\w+)/, (_, id) => `${'by'} ${staff.get(id) ?? id}`)}</div></div>
+            <div style={{ textAlign: 'right' }}><div className={`amt num`} style={{ color: r.debit ? undefined : 'var(--ok)' }}>{r.debit ? inr(r.debit) : `−${inr(r.credit)}`}</div><div className="s num">{'bal'} {inr(Math.max(0, after))}</div></div>
             {(r.inv || r.cn) && <Printer size={16} style={{ color: 'var(--ink-3)' }} />}
           </button>); })}
         {!rows.length && <div className="card muted">{'No bills or payments yet.'}</div>}
