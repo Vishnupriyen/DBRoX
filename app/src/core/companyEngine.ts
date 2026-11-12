@@ -95,9 +95,30 @@ async function fieldOrder(textIn: string, role: Role): Promise<Reply | null> {
   };
 }
 
+/** a company report as a file, when the message says send / excel / file / download (head office and managers; a rep: own travel) */
+async function companyFileAsked(text: string, role: Role): Promise<Reply | null> {
+  if (!/\b(send|excel|xl|xls|file|download|share|export|whatsapp|mail|email)\b/.test(text)) return null;
+  const F = await import('./companyFiles');
+  const { periodIn } = await import('./reportsVoice');
+  const month = periodIn(text).month ?? thisMonth();
+  const boss = role === 'cadmin' || role === 'manager';
+  let f: Awaited<ReturnType<typeof F.coSalesFile>> | null = null;
+  if (/\b(travel|ta da|tada|expense|expenses|claim)\b/.test(text) && role === 'rep') f = await F.travelFile(month);
+  else if (/\b(target|targets|achievement|leaderboard)\b/.test(text)) { if (!boss) return { text: 'Targets are for head office and managers.', refused: true }; f = await F.coTargetsFile(month); }
+  else if (/\b(team|attendance|visits|who did not visit|who didnt visit)\b/.test(text)) { if (!boss) return { text: 'The team report is for head office and managers.', refused: true }; f = await F.coTeamFile(); }
+  else if (/\b(stock|inventory|days of stock|stock cover)\b/.test(text)) { if (!boss) return { text: 'Stock at distributors is for head office and managers.', refused: true }; f = await F.coStockFile(); }
+  else if (/\b(shops|outlets|retailers|outlet list|shop list)\b/.test(text)) { if (!boss) return { text: 'The shop list is for head office and managers.', refused: true }; f = await F.coShopsFile(); }
+  else if (/\b(sales|secondary|primary|sell through|sold|distributor|distributors|report)\b/.test(text)) { if (!boss) return null; f = await F.coSalesFile(month); }
+  if (!f) return null;
+  const file = f;
+  return { text: file.text, actions: [{ label: 'Send as Excel', run: () => { void F.sendCoFile(file); } }] };
+}
+
 export async function handleCompany(textIn: string, role: Role): Promise<Reply> {
   const text = norm(textIn);
   if (!text || has(text, ['help', 'what can you do', 'how'])) return { text: role === 'rep' ? REP_HELP : COMPANY_HELP };
+  // "send sales october", "stock excel", "team today report", "my travel claim excel": every company report as a file
+  { const f = await companyFileAsked(text, role); if (f) return f; }
   if (/\d/.test(text)) {
     const e = repExpenses(textIn); if (e) return e;
     const o = await fieldOrder(textIn, role); if (o) return o;
