@@ -27,9 +27,23 @@ sweep() { timeout 50m node e2e/android-sweep.cjs "$1" && return 0
     adb shell am force-stop com.hanubix.app; sleep 20; timeout 50m node e2e/android-sweep.cjs "$1" && return 0; fi
   return 1; }
 adb logcat -c
-sweep normal || echo "SWEEP FAILED (normal)"
+# an old phone (Android 9 image): if its WebView is older than 87 the app must show the "update needed" page, not a blank screen
+WV=$(adb shell dumpsys webviewupdate | grep -oE 'Current WebView package.*\(.*' | grep -oE '[0-9]+\.[0-9.]+' | head -1 | cut -d. -f1)
+echo "ANDROID $(adb shell getprop ro.build.version.release | tr -d '\r') — WebView ${WV:-unknown}"
+if [ -n "$WV" ] && [ "$WV" -lt 87 ]; then
+  # read the screen through Android itself (Playwright's page tools need a newer WebView than the one being tested)
+  adb shell am force-stop com.hanubix.app; adb shell monkey -p com.hanubix.app -c android.intent.category.LAUNCHER 1
+  for i in $(seq 1 20); do
+    sleep 3; adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+    if adb shell cat /sdcard/ui.xml | grep -q 'This phone needs one update' && adb shell cat /sdcard/ui.xml | grep -q 'Update Android System WebView'; then
+      echo "OLD PHONE: the update page shows, with its button"; exit 0; fi
+  done
+  adb exec-out screencap -p > old-phone-screen.png; echo "OLD-PHONE PAGE FAILED: not on screen after 60 s"; exit 1
+fi
+FAILED=0
+sweep normal || { echo "SWEEP FAILED (normal)"; FAILED=1; }
 adb shell settings put system font_scale 1.3
-sweep large-text || echo "SWEEP FAILED (large text)"
+sweep large-text || { echo "SWEEP FAILED (large text)"; FAILED=1; }
 adb shell settings put system font_scale 1.0
 adb logcat -d | grep -iE 'Capacitor/Console|chromium.*(error|Uncaught)|AndroidRuntime' | tail -200
-exit 0
+exit $FAILED  # a failed sweep fails the phone check (it used to end green whatever happened)

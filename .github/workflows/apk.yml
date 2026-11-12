@@ -28,6 +28,8 @@ jobs:
       - run: ./gradlew assembleRelease assembleDebug --no-daemon
         working-directory: app/android
         env: { MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}' }   # Google Maps on Live vans; without it the screen uses OpenStreetMap
+      - name: Google Play 16 KB rule (native libraries)
+        run: python3 ../.github/scripts/check-16kb.py android/app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Android's signing tools (to sign outside GitHub)
         run: |
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
@@ -38,10 +40,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: hanubix-apk-unsigned, path: signer, retention-days: 7 }
 
+  # every push: Android 14. Before a release (main, or a manual run): also Android 9 (an old phone — its WebView is checked:
+  # too old shows the "update needed" page, new enough runs the full sweep) and Android 16 (the newest)
   emulator:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 200
+    strategy:
+      fail-fast: false
+      matrix:
+        api: ${{ fromJSON((github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && '[28, 34, 36]' || '[34]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,7 +65,7 @@ jobs:
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: google_apis
           profile: pixel_6

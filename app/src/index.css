@@ -297,7 +297,7 @@ table.grid tr:last-child td { border-bottom: 0; }
 .fab { position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--card); box-shadow: 0 0 0 4px var(--paper); display: grid; place-items: center; z-index: 40; cursor: pointer; padding: 0; }
 .fab:active { transform: translateX(-50%) scale(.94); }
 /* keep the floating button clear of a sticky action bar */
-.app:has(.sheet-wrap) .fab { display: none; }
+.app.has-sheet .fab { display: none; }
 .main { padding-bottom: 24px; }
 .fab-mark { font-family: var(--display); font-weight: 800; font-size: 1.0625rem; letter-spacing: -.02em; }
 .fab-mark.small { width: 36px; height: 36px; border-radius: 50%; background: var(--sunrise); color: var(--on-sunrise); display: grid; place-items: center; font-size: 0.75rem; }
@@ -569,7 +569,7 @@ table.grid td.ro { color: var(--mut); }
 .engine { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .94); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); display: flex; justify-content: center; animation: tx-in .32s cubic-bezier(.2, .8, .2, 1); }
 .engine::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--g); }
 @keyframes tx-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
-.app:has(.engine) .main, .app:has(.engine) .top, .app:has(.engine) .tabs { filter: blur(2px); }
+.app.has-engine .main, .app.has-engine .top, .app.has-engine .tabs { filter: blur(2px); }
 .engine-col { width: 100%; max-width: 640px; height: 100%; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); }
 .engine-head { display: flex; align-items: center; gap: 8px; padding: 14px max(16px, env(safe-area-inset-left, 0px)) 6px; touch-action: none; }
 .engine-mark { font-family: var(--display); font-weight: 800; font-size: 1.25rem; letter-spacing: -.04em; color: var(--g); }
@@ -665,6 +665,6 @@ body[data-toast] .main { padding-top: var(--toast-pad, 72px); }
 .prop .tablewrap { margin-top: 12px; }
 .prop .row > .btn:not(.small) { align-self: stretch; min-height: 48px; }
 /* the last tile row clears the tab bar and the TESRAX core that hangs over it */
-.main:has(.home) { padding-bottom: calc(76px + 28px + env(safe-area-inset-bottom, 0px)); }
+.main.has-home { padding-bottom: calc(76px + 28px + env(safe-area-inset-bottom, 0px)); }
 /* a long bill number shrinks a little on a narrow screen at large text instead of running out of its box */
 .item .billno { font-size: min(1em, 5.4vw); }

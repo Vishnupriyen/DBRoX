@@ -9,6 +9,17 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Hanubix</title>
+    <!-- Older phones (12 Nov 2026): a phone whose Android System WebView is older than 87 can't run the app — show the
+         "update needed" page instead of a blank white screen. Old-style script on purpose: it must run on any phone. -->
+    <script>
+      (function () {
+        var m = /(?:Chrome|Chromium)\/(\d+)/.exec(navigator.userAgent);
+        function old() { if (!window.__hanubixUp) location.replace('old-phone.html'); }
+        if (m && +m[1] < 87) { window.__hanubixOld = true; old(); return; }
+        // anything that stops the app before it starts on an unusual phone (a missing browser feature): the same page
+        window.addEventListener('error', function (e) { if (m && +m[1] < 111 && e && /SyntaxError|ReferenceError|TypeError/.test(String(e.error || e.message))) old(); }, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -9,10 +9,14 @@ import '@fontsource/montserrat/latin-700.css';
 import App from './App.tsx';
 import { Splash } from './ui/Splash';
 import { ErrorBoundary, installGlobalHandlers } from './ui/Safety';
+import { startHasClasses } from './ui/hasClasses';
 
+const tooOld = (window as unknown as { __hanubixOld?: boolean }).__hanubixOld; // index.html is already moving to old-phone.html
 installGlobalHandlers();
+if (!tooOld) startHasClasses();
+(window as unknown as { __hanubixUp?: boolean }).__hanubixUp = true; // index.html's old-phone check: the app started
 
-createRoot(document.getElementById('root')!).render(
+if (!tooOld) createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <App />
