@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Navigation, Check, Clock, Truck, AlertTriangle, Flag } from 'lucide-react';
 import { ownerEndTrip } from '../core/pipeline';
 import { confirmBox } from './dialog';
+import { LiveMap, VAN_COLORS, type MapVan } from './LiveMap';
+import { getSettings } from '../core/db';
 import { db, today } from '../core/db';
 import { inr } from '../core/i18n';
 import type { Invoice, Shop, Trip } from '../core/types';
@@ -42,6 +44,8 @@ function alertsFor(t: Trip, stops: { status: Invoice['deliveryStatus']; shop?: S
 export function Live() {
   const [rows, setRows] = useState<Row[]>([]);
   const [tick, setTick] = useState(0);
+  const [godown, setGodown] = useState<[number, number] | undefined>();
+  useEffect(() => { void getSettings().then(st => { if (st.godownLat != null && st.godownLng != null) setGodown([st.godownLat, st.godownLng]); }); }, []);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -59,17 +63,20 @@ export function Live() {
     load(); const id = setInterval(load, 10000);
     return () => { alive = false; clearInterval(id); };
   }, [tick]);
+  const vans: MapVan[] = rows.map((r, i) => ({ id: r.trip.id, label: r.van || r.driver, color: VAN_COLORS[i % VAN_COLORS.length], track: r.trip.track,
+    stops: r.stops.filter(s => s.shop?.lat != null && s.shop?.lng != null).map(s => ({ lat: s.shop!.lat!, lng: s.shop!.lng!, done: ['delivered', 'partial', 'returned'].includes(s.status), name: s.name })) }));
   return (
-    <div className="stack">
+    <div className="stack live-page">
       <div className="sechead"><h3>{'Live vans'}</h3><span className="muted">{'updates every 10 s'}</span></div>
-      {rows.map(r => {
+      <LiveMap vans={vans} godown={godown} />
+      {rows.map((r, ri) => {
         const done = r.stops.filter(s => ['delivered', 'partial', 'returned'].includes(s.status)).length;
         const cur = r.stops.find(s => s.status === 'out');
         const mins = r.lastSeen ? Math.round((Date.now() - new Date(r.lastSeen).getTime()) / 60000) : null;
         return (
           <div key={r.trip.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <b style={{ fontSize: '1.0625rem' }}><Truck size={18} style={{ verticalAlign: -3 }} /> {r.van} <span className="muted">· {r.driver}</span></b>
+              <b style={{ fontSize: '1.0625rem' }}><Truck size={18} style={{ verticalAlign: -3, color: VAN_COLORS[ri % VAN_COLORS.length] }} /> {r.van} <span className="muted">· {r.driver}</span></b>
               <span className={`badge ${r.trip.status === 'out' ? 'ok' : r.trip.status === 'done' ? '' : 'warn'}`}>{r.trip.status === 'out' ? <><Navigation size={12} /> {'on the road'}</> : r.trip.status === 'done' ? 'back' : 'loading'}</span>
             </div>
             <div className="row" style={{ gap: 14 }}>

@@ -23,10 +23,11 @@ jobs:
       - run: npm ci
       - run: npx tsc -b && npx vite build --base=./ --outDir dist-apk
         # the licence public key: without it an APK pointed at a server shows every module locked
-        env: { VITE_APK: '1', VITE_SERVER_URL: '${{ vars.SERVER_URL }}', VITE_LICENCE_PUBLIC_KEY: '${{ secrets.LICENCE_PUBLIC_KEY }}' }
+        env: { VITE_APK: '1', VITE_SERVER_URL: '${{ vars.SERVER_URL }}', VITE_LICENCE_PUBLIC_KEY: '${{ secrets.LICENCE_PUBLIC_KEY }}', VITE_MAPS_KEY: '${{ secrets.MAPS_API_KEY }}' }
       - run: npx cap sync android
       - run: ./gradlew assembleRelease assembleDebug --no-daemon
         working-directory: app/android
+        env: { MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}' }   # Google Maps on Live vans; without it the screen uses OpenStreetMap
       - name: Android's signing tools (to sign outside GitHub)
         run: |
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
