@@ -53,7 +53,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['sales target', 'sales targets', 'my target', 'my targets', 'target', 'targets'] },
   { page: 'stockin', name: 'Purchases', roles: ['owner', 'office', 'godown'], words: ['stock in', 'purchases', 'purchase'] },
   { page: 'ageing', name: 'Ageing', roles: ['owner', 'office', 'godown'], words: ['ageing report', 'aging report', 'ageing list', 'ageing', 'aging', 'old stock'] },
-  { page: 'damages', name: 'Damages', roles: ['owner', 'office', 'godown'], words: ['damages', 'damage register', 'damages list', 'damage list'] },
+  { page: 'damages', name: 'Damages', roles: ['owner', 'office', 'godown'], words: ['damages', 'damage register', 'damages register', 'damaged register', 'damages list', 'damage list'] },
   { page: 'status', name: 'Delivery status', roles: ['owner', 'office'], words: ['delivery status', 'delivered today', 'order status', 'orders status'] },
   { page: 'trips', name: 'Trip reports', roles: ['owner', 'office'], words: ['trip report', 'trip reports', 'trips', 'km'] },
   { page: 'outstanding', name: 'Outstanding', roles: ['owner', 'office'], words: ['outstanding screen', 'outstanding page', 'outstanding list', 'who owes', 'dues'] },
@@ -139,7 +139,7 @@ export const W = {
   shops: ['shop list', 'shops list', 'shops', 'retailer list', 'retailers', 'customer list', 'outlets', 'shop master'],
   newShop: ['new shop', 'new outlet', 'add outlet', 'add shop', 'new retailer', 'add retailer', 'new customer', 'add customer', 'add new shop', 'add new retailer'],
   paid: ['paid', 'payment', 'received', 'recd', 'rcvd', 'collected', 'collection', 'gave', 'given', 'got', 'cash', 'upi', 'gpay', 'google pay', 'phonepe', 'paytm', 'cheque', 'chq', 'check', 'neft', 'imps', 'rtgs', 'transfer'],
-  ret: ['return', 'returned', 'took back', 'sent back', 'send back', 'gave back', 'give back', 'taken back'],
+  ret: ['return', 'returned', 'credit note for', 'credit note to', 'make credit note', 'took back', 'sent back', 'send back', 'gave back', 'give back', 'taken back'],
   damage: ['damage', 'rat', 'rat bite', 'chewed', 'eaten', 'spoilt', 'damaged', 'expired', 'expiry claim', 'leak', 'leaked', 'leaking', 'broken', 'torn', 'crushed', 'wet', 'spoiled', 'udanju', 'udanjiruchu', 'odanju', 'kizhinjiruchu'],
   order: ['order'],
   outstanding: ['outstanding', 'pending', 'owes', 'owe', 'balance', 'due', 'dues', 'has to pay', 'have to pay', 'yet to pay', 'to pay', 'not paid', 'unpaid', 'credit', 'overdue', 'late payment', 'defaulters'],
@@ -213,7 +213,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (settings.kind === 'company') return handleCompany(textIn, role); // a brand's head office and team: their own TESRAX
 
   if (!text && !file) return { text: HELP_TEXT };
-  if (has(text, W.help)) return { text: HELP_TEXT };
+  if (has(text, W.help) && !/\breports?\b/.test(text)) return { text: HELP_TEXT }; // "report menu" is the Reports screen
   if (!file && /^(hi+|hello|hey|good (morning|afternoon|evening|night)|how are you|thanks|thank you|ok|okay)( (tesrax|there|you))*$/.test(text)) {
     const me = await db.staff.get(session().userId);
     return { text: `Hello${me ? `, ${me.name.split(' ')[0]}` : ''}! Here's what I can do:\n\n${HELP_TEXT}` };
@@ -326,6 +326,8 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
     if (!can(role, 'payment')) return deny();
     return paymentProposal(shop.id, amount, modeIn(text), refIn(chq.rest), { chequeDate: chq.date, bank: chq.bank });
   }
+  // "received 5 cases lifebuoy from hul": goods came in (stock in), not money
+  if (!shop && /\b(received|recieved|got)\b/.test(text) && /\b\d+\s*(case|cases|cs|pcs|pieces|box|boxes|bag|bags|carton|cartons|ctn)\b/.test(text)) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
   if (!shop && has(text, W.paid) && amount != null && !hasProduct && !has(text, W.expense) && !has(text, ['advance', 'salary']))
     return { text: 'Which shop paid? Say the shop name.', tone: 'warn', pending: { said: textIn, need: 'shop' } };
   // Payroll by chat: "leave monday", "leave 12/11 to 14/11 fever", "advance 1000", owner: "Karthik leave tomorrow", "advance 2000 to Ravi"
@@ -336,7 +338,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (!shop && /\b(van|vans|auto)\b/.test(text) && /\bwhere\b/.test(text)) { const sc = screenFor('live vans', role, true); if (sc) return sc; }
   if (/\b(came|come|present|absent)\b/.test(text) && (await db.staff.toArray()).some(st => has(text, [norm(st.name.split(' ')[0])]))) { const sc = screenFor('attendance', role, true); if (sc) return sc; }
   if (/\b(van|auto)\s*\d+\s*(details|info|detail)\b/.test(text)) { const sc = screenFor('vans and drivers', role, true); return sc ?? { text: 'Vans & drivers is the owner\'s screen. Ask them to open it.', tone: 'warn', refused: true }; }
-  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text) || (!shop && /\b(stock|goods|load|lorry|items|company|purchase|parcel)\b.*\bcame\b/.test(text))) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
+  if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text) || (!shop && /\breceived\b/.test(text) && /\bfrom\b/.test(text) && !/\b(cash|upi|cheque|payment|money|rs|₹)\b/.test(text)) || (!shop && /\b(stock|goods|load|lorry|items|company|purchase|parcel)\b.*\bcame\b/.test(text))) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
 
   // ------------------------ questions ------------------------
   if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
@@ -347,6 +349,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (!shop && has(text, W.outstanding) && /\b(pcs|pieces|stock|left|cases|qty)\b/.test(text) && bestProduct(productsActive, text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim()).product)
     return stockTable(text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim());
   if (has(text, W.outstanding)) return outstandingTable(shop?.id, findAmount(text));
+  if (/\bstock value\b|\bvalue of (my |the )?stock\b|\bstock worth\b/.test(text)) return stockValue(role);
   if (has(text, W.sales)) return salesToday(text);
   // "how much surf", "is good day available", "how many lifebuoy left"
   if (!shop && /\b(how much|how many|available|left|in stock|stock|quantity|balance stock|do we have|have we got)\b/.test(text)) {
@@ -998,6 +1001,16 @@ async function outstandingTable(shopId?: string, above?: number): Promise<Reply>
     text: rows.length ? `${plural(rows.length, 'shop')} owe ${inr(total)} in total.` : 'Nobody owes anything. 🎉',
     table: { name: 'Outstanding', columns: ['Shop', 'Area', 'Pending ₹', 'Overdue ₹', 'Max days overdue', 'Bills'], rows },
   };
+}
+
+/** "what is my stock value": the stock on hand at purchase rate (owner / office / godown) */
+async function stockValue(role: Role): Promise<Reply> {
+  if (role !== 'owner' && role !== 'office' && role !== 'godown') return deny('Stock value');
+  const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
+  const lots = (await db.batches.toArray()).filter(b => b.qty > 0);
+  let value = 0, unpriced = 0; const items = new Set<string>();
+  for (const b of lots) { const r = products.get(b.productId)?.purchaseRate; items.add(b.productId); if (typeof r === 'number' && r > 0) value += b.qty * r; else unpriced++; }
+  return { text: `Stock value at purchase rate: ${inr(r2(value))} across ${plural(items.size, 'product')} (before GST).` + (unpriced ? ` ${plural(unpriced, 'lot')} without a purchase rate ${unpriced === 1 ? 'is' : 'are'} not counted.` : ''), link: { label: 'Open Stock position', page: 'stock' } };
 }
 
 async function salesToday(text = ''): Promise<Reply> {

@@ -20,6 +20,7 @@ describe('company side screens by name', () => {
     expect((await say(HO, 'open distributor claims')).go).toBe('cl-inbox');
     expect((await say(HO, 'team today')).go).toBe('fd-team');
     expect((await say(HO, 'my team')).go).toBe('co-team');
+    expect((await say(HO, 'who didnt visit today')).go).toBe('fd-team'); // blind check: apostrophe dropped
   });
   it('rep: "travel and expenses", "my expenses"', async () => {
     expect((await say(ARUN, 'open travel and expenses')).go).toBe('fd-expenses');

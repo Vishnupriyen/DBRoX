@@ -17,7 +17,7 @@ export const REPORT_WORDS: { key: string; words: string[] }[] = [
   { key: 'dead', words: ['dead stock', 'not moving', 'non moving', 'nonmoving', 'no movement'] },
   { key: 'himargin', words: ['high margin', 'best margin', 'top margin', 'most margin', 'highest margin'] },
   { key: 'lomargin', words: ['low margin', 'least margin', 'lowest margin', 'poor margin'] },
-  { key: 'shop', words: ['shop wise', 'shopwise', 'shop-wise', 'sales by shop', 'shop sales', 'top shops', 'shop report'] },
+  { key: 'shop', words: ['shop wise', 'shopwise', 'shop-wise', 'sales by shop', 'shop sales', 'top shops', 'best shops', 'shop report', 'shops report'] },
   { key: 'company', words: ['company wise', 'companywise', 'company-wise', 'brand wise', 'brandwise', 'sales by company', 'company sales report'] },
   { key: 'salesman', words: ['salesman wise', 'salesmanwise', 'salesman-wise', 'staff wise', 'sales by salesman', 'salesman sales', 'salesman report', 'salesman performance'] },
   { key: 'area', words: ['area wise', 'areawise', 'area-wise', 'route wise', 'sales by area', 'area sales', 'area report'] },
@@ -51,6 +51,7 @@ export function periodIn(text: string): Period {
 
 /** which report the message asks for, or null */
 export function reportKey(text: string): string | null {
+  text = text.replace(/\b(top|best|bottom) \d+\b/g, '$1'); // "top 5 shops"
   for (const r of REPORT_WORDS) if (r.words.some(w => inText(text, w))) return r.key;
   return null;
 }

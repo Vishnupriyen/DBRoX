@@ -26,7 +26,7 @@ const SCREENS: { page: string; name: string; words: string[]; roles?: Role[] }[]
   { page: 'co-products', name: 'Products & prices', words: ['products', 'price', 'prices', 'price list', 'ptr', 'ptd'], roles: ['cadmin'] },
   { page: 'co-schemes', name: 'Schemes', words: ['schemes', 'scheme', 'offers'], roles: ['cadmin'] },
   { page: 'co-team', name: 'Team', words: ['team', 'staff', 'reps', 'my team'] },
-  { page: 'fd-team', name: 'Team today', words: ['who did not visit', 'who didn t visit', 'not visited', 'team today', 'live', 'where is'], roles: ['cadmin', 'manager'] },
+  { page: 'fd-team', name: 'Team today', words: ['who did not visit', 'who didn t visit', 'who didnt visit', 'didnt visit', 'not visit', 'not visited', 'team today', 'live', 'where is'], roles: ['cadmin', 'manager'] },
   { page: 'fd-approvals', name: 'Approvals', words: ['approvals', 'approve', 'leave requests', 'pending leave'], roles: ['cadmin', 'manager'] },
   { page: 'cl-inbox', name: 'Distributor claims', words: ['distributor claims', 'distributor claim', 'claims', 'claim inbox', 'claims inbox', 'pending claims', 'db claims'], roles: ['cadmin', 'manager'] },
   { page: 'fd-targets', name: 'Targets', words: ['targets', 'target', 'leaderboard'], roles: ['cadmin', 'manager'] },
