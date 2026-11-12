@@ -13,7 +13,17 @@ const SHOTS = process.env.SHOTS !== '0';
   const webview = await device.webView({ pkg: 'com.hanubix.app' }, { timeout: 60000 });
   const p = await webview.page();
   p.on('close', () => console.log('PAGE CLOSED at', new Date().toISOString()));
-  const errs = []; const report = []; let screens = 0;
+  const errs = []; const report = []; const notChecked = []; let screens = 0;
+  const focusNow = async () => (await device.shell('dumpsys window | grep mCurrentFocus')).toString();
+  const appOnTop = async () => {
+    for (let t = 0; t < 3; t++) {
+      if (/com\.hanubix\.app/.test(await focusNow())) return true;
+      await device.shell('am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS').catch(() => {});
+      if (/Not Responding/.test(await focusNow())) await device.shell('input keyevent KEYCODE_ENTER').catch(() => {}); // "Wait" / "Close app"
+      await device.shell('monkey -p com.hanubix.app -c android.intent.category.LAUNCHER 1'); await p.waitForTimeout(2000);
+    }
+    return /com\.hanubix\.app/.test(await focusNow());
+  };
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   p.on('console', m => { if (/\[back\]/.test(m.text())) console.log('PAGE', m.text()); if (m.type() === 'error' && !/fonts|Failed to load resource/.test(m.text())) errs.push('CONSOLE ' + m.text().slice(0, 160)); });
   const shot = async (name) => {
@@ -65,7 +75,12 @@ const SHOTS = process.env.SHOTS !== '0';
     await p.dblclick('.fab .tx-core'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1500); await check('Engine help');
     // the phone's back button closes the engine instead of leaving the app
-    await p.evaluate(() => (document.activeElement)?.blur?.()); await p.waitForTimeout(300); // keyboard away, as a person would see it
+    await p.evaluate(() => (document.activeElement)?.blur?.()); // keyboard away, as a person would see it
+    // the first BACK while the keyboard is still closing only closes the keyboard (normal Android): wait until it is gone
+    for (let k = 0; k < 10 && /mInputShown=true/.test((await device.shell('dumpsys input_method')).toString()); k++) await p.waitForTimeout(300);
+    // another app's "not responding" box on the emulator takes the key press (seen 12 Nov 2026, Android 14: the launcher) —
+    // that is the emulator, not Hanubix: close it and bring the app back; if it can't be, this check is reported as not run
+    if (!(await appOnTop())) { notChecked.push(`${tag}: another app's window was on top (${(await focusNow()).trim()})`); continue; }
     await device.shell('input keyevent KEYCODE_BACK'); await p.waitForTimeout(1000);
     const st = await p.evaluate(() => ({ engine: !!document.querySelector('.engine'), vis: document.visibilityState })).catch(e => ({ err: e.message }));
     const focus = (await device.shell('dumpsys window | grep mCurrentFocus')).toString().trim();
@@ -83,8 +98,9 @@ const SHOTS = process.env.SHOTS !== '0';
   const n = report.reduce((a, r) => a + r.issues.length, 0);
   console.log(`ANDROID SWEEP (${LABEL}): ${screens} screens checked, ${n} issue(s)`);
   for (const r of report) for (const i of r.issues) console.log(`  ISSUE ${r.who} / ${r.page}: ${i}`);
+  for (const x of notChecked) console.log(`  NOT CHECKED (emulator) back button — ${x}`);
   await device.close();
-  process.exit(0);
+  process.exit(n ? 1 : 0); // an issue fails the phone check (it used to end green whatever it found)
 })().catch(async e => {
   console.error('SCRIPT', e.message.split('\n').slice(0, 3).join(' | '));
   // why the app's page went away: the device's own log of the last moments (crash, kill, reload)
