@@ -50,6 +50,8 @@ Small fixes may skip 1–3, never 5. The owner is told about a step only when it
   chaos and the full server suite run once before the push — never after every small fix.
 - **Models:** check-runner (haiku) for gates, CI waits, logs and the APK link; tester and security on sonnet (haiku for a
   re-check of one fix); the strongest model only for hard building or design. Never wait in the foreground — background it.
+- **Bulk work in one step:** many labels, cards, files or checks are done by one script in one command — every step re-reads
+  the whole thread (~120k of setup each time), so 30 small steps cost ~30× one step.
 - **Read only what's needed:** summaries of logs, the lines of a file that matter, never whole long files or logs.
 - **One Hanubix chat at a time.** Suggest a fresh chat (with the handover) once a chat gets long — say it once.
 - **Report usage honestly:** when a job turns out bigger than said, stop and tell the owner before carrying on.
