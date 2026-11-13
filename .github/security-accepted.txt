@@ -1,0 +1,5 @@
+# Security findings accepted on purpose, each with its reason and a review date. After the date the finding counts again.
+# Format: words found in the finding | why it is accepted | review by (YYYY-MM-DD)
+android_task_hijacking1 | false positive: only affects targetSdk below 28; Hanubix targets 36 | 2027-06-30
+android_task_hijacking2 | false positive: only affects targetSdk below 28; Hanubix targets 36 | 2027-06-30
+package xlsx | SheetJS 0.18.5: the fixed 0.20.x is published only on cdn.sheetjs.com (not npm); it only reads files the user picks on their own phone; replace with the official 0.20.3 tarball in the next round | 2026-12-31

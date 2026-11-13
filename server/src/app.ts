@@ -70,6 +70,13 @@ export async function buildApp(pool: pg.Pool) {
     return { ...c, r: u.role };
   };
 
+  // security headers on every reply (free scan, 13 Nov 2026): no content sniffing, never inside a frame, HTTPS only for a year
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'DENY');
+    reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    reply.header('referrer-policy', 'no-referrer');
+  });
   app.get('/health', async () => {
     await pool.query('SELECT 1');
     return { ok: true, service: 'dbrox', time: new Date().toISOString() };

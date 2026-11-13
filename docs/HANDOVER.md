@@ -48,6 +48,12 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - **Older phones**: built for Android System WebView 87+ (late 2020); older shows an "update needed" page (never a blank screen);
   no CSS :has(). Phone check before a release: Android 9 (WebView 69 → update page), 14 and 16; 16 KB check on every APK; a
   phone-check issue now fails the run (it always ended green before).
+- **Security agent + free scan (13 Nov)**: `.github/scripts/security-scan.sh` (npm audit, gitleaks over all history, mobsfscan,
+  semgrep OWASP rules, Android settings) — GitHub "Security scan" every Monday, on push to main, and by hand; accepted findings with
+  reasons and review dates in `.github/security-accepted.txt`. Fixed: login-signing secret must be ≥32 characters and the public dev
+  secret only runs under NODE_ENV=development/test; security headers on every server reply. Next security round (owner's yes):
+  replace xlsx 0.18.5 with SheetJS 0.20.3 (by 31 Dec), login token in Android secure storage, shrink/obfuscate the release APK (R8).
+  Paid outside test (₹1.5–2.5 lakh, CERT-In approved, retest included) once, after the dashboards, before selling widely.
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner

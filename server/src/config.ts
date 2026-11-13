@@ -2,7 +2,8 @@
 export const config = {
   port: Number(process.env.PORT ?? 8080),
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/dbrox',
-  jwtSecret: process.env.JWT_SECRET ?? (process.env.NODE_ENV === 'production' ? '' : 'dev-only-secret-change-me'),
+  // the public dev secret only for tests and local development — a server started without NODE_ENV must not sign with it
+  jwtSecret: process.env.JWT_SECRET ?? (['development', 'test'].includes(process.env.NODE_ENV ?? '') ? 'dev-only-secret-change-me' : ''),
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? '',
   aiModel: process.env.AI_MODEL ?? 'claude-haiku-5-5',
   corsOrigin: process.env.CORS_ORIGIN ?? '*',
@@ -22,6 +23,8 @@ export const config = {
   cronKey: process.env.CRON_KEY ?? '',     // Cloud Scheduler calls the daily job with this
 };
 
-if (!config.jwtSecret) throw new Error('JWT_SECRET must be set in production');
+if (!config.jwtSecret) throw new Error('JWT_SECRET must be set (only NODE_ENV=development or test may run without one)');
+// a short signing secret can be guessed, and with it a login for any firm can be forged
+if (!['development', 'test'].includes(process.env.NODE_ENV ?? '') && config.jwtSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 // in production only our own web app and the Android app may call the server from a browser
 if (process.env.NODE_ENV === 'production' && config.corsOrigin === '*') throw new Error('CORS_ORIGIN must be set in production');

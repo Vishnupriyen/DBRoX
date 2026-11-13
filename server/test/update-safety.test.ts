@@ -67,6 +67,16 @@ describe('old and new phones on one server', () => {
   });
 });
 
+describe('security headers (free scan, 13 Nov 2026)', () => {
+  it('every reply tells browsers: no sniffing, no framing, HTTPS only, no referrer', async () => {
+    const r = await app.inject({ method: 'GET', url: '/health' });
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    expect(r.headers['x-frame-options']).toBe('DENY');
+    expect(String(r.headers['strict-transport-security'])).toMatch(/max-age=\d{7,}/);
+    expect(r.headers['referrer-policy']).toBe('no-referrer');
+  });
+});
+
 describe('a rolled-back server still runs on the newer database', () => {
   // migrations up to 012 were written before this rule; from 013 on they only add (tables, columns with defaults, indexes).
   // Dropping or renaming would break the previous server version during a rollback, and DELETE/TRUNCATE could lose records.

@@ -1,0 +1,21 @@
+# Free security scan (13 Nov 2026): dependencies, secrets in the whole history, mobile and code scans, Android settings.
+# Every Monday, on every push to main, and by hand. A HIGH finding fails the run; the report is kept for 30 days.
+name: Security scan
+on:
+  schedule: [{ cron: '30 21 * * 0' }]   # Monday 3:00 am IST
+  push: { branches: [main] }
+  workflow_dispatch:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the secret scan reads the whole history
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: bash .github/scripts/security-scan.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: security-report, path: /tmp/secscan/report.md, retention-days: 30 }

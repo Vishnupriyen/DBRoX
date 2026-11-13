@@ -5,7 +5,7 @@
   "type": "module",
   "description": "DBRoX server: login, sync, RoX Scan. Runs on Google Cloud Run with PostgreSQL.",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "NODE_ENV=development tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "migrate": "tsx src/migrate.ts",
