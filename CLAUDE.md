@@ -1,4 +1,4 @@
-# Working on Hanubix (repo: DBRoX)
+# Working on Hanubix (GitHub: Vishnupriyen/Hanubix, branch apk — the old name DBRoX only redirects)
 
 Hanubix™ — FMCG distributor app for Tamil Nadu (TESRAX is ENGLISH FIRST — no Tanglish work unless the owner asks), Powered by TESRAX (Turbo Engine for Smart Retail & Autonomous eXecution — locked 11 Nov 2026).
 - `app/` React + TypeScript PWA (Dexie offline DB). Business logic in `app/src/core`, screens in `app/src/ui`.

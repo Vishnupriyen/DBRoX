@@ -3,9 +3,20 @@
 Start of a new chat: read this file, `CLAUDE.md`, `docs/HANUBIX_LOCKED_SIGNATURE.md` and `docs/HANUBIX_PLAN_LOCKED.md`, then carry on.
 Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, one recommendation, and approval before building.
 
-## First thing to do
-- Nothing to rerun: the full gate passed on GitHub (Quality gate) on 397d6f9, 12 Nov evening — all tests, both business days,
-  332 screens. (The run-failed emails that day were the screen check counting the Live vans map's hidden tiles; fixed.)
+## First thing to do (a new chat)
+- **GitHub repo is `Vishnupriyen/Hanubix`** (the old name DBRoX only redirects — attach and push to Hanubix). Branch `apk`.
+- **Never take dates, commits or check results from this file — look them up:** `git log --oneline -15` and
+  `gh api "repos/Vishnupriyen/Hanubix/actions/runs?branch=apk&per_page=6"` (via check-runner). As of 13 Nov morning: HEAD c95b8dd,
+  every check green on GitHub (Quality gate + APK + phone checks on Android 9, 14 and 16 at ca94293).
+- **Never draw the app from memory.** Before any picture of a screen, take a real screenshot of the current app (`cd app && npm run
+  dev`, Playwright, 412 px) and change only what the picture is about. Facts a drawing must keep:
+  - Bottom bar: dark jade–gold, **only two tabs — Home (left) and Menu (right) — with the TESRAX sphere in the middle**. There is
+    no Search, Alerts or other tab.
+  - The sphere is the animated **particle sphere** (`app/src/ui/TesraxCore.tsx`, glowing, gold particles on dark jade) — never a
+    flat or plain circle. The owner: "it is our iconic".
+  - Header: the reworked HANUBIX logo (complete B) with RETAIL INTELLIGENCE on Home; back arrow + screen title elsewhere.
+  - Montserrat, white background, jade headings and quantities (see docs/HANUBIX_LOCKED_SIGNATURE.md).
+- "next" from the owner means: tell him the next waiting item and ask — never start building or drawing without his word.
 
 ## Done today
 - Midnight rep fix; credit note after a return + short delivery fix; phone check (Android emulator) runs to the end with time limits.
