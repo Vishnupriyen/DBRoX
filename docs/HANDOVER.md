@@ -18,6 +18,10 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   - Montserrat, white background, jade headings and quantities (see docs/HANUBIX_LOCKED_SIGNATURE.md).
 - "next" from the owner means: tell him the next waiting item and ask — never start building or drawing without his word.
 
+## 13 Nov 2026
+- Home header: HANUBIX logo with RETAIL INTELLIGENCE under it (edge to edge, clear gap); name + dot and firm name stacked
+  on the right; long firm names never squeeze the logo. Module names stay generic (Bill, Delivery, …) — owner's decision.
+
 ## Done today
 - Midnight rep fix; credit note after a return + short delivery fix; phone check (Android emulator) runs to the end with time limits.
 - TESRAX: every screen by name, every report by name and period (sent as Excel), shop statement file (accounts-reviewed), salary

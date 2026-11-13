@@ -80,3 +80,12 @@ html.native-map .live-page{min-height:100%}html.native-map .live-page::after{con
 .boost-hero{display:flex;gap:12px;align-items:center;background:var(--g);color:#fff}.boost-hero .h,.boost-hero .s{color:#fff!important}.boost-hero svg{width:28px;height:28px;flex:none}
 .boost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .boost-card{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.boost-card .t{font-weight:700}.boost-card .s{flex:1}
+
+/* Home header (13 Nov 2026): logo + RETAIL INTELLIGENCE on the left, the person and the firm stacked on the right */
+.top.home-top{justify-content:space-between}
+.top.home-top .wordmark{flex:none} /* a long firm name never squeezes the logo */
+.top.home-top .hx-logo{width:150px}
+.top-id{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;margin-left:auto}
+.top-id .who{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top-id .firm{font-size:.75rem;color:var(--mut);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+@media(max-width:580px){.top.home-top .hx-logo{width:150px}}

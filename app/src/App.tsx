@@ -236,12 +236,23 @@ export default function App() {
   return (
     <div className="app">
       <GradDefs />
-      <header className="top">
-        {page === 'home' ? <div className="wordmark"><Brand tagline={false} /></div> : <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>}
-        <div className="firm">{page === 'home' ? firm : title}</div>
-        <div className="who">{me.name.split(' ')[0]}</div>
-        <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
-      </header>
+      {page === 'home' ? (
+        // Home: the logo with RETAIL INTELLIGENCE on the left; the person and the firm stacked on the right
+        <header className="top home-top">
+          <div className="wordmark"><Brand stroke={4} tagSize={22} gap={12} /></div>
+          <div className="top-id">
+            <div className="who">{me.name.split(' ')[0]}<span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} /></div>
+            <div className="firm">{firm}</div>
+          </div>
+        </header>
+      ) : (
+        <header className="top">
+          <button className="icon-btn" onClick={() => { if (!stepBack()) home(); }} aria-label="Back"><ArrowLeft /></button>
+          <div className="firm">{title}</div>
+          <div className="who">{me.name.split(' ')[0]}</div>
+          <span className={`sync ${online ? '' : 'off'}`} title={online ? 'Online' : t('offline')} />
+        </header>
+      )}
       {!online && <div className="offline-bar">{t('offline')}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>

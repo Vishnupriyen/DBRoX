@@ -3,7 +3,9 @@
 ## 12 November 2026 — founder approval (supersedes the lines below where they differ)
 - **Logo:** the reworked HANUBIX logo (`Logo` in `app/src/ui/Brand.tsx`, also `app/public/hanubix-wordmark.svg`): wide thin geometric
   letters drawn as lines, A without a crossbar, a **complete B**, even and tighter spacing, RETAIL INTELLIGENCE underneath at exactly
-  the logo's width. Jade-black on white, white on dark. The small header shows the letters only (the tagline is unreadable that small).
+  the logo's width. Jade-black on white, white on dark. **Home header (founder, 13 Nov 2026):** the logo with RETAIL INTELLIGENCE under it
+  (larger tagline so it reads at header size, edge to edge with the letters, clear gap), the person's name + online dot and the
+  firm name stacked on the right. Other screens: back arrow + title.
 - **Font:** Montserrat everywhere (bundled in the app, works offline), matching the logo's shapes. Arial only as the fallback.
 - **TESRAX:** never a block on a page. It lives in the glowing sphere in the centre of the **dark jade–gold bottom bar** (bright mint→gold
   particles on dark); a **double tap** opens it full screen, back closes it.
