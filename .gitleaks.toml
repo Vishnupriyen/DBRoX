@@ -1,0 +1,8 @@
+# gitleaks settings: the standard rules, plus the test-only keys that are not secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test fixtures and documented placeholders"
+paths = ['''server/test/.*''', '''app/tests/.*''']
+regexes = ['''dev-only-secret-change-me''', '''admin-(test|sec)-key''', '''cron-(test|safety|sec)-key''']

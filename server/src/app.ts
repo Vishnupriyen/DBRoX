@@ -45,7 +45,8 @@ const err = (statusCode: number, message: string) => Object.assign(new Error(mes
 export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
   const owner = opts.owner ?? pool;
   const R = rates();
-  // trustProxy 1: Cloud Run's front end adds the caller's address last; only that one is trusted (per-place limits)
+  // trustProxy 1: Caddy (deploy/Caddyfile) adds the caller's address last; only that one hop is trusted (per-place limits).
+  // A CDN in front later would need this changed first, or the limits could be fooled by a made-up header.
   const app = Fastify({ logger: process.env.NODE_ENV === 'production', bodyLimit: 12 * 1024 * 1024, trustProxy: (_addr: string, hop: number) => hop < 1 });
   await app.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',') });
   // security headers on every answer (Caddy adds HSTS and the rest in front too; these hold even without it)
@@ -635,8 +636,8 @@ export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
     return { ok: true, billing: await billingOf(id) };
   });
 
-  // Daily job (Cloud Scheduler, 00:05 IST): a downgrade starts once the paid month is over; status kept for reports.
-  // safety net for the background relay (Cloud Scheduler, every minute): empties anything a stopped instance left behind
+  // Daily job (deploy/cron-call.sh, 00:05 IST): a downgrade starts once the paid month is over; status kept for reports.
+  // safety net for the background relay (deploy/cron-call.sh, every minute): empties anything a stopped instance left behind
   app.post('/v1/cron/relay', async req => {
     await cron(req, 'relay');
     const relayed = await drainRelay(pool);
@@ -652,7 +653,7 @@ export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
     return { brands };
   });
 
-  // daily (Cloud Scheduler, 02:00 IST): old records move to the compressed archive (nothing is deleted)
+  // daily (deploy/cron-call.sh, 02:00 IST): old records move to the compressed archive (nothing is deleted)
   app.post('/v1/cron/archive', async req => {
     await cron(req, 'archive');
     const r = await archiveAll(pool);

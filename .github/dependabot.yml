@@ -1,0 +1,7 @@
+# Weekly pull requests for package and action updates (free). Each one runs the quality gate before anyone merges it.
+version: 2
+updates:
+  - { package-ecosystem: npm, directory: /app, schedule: { interval: weekly, day: monday }, open-pull-requests-limit: 5 }
+  - { package-ecosystem: npm, directory: /server, schedule: { interval: weekly, day: monday }, open-pull-requests-limit: 5 }
+  - { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly, day: monday } }
+  - { package-ecosystem: docker, directory: /server, schedule: { interval: weekly, day: monday } }

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DBRoX server: login, sync, RoX Scan. Runs on Google Cloud Run with PostgreSQL.",
+  "description": "Hanubix server: login, sync, numbers, scan. Runs on the Hostinger VPS with PostgreSQL (deploy/).",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",

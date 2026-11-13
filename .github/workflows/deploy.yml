@@ -1,74 +1,24 @@
-# Deploys DBRoX to Google Cloud (Mumbai). Run it by hand from the Actions tab after the
-# one-time setup in DEPLOY.md (it needs the GCP_SA_KEY and GCP_PROJECT secrets).
+# Marks a commit as safe to deploy on the Hostinger server (plan locked 12 Nov 2026; the old Cloud Run deploy is gone).
+# Run it by hand from the Actions tab on the commit to release. It runs the full quality gate and the server tests; only
+# if both pass it tags the commit gate-<commit>. deploy/deploy.sh on the server refuses any commit without that tag.
 name: Deploy
 on:
   workflow_dispatch:
 
-env:
-  REGION: asia-south1
-  SERVICE: dbrox-server
+permissions:
+  contents: write   # to push the gate-<commit> tag
 
 jobs:
   gate:   # nothing deploys unless the full quality gate passes on this exact code
     uses: ./.github/workflows/quality.yml
 
-  server:
+  tag:
     needs: gate
-    runs-on: ubuntu-latest
-    outputs:
-      url: ${{ steps.deploy.outputs.url }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: google-github-actions/auth@v2
-        with: { credentials_json: '${{ secrets.GCP_SA_KEY }}' }
-      - run: cp -r shared server/shared   # the shared table definition ships inside the server image
-      - uses: google-github-actions/setup-gcloud@v2
-      - id: deploy
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: ${{ env.SERVICE }}
-          region: ${{ env.REGION }}
-          source: server
-          flags: >-
-            --allow-unauthenticated
-            --add-cloudsql-instances=${{ secrets.GCP_PROJECT }}:asia-south1:dbrox-db
-            --min-instances=1 --max-instances=3 --no-cpu-throttling --concurrency=80 --memory=512Mi
-          secrets: |
-            DATABASE_URL=dbrox-database-url:latest
-            JWT_SECRET=dbrox-jwt-secret:latest
-            ANTHROPIC_API_KEY=dbrox-anthropic-key:latest
-            LICENCE_PRIVATE_KEY=hanubix-licence-key:latest
-            ADMIN_KEY=hanubix-admin-key:latest
-            CRON_KEY=hanubix-cron-key:latest
-            RAZORPAY_KEY_ID=hanubix-razorpay-key-id:latest
-            RAZORPAY_KEY_SECRET=hanubix-razorpay-key-secret:latest
-            RAZORPAY_WEBHOOK_SECRET=hanubix-razorpay-webhook-secret:latest
-            RAZORPAY_PLANS=hanubix-razorpay-plans:latest
-          env_vars: |
-            NODE_ENV=production
-            AI_MODEL=claude-haiku-5-5
-            DB_POOL=5
-            SCAN_DAILY_CAP=2000
-            CORS_ORIGIN=https://${{ secrets.GCP_PROJECT }}.web.app,https://${{ secrets.GCP_PROJECT }}.firebaseapp.com,https://localhost
-
-  web:
-    needs: server
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: test -n "$VITE_LICENCE_PUBLIC_KEY" || (echo "LICENCE_PUBLIC_KEY secret is missing" && exit 1)
-        env: { VITE_LICENCE_PUBLIC_KEY: '${{ secrets.LICENCE_PUBLIC_KEY }}' }
-      - run: npm ci && npm run build
-        working-directory: app
-        env:
-          VITE_SERVER_URL: ${{ needs.server.outputs.url }}
-          VITE_LICENCE_PUBLIC_KEY: ${{ secrets.LICENCE_PUBLIC_KEY }}
-      - uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
-          projectId: ${{ secrets.GCP_PROJECT }}
-          channelId: live
-          entryPoint: app
+      - name: Tag this commit as gate-passed
+        run: |
+          T="gate-$(git rev-parse --short HEAD)"
+          git tag "$T" && git push origin "$T"
+          echo "✔ $T — on the server: git pull && deploy/deploy.sh (between 11 pm and 5 am IST)" >> "$GITHUB_STEP_SUMMARY"
