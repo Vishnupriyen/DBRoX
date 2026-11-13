@@ -29,6 +29,20 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   real activity log, staff PINs in plain text on phones, no DPDP, cron jobs not set up on Hostinger). Owner decisions in its section 10.
 - Home header: HANUBIX logo with RETAIL INTELLIGENCE under it (edge to edge, clear gap); name + dot and firm name stacked
   on the right; long firm names never squeeze the logo. Module names stay generic (Bill, Delivery, …) — owner's decision.
+- **Security standard BUILT** (developer, 13 Nov; waiting for the independent tester + security sign-off, not pushed).
+  Status per item: section 0 of docs/HANUBIX_SECURITY_STANDARD.md. In short: encrypted backups (age) + restore drill;
+  hash-chained activity log with nightly check and off-site anchor; limited DB role; Hostinger cron jobs, monitor, security
+  watch, alerts, monthly access review; hardening script; Caddyfile; gate-tagged deploys (Cloud Run workflow gone);
+  security checks on GitHub; phone: PIN hashes only, token in the Android Keystore, app lock, screenshot block, 14-day
+  offline login / 30-day removal, Lock phone; owner PIN 6 digits (old owners asked at next login), owner tokens 14 days;
+  DPDP: consent at sign-up and first login, Privacy & security screen (choices, export, requests, PIN, activity), public
+  request form, erasure, breach register, retention job; 22 written policies in docs/security/ (founder signs each).
+  Bug found and fixed: a new staff member's PIN was copied into the history log (phone and server).
+- **Founder to do for security**: make the age key (deploy/README.md step 1, private key offline); set DB_APP_PASSWORD,
+  ADMIN_ALLOW_IPS, an alert channel and GRIEVANCE_EMAIL in deploy/.env; GCS bucket (Mumbai, write-only account, 35 days);
+  run harden.sh + install-cron.sh on the VPS; outside uptime check; first restore drill and breach drill; sign the 22
+  policies; lawyer review of the privacy notice (later); delete the old GCP_SA_KEY GitHub secret. Open decision: Postgres
+  row-level security (proposed as its own round).
 
 ## Done today
 - Midnight rep fix; credit note after a return + short delivery fix; phone check (Android emulator) runs to the end with time limits.

@@ -1,7 +1,42 @@
 # Hanubix "Security standard" round — build list
 
-Prepared 13 Nov 2026 by Security & Operations. Nothing in the code was changed. Targets: ISO 27001 / SOC 2 (certificates later) and India's DPDP Act 2023 (law).
-Line numbers are from the repo at commit 95d06f7 (branch apk).
+Prepared 13 Nov 2026 by Security & Operations. Targets: ISO 27001 / SOC 2 (certificates later) and India's DPDP Act 2023 (law).
+Line numbers below are from the repo at commit 95d06f7 (branch apk), before the build.
+
+## 0. Build status (13 Nov 2026 — founder: "build it complete")
+Founder's answers to section 10: activity log 12 months online + 5 years archived; phones lock after 14 days offline;
+owner PIN 6 digits (existing 4-digit owners asked at next login), staff 4; backup private key held offline by the founder;
+alert channel and grievance contact are settings (grievance officer defaults to R. Vishnupriyen, no email invented);
+privacy notice drafted, marked "Draft — legal review pending".
+
+| Item | Built | Needs the live server or the founder |
+|---|---|---|
+| 1 Activity log | **done** — `security_log` (013_security.sql): hash chain, append-only (trigger + privileges), monthly partitions, `seclog_add`/`seclog_verify`; `server/src/seclog.ts`; logged: logins ok/fail/locked, signup, PIN change, log-out-all, staff add/change/remove/lock/refused, admin ok/denied, cron runs/denied, support grant/read/denied, archive month, cross-firm refusals, link accept/leave, Razorpay webhook, scan, consent, privacy export/request/erase, breach, deploy; `users.last_login`; retention (12 months → `security_log_archive`, 5 years); `deploy/verify-log.sh` + off-site anchors; Docker log limits; owner's Activity view | run `verify-log.sh` nightly (install-cron) |
+| 1 Limited DB role | **done** — `hanubix_app` (grants via `hanubix_grants()` after every migration), production refuses to start without `DB_APP_PASSWORD` | set `DB_APP_PASSWORD` in `.env` |
+| 2 Phone data at rest | **done** — PIN hashes only (PBKDF2, `core/secure.ts`), Dexie v12 cleans old history entries, token in the Android Keystore (`SecurePlugin.java`; web: own database), 5 wrong offline PINs → 15 min, app lock after 5 min away, `FLAG_SECURE`, 14-day offline login / 30-day removal, Lock phone, backup file excludes token and hashes | APK emulator run: screenshots blocked in recents (not checkable here) |
+| 3 Backup encryption | **done** — `backup.sh` (age in a pipe, manifest, sha256, alert on failure), `backup-env.sh`, `restore-drill.sh` | create the age key, bucket (Mumbai, write-only account, 35-day lock/delete), first restore drill |
+| 4 Written rules | **done** — 22 policies in `docs/security/` | founder signs and dates each |
+| 5 Alerts and reviews | **done** — `alert.sh` (Telegram / WhatsApp Cloud / email), `monitor.sh`, `security-watch.sh`, `install-cron.sh`, `access-review.sh`, `job_runs` | set an alert channel in `.env`; outside uptime check; first signed review |
+| 6 DPDP | **done** — consent at signup (server refuses without it) and first staff login, separate optional choices (AI photo reading enforced on the server, location gates tracking), Privacy & security screen (export, correct, erase, nominee, complaint, close account), public request form, control-panel request list + erasure with second confirmation, breach register + affected-firms query, retention job | lawyer review; grievance email; breach drill |
+| 8.1 CORS | **done** — README `.env` example includes `https://localhost` | — |
+| 8.2 Headers | **done** — server headers + `deploy/Caddyfile` (HSTS, CSP, no Server header, size cap, JSON access log 90 days) | — |
+| 8.3 Rate limits | **done** — per place, per login (sync, number, scan, export), admin; wrong admin/cron keys locked; small bodies on login/signup | — |
+| 8.4 PIN policy | **done** — 6-digit owner/head office, wider weak-PIN list (runs, keypad lines, dates) | — |
+| 8.5 Tokens | **done** — key id + `JWT_SECRET_OLD`, owner 14 days, log out everywhere | — |
+| 8.6 Secrets | **done** — gitleaks in CI, `.env` chmod 600 by deploy/harden, stale Cloud Run workflow replaced | delete the `GCP_SA_KEY` GitHub secret |
+| 8.7 Admin console | **done** — Caddy allow-list, wrong-key lock, every call logged | per-person admin login with the control panel (later) |
+| 8.8 Support access | **done** — enforced and logged (`/v1/admin/support/:tenant/docs`) | — |
+| 8.9 DB privilege | **done** (item 1) | — |
+| 8.10 Row-level security | **not built** — tenant isolation stays tested in code (chaos + server tests); RLS needs `SET app.tenant` on every pooled query: a larger change, proposed for its own round | founder decides |
+| 8.11 Supply chain | **done** — npm audit, Dependabot, Trivy, SBOM, image digests via `pin-images.sh`; CodeQL left out (paid for private repos) | — |
+| 8.12 Hardening | **done** — `harden.sh` + `verify-harden.sh` | run on the VPS |
+| 8.13 Docker | **done** — read-only, no-new-privileges, cap_drop (Caddy), memory limits, health checks | — |
+| 8.14 Deploy | **done** — gate tag required, every deploy logged | — |
+| 8.15–8.17 | **done** — trust-proxy note, 90-day log retention, retention purges; capacity plan still needed before 100k firms | — |
+| 8.18 Tests | **done** — `server/test/security.test.ts`, `deploy-scripts.test.ts`, `app/tests/security.test.ts`, regression for the PIN in the history log | — |
+
+Found while building (regression tests first): a new staff member's PIN was copied whole into the history log (phone and
+server). Fixed in the app (`noSecrets`), on the server (stripped at sync) and for old entries (retention job, once).
 
 ## 1. Top risks, most dangerous first (fix before real distributor data goes on the Hostinger server)
 
