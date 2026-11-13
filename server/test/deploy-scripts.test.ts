@@ -35,7 +35,8 @@ const run = (script: string, env: Record<string, string> = {}, args: string[] = 
   spawnSync('bash', [join(root, 'deploy', script), ...args], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, LOG: log, ROOT: root, HEALTH_WAIT: '0', ...env } });
 const tag = (f: string) => existsSync(join(root, 'deploy', f)) ? readFileSync(join(root, 'deploy', f), 'utf8').trim() : '';
 
-describe('deploy kit', () => {
+// each case starts many small shell programs; GitHub's machines are slower than ours (a 5 s limit timed out there, 13 Nov)
+describe('deploy kit', { timeout: 60000 }, () => {
   it('the compose file works with no TAG set (backup, first start)', () => {
     let ok = true;
     try { execSync('docker compose version', { stdio: 'ignore' }); } catch { ok = false; }

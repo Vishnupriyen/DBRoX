@@ -17,6 +17,9 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   - Header: the reworked HANUBIX logo (complete B) with RETAIL INTELLIGENCE on Home; back arrow + screen title elsewhere.
   - Montserrat, white background, jade headings and quantities (see docs/HANUBIX_LOCKED_SIGNATURE.md).
 - "next" from the owner means: tell him the next waiting item and ask — never start building or drawing without his word.
+- **Never make the owner wait on a check.** Long waits (gate, GitHub builds, APK link) run in the background
+  (`run_in_background: true`); answer him at once and report when it lands. Don't reinstall packages or browsers that already work.
+- **A failed check is never "a one-off".** Find the cause and fix it (regression test first) — a rerun alone hides it.
 
 ## 13 Nov 2026
 - Home header: HANUBIX logo with RETAIL INTELLIGENCE under it (edge to edge, clear gap); name + dot and firm name stacked
