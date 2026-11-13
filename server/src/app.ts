@@ -258,6 +258,8 @@ export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
         if (ch.table === 'tesraxDays' && (data.staffId !== c.u || !ch.id.startsWith(`${c.u}|${String(data.day)}|`) || ch.id.length === `${c.u}|${String(data.day)}|`.length)) { refuse(key); continue; }
         // the history log is add-only, for everyone
         if (ch.table === 'audit' && ex) { refuse(key); continue; }
+        // and never keeps a PIN (an older app copied a new staff member's PIN into it — found 13 Nov 2026)
+        if (ch.table === 'audit') for (const side of ['before', 'after']) { const v = data[side] as Record<string, unknown> | null; if (v && typeof v === 'object' && 'pin' in v) { const { pin: _p, ...rest } = v; void _p; data[side] = rest; } }
         // the server's own checks on company records and linked products (approvals and prices are never the phone's word)
         if (kind === 'company' && ['claimDecisions', 'travelClaims', 'expenses', 'leaves', 'workDays'].includes(ch.table)) {
           if (companyRule(c.r, c.u, ch.table, { ...data, updatedAt: ch.updatedAt } as never, ex as never, ch.updatedAt)) { refuse(key); continue; }

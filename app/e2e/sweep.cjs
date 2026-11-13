@@ -130,6 +130,10 @@ if (require.main === module) (async () => {
       const sel = `.menu-chip:text-is("${item}")`;
       if (await p.$(sel)) { await p.click(sel); await check('Menu › ' + item); await p.click('nav >> text=Menu'); await p.waitForTimeout(200); }
     }
+    // every role: Privacy & security (security standard, 13 Nov 2026) — choices, my data, PIN, and the owner's activity
+    { const sel = '.item:has-text("Privacy & security")';
+      if (await p.$(sel)) { await p.click(sel); await check('Menu › Privacy & security'); await p.click('nav >> text=Menu'); await p.waitForTimeout(200); }
+      else report.push({ who: tag, page: 'Menu', issues: ['no Privacy & security in the Menu'] }); }
     await p.dblclick('.fab .tx-core'); await check('Engine fresh');
     await p.fill('.engine textarea', 'help'); await p.keyboard.press('Enter'); await p.waitForTimeout(1200); await check('Engine help');
     // a TESRAX table on a narrow phone: the money column is on screen, next to the product; "#" and "You said" are left out

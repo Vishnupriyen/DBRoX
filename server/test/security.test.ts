@@ -341,3 +341,17 @@ describe('6. requests per minute and headers', () => {
     expect((await post('/v1/signup', { ...big, consent: CONSENT }, undefined, freshIp())).status).toBe(413);
   });
 });
+
+describe('7. a staff PIN in the history log (found 13 Nov 2026)', () => {
+  it('an older phone\'s history entry with a PIN is stored without it; old entries are cleaned by the retention job', async () => {
+    const entry = { at: now(), by: O.userId, action: 'Staff added: add staff', table: 'staff', recordId: 'sec-x', before: null, after: { id: 'sec-x', name: 'X', phone: '9600000099', role: 'salesman', pin: '7265' }, batchId: 'b1' };
+    await post('/v1/sync', { cursor: 0, changes: [ch('audit', 'aud-1', entry)] }, O.token);
+    expect(JSON.stringify((await pool.query(`SELECT data FROM docs WHERE id='aud-1'`)).rows[0].data)).not.toMatch(/7265/);
+    // one written before this fix
+    await pool.query(`INSERT INTO docs(tenant_id, tbl, id, data, updated_at) VALUES ($1, 'audit', 'aud-old', $2, now())`, [O.tenantId, { ...entry, before: { pin: '4826' } }]);
+    const cron = (body: unknown) => req('POST', '/v1/cron/retention', body, { 'x-forwarded-for': '10.80.0.2', 'x-cron-key': 'cron-sec-key' });
+    expect((await cron({ dryRun: true })).body.counts.audit_pins).toBe(1);
+    expect((await cron({})).body.counts.audit_pins).toBe(1);
+    expect(JSON.stringify((await pool.query(`SELECT data FROM docs WHERE id='aud-old'`)).rows[0].data)).not.toMatch(/4826|7265/);
+  });
+});

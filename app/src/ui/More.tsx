@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Blocks, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat } from 'lucide-react';
+import { Blocks, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat, ShieldCheck } from 'lucide-react';
 import { TesraxReport } from './TesraxReport';
 import { CompanyLinks } from './CompanyLinks';
 import { SIDE_KEY } from '../core/db';
@@ -7,7 +7,7 @@ import { ChangeSet, db, getSettings, today, thisMonth } from '../core/db';
 import { inr, t, showDate } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
-import { ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
+import { api, ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
 import { addClaimLine, claimable, decisionsFor, dropClaimLine, openLines, sendClaim } from '../core/claims';
 import { billChangeBlock } from '../core/gst';
 import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
@@ -65,11 +65,13 @@ export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLo
     <div className="list">
       {role === 'owner' && <button className="item" onClick={async () => {
         const dump: Record<string, unknown[]> = {};
-        for (const tb of db.tables) dump[tb.name] = await tb.toArray();
+        // the phone's own security records (login token, PIN hashes) never go into a file
+        for (const tb of db.tables) dump[tb.name] = tb.name === 'meta' ? (await tb.toArray()).filter(r => !/^(auth\.|pinv:|pinFails)/.test(String((r as { key: string }).key))) : await tb.toArray();
         dump.errorLog = errorLog(); // what went wrong on this phone, for support
         downloadText(`Hanubix-backup-${today()}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
+      {go && <button className="item" onClick={() => go('privacy')}><ShieldCheck /> <span className="grow">Privacy & security</span></button>}
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">{t('logout')}</span></button>
       {role === 'owner' && <button className="item" style={{ color: 'var(--red)' }} onClick={async () => {
         if (!await confirmBox('Reset demo data?', 'This deletes all data on this phone and loads the demo again.', 'Reset')) return;
@@ -205,6 +207,10 @@ function StaffPage({ editable }: { editable: boolean }) {
               </div>
               {s.role !== 'owner' && editable && <div className="row actions">
               <button className="btn small" onClick={async () => { const sal = await askText(`${s.name}: monthly salary ₹`, String(s.salary ?? ''), 'number'); if (sal === null) return; const bat = await askText('Batta per present day ₹', String(s.batta ?? ''), 'number'); if (bat === null) return; const cs = new ChangeSet(); cs.put('staff', { ...s, salary: Number(sal) || 0, batta: Number(bat) || 0 }, 'salary set'); await cs.commit('Salary set'); load(); }}>Salary</button>
+              {s.active && <button className="btn small" onClick={async () => {
+                if (!await confirmBox(`Lock ${s.name}'s phone?`, 'Their phone logs out at once and asks for the PIN online. Use it when a phone is lost.', 'Lock phone')) return;
+                try { await api('/v1/staff/lock', { staffId: s.id }); await notify('Phone locked', `${s.name} must log in again.`); } catch (e) { await notify('Not done', (e as Error).message); }
+              }}>Lock phone</button>}
               {(s.active
                 ? <button className="btn small danger" onClick={() => setActive(s, false)}>Remove access</button>
                 : <button className="btn small" onClick={() => setActive(s, true)}>Restore</button>)}

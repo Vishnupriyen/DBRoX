@@ -5,6 +5,7 @@
 // fake-location apps. So km here is "measured while the app was open", gaps and jumps are FLAGGED for the manager,
 // never silently filled or "blocked". The native Android app (planned) adds background tracking and mock-location checks.
 import { ChangeSet, db, nowIso, session, thisMonth, today, ymd } from './db';
+import { locationAllowed } from './privacy';
 import type { LeaveRequest, Order, Product, Shop, ShopRequest, Staff, Target, Visit, WorkDay } from './types';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -63,6 +64,7 @@ export async function startDay(pos: Pos | null, mode: WorkDay['mode'] = 'bike') 
 /** a location reading while the day is open: a new point only when the rep really moved (more than the GPS margin of
  *  error); otherwise only "last seen" moves, every 5 minutes. A record, not an action: no history entry. */
 export async function addPoint(pos: Pos) {
+  if (!(await locationAllowed())) return false; // DPDP: the km record only after the rep allowed location
   const d = await myDay();
   if (!d || d.endAt) return false;
   if ((pos.acc ?? 0) > POOR_ACC) return false;

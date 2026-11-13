@@ -21,7 +21,7 @@ export type Page = 'home'
   | 'bank' | 'expenses' | 'pnl' | 'cashflow' | 'export' | 'reports' | 'vans'
   | 'gst' | 'today' | 'salary' | 'staff' | 'claims' | 'dayclose' | 'bills'
   | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more' | 'billing'
-  | 'inbound' | 'reorder' | 'settings' | 'links' | 'tesrax' | 'boost'; // linked companies: their bills to receive, and the order to them
+  | 'inbound' | 'reorder' | 'settings' | 'links' | 'tesrax' | 'boost' | 'privacy'; // linked companies: their bills to receive, and the order to them
 
 interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: string }
 

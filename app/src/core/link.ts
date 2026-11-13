@@ -4,6 +4,7 @@
 import { companyToDb, dbToCompany, linkInitial, type Doc, type Link, type Store, type Write } from '../../../shared/relay';
 import { DB_NAME, RoxDB, db, nowIso, onCommit, today } from './db';
 import { server } from './sync';
+import { authHeader } from './secure';
 import type { Company, DbLink, TableName } from './types';
 
 const stores: Partial<Record<'distributor' | 'company', RoxDB>> = {};
@@ -68,7 +69,7 @@ export async function wireDemoRelay() {
 
 const authed = async (path: string, body: unknown) => {
   const url = await server();
-  const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify(body) });
+  const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? 'Could not reach the server. Try again with internet.');
   return j;

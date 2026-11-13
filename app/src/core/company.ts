@@ -5,6 +5,7 @@ import { ChangeSet, daysFrom, db, getSettings, newId, thisMonth, today } from '.
 import { GST_RATES } from './gst';
 import { bestProduct, norm } from './match';
 import { weakPin, WEAK_PIN_MSG } from './sync';
+import { authHeader } from './secure';
 import { mapColumns, num, toIsoDate } from './readers';
 import type { DbLink, PrimaryInvoice, PrimaryLine, Product, Scheme, Shop, Staff } from './types';
 
@@ -145,7 +146,7 @@ const inMonth = (d: string, m: string) => d.slice(0, 7) === m;
 async function remote<T>(kind: string, args: Record<string, unknown> = {}): Promise<T | null> {
   const { server } = await import('./sync');
   const url = await server(); if (!url) return null;
-  const r = await fetch(`${url}/v1/company/report`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ kind, ...args }) });
+  const r = await fetch(`${url}/v1/company/report`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify({ kind, ...args }) });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not load the report. Check the internet.');
   return (await r.json()).data as T;
 }
@@ -153,7 +154,7 @@ async function remote<T>(kind: string, args: Record<string, unknown> = {}): Prom
 export async function fetchDocs(tbl: 'secondary' | 'dbStock' | 'shops', args: { ids?: string[]; dbLinkId?: string }) {
   const { server } = await import('./sync');
   const url = await server(); if (!url) return;
-  const r = await fetch(`${url}/v1/company/docs`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ tbl, ...args }) });
+  const r = await fetch(`${url}/v1/company/docs`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify({ tbl, ...args }) });
   if (!r.ok) throw new Error('Could not load the records. Check the internet.');
   const docs = (await r.json()).docs as { id: string }[];
   if (docs.length) await db.table(tbl).bulkPut(docs.map(d => ({ ...d, dirty: 0 })));

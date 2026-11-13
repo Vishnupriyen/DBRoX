@@ -20,6 +20,8 @@ if [[ -n "$LAST" ]]; then
   read -r AID AHASH < "$LAST"
   if [[ "$AID" =~ ^[0-9]+$ ]]; then
     NOW=$(q "SELECT encode(hash, 'hex') FROM security_log WHERE id = $AID")
+    # gone from the live log: fine only if its month was archived (and then the archive keeps the month's last hash)
+    [[ -z "$NOW" ]] && [[ -z "$(q "SELECT 1 FROM security_log_archive WHERE $AID BETWEEN first_id AND last_id")" ]] && NOW=missing
     if [[ -n "$NOW" && "$NOW" != "$AHASH" ]]; then
       echo "✘ chain broken at id $AID (the row no longer matches the anchor kept off the machine)"
       ./alert.sh verify-log "activity log rewritten: row $AID no longer matches its anchor — see docs/security/09-incident-response.md"

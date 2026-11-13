@@ -127,6 +127,16 @@ class RoxDB extends Dexie {
       for (const b of await tx.table('batches').toArray() as Batch[]) if (b.qty) await tx.table('stockMoves').put({ id: `open:${b.id}`, tenantId: b.tenantId, createdAt: at, updatedAt: at, dirty: 0, batchId: b.id, productId: b.productId, delta: b.qty, reason: 'opening (moved to movements)', by: 'server', at });
     });
     this.version(11).stores({ boostRequests: `${common}, kind, status` }); // Business Boost requests (12 Nov 2026)
+    // security standard (13 Nov 2026): history entries made before this version could hold a staff PIN — removed here.
+    // Staff records' own plain PINs become salted hashes at the next start (core/secure.ts securePins: hashing can't run
+    // inside an upgrade).
+    this.version(12).stores({}).upgrade(async tx => {
+      await tx.table('audit').toCollection().modify((a: { table?: string; before?: Record<string, unknown>; after?: Record<string, unknown> }) => {
+        if (a.table !== 'staff') return;
+        if (a.before && 'pin' in a.before) delete a.before.pin;
+        if (a.after && 'pin' in a.after) delete a.after.pin;
+      });
+    });
   }
 }
 export { RoxDB };
@@ -289,6 +299,12 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
 // A photo is replaced by this mark; undo takes the photo back from the record itself.
 export const PHOTO_KEPT = '(photo kept on the record)';
 const isPhoto = (v: unknown) => typeof v === 'string' && v.startsWith('data:') && v.length > 512;
+/** the history log never keeps a PIN (a staff record's first PIN waits only in the record itself until it is sent) */
+export function noSecrets(table: string, rec: unknown): unknown {
+  if (table !== 'staff' || !rec || typeof rec !== 'object' || !('pin' in rec)) return rec;
+  const { pin: _pin, ...rest } = rec as Record<string, unknown>; void _pin;
+  return rest;
+}
 export function withoutPhotos(v: unknown): unknown {
   if (isPhoto(v)) return PHOTO_KEPT;
   if (Array.isArray(v)) return v.map(withoutPhotos);
@@ -335,7 +351,7 @@ export class ChangeSet {
         if (this.opts.noAudit) continue;
         await db.audit.put(stamp<AuditEntry>({
           at: nowIso(), by: currentUser, action: `${label}: ${w.action}`,
-          table: w.table, recordId: w.rec.id, before: withoutPhotos(before), after: withoutPhotos(w.rec), batchId: this.batchId,
+          table: w.table, recordId: w.rec.id, before: withoutPhotos(noSecrets(w.table, before)), after: withoutPhotos(noSecrets(w.table, w.rec)), batchId: this.batchId,
         } as AuditEntry));
       }
     });

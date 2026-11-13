@@ -6,6 +6,7 @@ import { inr, plural } from './i18n';
 // Differences are typed the TESRAX way ("surf 2 case short, 1 case damaged"); on ✓ the stock goes in, the purchase is
 // recorded as billed (GST input), and each difference becomes a claim line that points to the company bill and its IRN.
 import { ChangeSet, daysFrom, db, getSettings, nowIso, session, today } from './db';
+import { authHeader } from './secure';
 import { bestProduct, norm, parseItemLines, toPieces } from './match';
 import type { ClaimEntry, Inbound, PrimaryOrder, Product, Purchase, Receipt } from './types';
 import { server } from './sync';
@@ -77,7 +78,7 @@ export async function receiveInbound(id: string, short: Diff[], damaged: Diff[])
   const url = await server();
   if (url) {
     if (!navigator.onLine) throw new Error('Receiving a company bill needs internet for a moment (so two phones never receive it twice).');
-    const r = await fetch(`${url}/v1/receipt/claim`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ inboundId: id }) });
+    const r = await fetch(`${url}/v1/receipt/claim`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify({ inboundId: id }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not reach the server. Try again with internet.');
   }
   const me = session().userId;

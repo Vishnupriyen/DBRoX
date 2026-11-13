@@ -138,6 +138,25 @@ export async function retention(pool: pg.Pool, dry = false) {
     ['privacy_requests_closed', `FROM privacy_requests WHERE status <> 'open' AND closed_at < now() - interval '3 years'`],
   ];
   const counts: Record<string, number> = {};
+  // history entries an older app wrote with a staff PIN inside (live and archived): the PIN is taken out
+  const hasPin = `tbl = 'audit' AND (data->'before' ? 'pin' OR data->'after' ? 'pin')`;
+  counts.audit_pins = dry ? Number((await pool.query(`SELECT count(*)::int n FROM docs WHERE ${hasPin}`)).rows[0].n)
+    : (await pool.query(`UPDATE docs SET data = data #- '{before,pin}' #- '{after,pin}' WHERE ${hasPin}`)).rowCount ?? 0;
+  // the archive is read once (new entries can no longer carry a PIN: the server takes it out at sync)
+  let archived = 0;
+  const scrubbed = (await pool.query(`SELECT 1 FROM job_runs WHERE job = 'audit-pin-scrub'`)).rowCount;
+  if (!scrubbed) for (const b of (await pool.query(`SELECT tenant_id, month, part, data FROM docs_archive WHERE tbl = 'audit'`)).rows) {
+    const text = gunzipSync(b.data).toString();
+    if (!text.includes('"pin"')) continue;
+    const list = JSON.parse(text) as { data: { before?: Record<string, unknown> | null; after?: Record<string, unknown> | null } }[];
+    let n = 0;
+    for (const x of list) for (const side of ['before', 'after'] as const) { const v = x.data?.[side]; if (v && typeof v === 'object' && 'pin' in v) { delete v.pin; n++; } }
+    if (!n) continue;
+    archived += n;
+    if (!dry) { const gz = gzipSync(Buffer.from(JSON.stringify(list))); await pool.query(`UPDATE docs_archive SET data=$4, bytes=$5 WHERE tenant_id=$1 AND tbl='audit' AND month=$2 AND part=$3`, [b.tenant_id, b.month, b.part, gz, gz.length]); }
+  }
+  counts.audit_pins_archived = archived;
+  if (!dry && !scrubbed) await pool.query(`INSERT INTO job_runs(job, last_ok_at, detail) VALUES ('audit-pin-scrub', now(), $1) ON CONFLICT (job) DO NOTHING`, [JSON.stringify({ archived })]);
   for (const [name, from] of jobs) {
     counts[name] = dry ? Number((await pool.query(`SELECT count(*)::int n ${from}`)).rows[0].n) : ((await pool.query(`DELETE ${from}`)).rowCount ?? 0);
   }

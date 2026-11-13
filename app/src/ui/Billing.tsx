@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { CreditCard, RefreshCw, Check, X } from 'lucide-react';
 import { licenceState, refreshLicence, type LicenceState } from '../core/licence';
 import { ENV_SERVER, server, syncNow } from '../core/sync';
+import { authHeader } from '../core/secure';
 import { MODULES, type Role } from '../core/types';
 import { inr } from '../core/i18n';
 import { notify } from './dialog';
@@ -30,7 +31,7 @@ export function Billing({ role }: { role: Role }) {
     setBusy(true);
     try {
       const url = await server();
-      const r = await fetch(`${url}/v1/billing/subscribe`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: '{}' });
+      const r = await fetch(`${url}/v1/billing/subscribe`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: '{}' });
       const j = await r.json() as { url?: string; error?: string };
       if (!r.ok || !j.url) throw new Error(j.error ?? 'Could not start the payment.');
       window.location.href = j.url; // Razorpay's page: UPI Autopay set up once, paid every month automatically

@@ -60,7 +60,7 @@ export interface Staff extends Base {
   name: string;
   phone: string;
   role: Role;
-  pin: string; // local only; server keeps a hash
+  pin?: string; // only while a new staff member's first PIN waits to be sent; the phone then keeps a hash only (core/secure.ts)
   active: boolean;
   vanId?: string;
   salary?: number; batta?: number; // per month / per present day

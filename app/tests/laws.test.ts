@@ -4,6 +4,7 @@
 // cancels (twice), and undo of random past actions. After EVERY step it checks the laws below.
 // If any law breaks, the test prints the seed and the exact steps so the bug can be replayed.
 //   CHAOS_STEPS=2000 CHAOS_SEEDS=5 npx vitest run tests/laws.test.ts   (the gate runs a lighter version)
+import { CONSENT } from '../../server/test/fixtures';
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { ChangeSet, db, newId, onSide, RoxDB, setSession, undoBatch, today } from '../src/core/db';
@@ -199,7 +200,7 @@ async function playPhones(seed: number, steps: number) {
   const R = rng(seed * 7919); const pick = <T,>(a: T[]) => a[Math.floor(R() * a.length)];
   const call = async (path: string, body: object, token?: string) => (await srv.fetch(`http://srv.test${path}`, { method: 'POST', body: JSON.stringify(body), headers: { 'x-forwarded-for': `10.77.${++ip % 250}.${seed % 250}`, ...(token ? { authorization: `Bearer ${token}` } : {}) } })).json();
   const ownerPhone = `9${String(seed).padStart(4, '0')}00009`;
-  const up = await call('/v1/signup', { firmName: `Chaos ${seed}`, ownerName: 'Owner', phone: ownerPhone, pin: '4826' });
+  const up = await call('/v1/signup', { consent: CONSENT, firmName: `Chaos ${seed}`, ownerName: 'Owner', phone: ownerPhone, pin: '482613' });
   expect(up.token, JSON.stringify(up)).toBeTruthy();
   const tenant = up.tenantId as string;
   const sid = (await srv.query(`SELECT id FROM docs WHERE tenant_id=$1 AND tbl='settings'`, [tenant]))[0].id as string;

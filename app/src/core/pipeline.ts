@@ -5,6 +5,7 @@ import { ChangeSet, db, getSettings, nowIso, session, today, daysFrom, ymd } fro
 import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatches, refreshSchemeClaims, type BillCut } from './billing';
 import { invoiceBalances, paymentCounts, r2 } from './ledger';
 import { nextNumbers } from './sync';
+import { locationAllowed } from './privacy';
 import { billChangeBlock, isInterState } from './gst';
 import { buildCreditNote, costValue, extraBill, lineRoom, makeCreditNote, splitShort } from './credit';
 import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
@@ -238,6 +239,7 @@ export async function startTrip(tripId: string) {
 }
 
 export async function trackPoint(tripId: string, lat: number, lng: number) {
+  if (!(await locationAllowed())) return; // DPDP: live tracking only after the driver allowed it (Menu → Privacy & security)
   const t = await db.trips.get(tripId); if (!t || t.status !== 'out') return;
   const track = [...t.track, { at: nowIso(), lat, lng }].slice(-500);
   await db.trips.put({ ...t, track, updatedAt: nowIso(), dirty: 1 });

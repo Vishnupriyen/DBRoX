@@ -17,6 +17,9 @@ export async function startServer() {
   const pool = new pg.Pool({ connectionString: `postgres://postgres:pw@localhost:${port}/dbrox` });
   pool.on('error', () => {});
   const { migrate } = await import('../src/db.js'); await migrate(pool);
+  // the chaos laws play many phones' days of work in seconds of real time, all from this one machine: the per-minute
+  // request limits (proven on their own in server/test/security.test.ts) would stop the play, not protect anything
+  for (const k of ['RATE_PLACE_PER_MIN', 'RATE_SYNC_PER_MIN', 'RATE_NUMBER_PER_MIN']) process.env[k] ??= '1000000';
   const { buildApp } = await import('../src/app.js');
   const app = await buildApp(pool);
   /** a phone's fetch, answered by this server (no network) */

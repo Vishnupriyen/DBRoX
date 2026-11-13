@@ -27,7 +27,10 @@ describe('sync replies the phone must act on', () => {
     vi.stubGlobal('fetch', async (_u: string, init: { body: string }) => ok({ cursor: 1, changes: [], accepted: keys(JSON.parse(init.body)), rejected: [], current: [], token: 'renewed-token' }));
     const { syncNow } = await import('../src/core/sync');
     await syncNow();
-    expect(store.get('dbrox.token')).toBe('renewed-token');
+    // kept in the phone's secure store, never in localStorage (security standard, 13 Nov 2026)
+    const { getToken } = await import('../src/core/secure');
+    expect(await getToken()).toBe('renewed-token');
+    expect(store.has('dbrox.token')).toBe(false);
   });
 
   it('a refused NEW record is never marked sent (held, tried again); a refused existing one takes the server copy', async () => {

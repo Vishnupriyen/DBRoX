@@ -1,5 +1,6 @@
 // TESRAX Scan: photo / scanned PDF → structured data, via the Hanubix server (which holds the AI key).
 // The phone never holds the AI key. The AI only reads; code validates; a person approves.
+import { authHeader } from './secure';
 import { server } from './sync';
 
 export type ScanKind = 'purchase' | 'expense' | 'order';
@@ -47,10 +48,9 @@ export async function scanFile(file: File, kind: ScanKind): Promise<ScanResult> 
   const url = await server();
   if (!url) throw new NoServerError('not connected');
   const dataUrl = await fileToDataUrl(file);
-  const token = localStorage.getItem('dbrox.token') ?? '';
   const res = await fetch(`${url}/v1/scan`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    headers: { 'content-type': 'application/json', ...(await authHeader()) },
     body: JSON.stringify({ kind, file: dataUrl, name: file.name }),
   });
   if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? `Scan failed (${res.status})`); }

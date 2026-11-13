@@ -2,6 +2,8 @@
 // there is signal. Server is swappable because the app only knows this small protocol.
 import { saveLicence } from './licence';
 import { ChangeSet, db, getSettings } from './db';
+import { authHeader, checkPinOffline, clearToken, getToken, offlineState, OFFLINE_LOGIN_DAYS, rememberPin, securePins, setToken, touchServer } from './secure';
+import privacy from '../../../shared/privacy.json';
 import type { Base, TableName } from './types';
 
 import shared from '../../../shared/tables.json';
@@ -18,18 +20,22 @@ export async function server(): Promise<string | null> {
   try { return (await getSettings()).serverUrl?.replace(/\/$/, '') || null; } catch { return null; }
 }
 
-export async function signup(body: { firmName: string; ownerName: string; phone: string; pin: string; gstin?: string; address?: string; kind?: 'company' }) {
+/** the privacy notice version the person ticked (shared/privacy.json; the server checks the same one) */
+export const PRIVACY_VERSION = privacy.version;
+export async function signup(body: { firmName: string; ownerName: string; phone: string; pin: string; gstin?: string; address?: string; kind?: 'company'; consent: { version: string; optional?: Record<string, boolean> } }) {
   const url = await server();
   if (!url) throw new Error('No server');
   const r = await fetch(`${url}/v1/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? 'Sign-up failed');
-  localStorage.setItem('dbrox.token', j.token);
+  await setToken(j.token);
+  await rememberPin(j.tenantId, j.userId, body.phone, body.pin);
+  await touchServer();
   await saveLicence(j.licence);
   return { tenantId: j.tenantId as string, userId: j.userId as string };
 }
 
-export type LoginResult = { tenantId: string; userId: string } | { choose: { tenantId: string; firm: string }[] } | null;
+export type LoginResult = { tenantId: string; userId: string; mustChangePin?: boolean; pinLength?: number } | { choose: { tenantId: string; firm: string }[] } | { error: string } | null;
 export async function login(phone: string, pin: string, tenantId?: string): Promise<LoginResult> {
   const url = await server();
   if (url && navigator.onLine) {
@@ -38,17 +44,52 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
       if (r.ok) {
         const j = await r.json();
         if (j.choose) return { choose: j.choose }; // same phone under two distributors → the app asks which firm
-        localStorage.setItem('dbrox.token', j.token);
+        await setToken(j.token);
+        await rememberPin(j.tenantId, j.userId, phone, pin); // a salted hash only: the offline login and the app lock
+        await touchServer();
         await saveLicence(j.licence);
-        return { tenantId: j.tenantId, userId: j.userId };
+        return { tenantId: j.tenantId, userId: j.userId, ...(j.mustChangePin ? { mustChangePin: true, pinLength: Number(j.pinLength ?? 6) } : {}) };
       }
       if (r.status === 401) return null;
-    } catch { /* offline: fall back to the PIN kept on this phone */ }
+      if (r.status === 429) return { error: (await r.json().catch(() => ({}))).error ?? 'Too many wrong PINs. Try again in a few minutes.' };
+    } catch { /* offline: fall back to the PIN check on this phone */ }
   }
-  const s = (await db.staff.where('phone').equals(phone).toArray()).find(x => !tenantId || x.tenantId === tenantId);
-  if (!s || !s.active || s.pin !== pin) return null;
-  return { tenantId: s.tenantId, userId: s.id };
+  // offline: only a phone that reached the server in the last 14 days; the PIN checked against its hash on this phone
+  const off = await offlineState(!!url);
+  if (off.mustLogin) return { error: `This phone has not reached the server for ${off.days} days. Connect to the internet to log in.` };
+  await securePins(!!url);
+  const c = await checkPinOffline(phone, pin, tenantId);
+  if (!c.ok) return c.why === 'locked' ? { error: `Too many wrong PINs. Try again after ${new Date(c.until!).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}.` } : null;
+  const s = await db.staff.get(c.userId);
+  if (!s || !s.active) return null;
+  return { tenantId: c.tenantId, userId: c.userId };
 }
+
+/** the demo (no server): tapping a name signs in at once — there is nothing to protect and no PIN to show */
+export async function demoLogin(staffId: string): Promise<{ tenantId: string; userId: string } | null> {
+  if (await server()) return null;
+  const s = await db.staff.get(staffId);
+  return s?.active ? { tenantId: s.tenantId, userId: s.id } : null;
+}
+
+/** a call to the server with this phone's login (privacy, PIN change, phone lock …) */
+export async function api<T = Record<string, unknown>>(path: string, body: object = {}): Promise<T> {
+  const url = await server();
+  if (!url) throw Object.assign(new Error('This needs the Hanubix server. In the demo, nothing leaves this phone.'), { name: 'GuardError' });
+  if (!navigator.onLine) throw Object.assign(new Error('No internet. Try again when there is signal.'), { name: 'GuardError' });
+  const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error ?? `Not done (${r.status})`), { name: 'GuardError' });
+  await touchServer();
+  return j as T;
+}
+/** change my own PIN (the owner and head office: 6 digits). The other phones with this login log in again. */
+export async function changePin(tenantId: string, userId: string, phone: string, old: string, pin: string) {
+  const j = await api<{ token: string }>('/v1/pin/change', { old, pin });
+  await setToken(j.token);
+  await rememberPin(tenantId, userId, phone, pin);
+}
+export const OFFLINE_DAYS = OFFLINE_LOGIN_DAYS;
 
 // Bill / credit-note / receipt numbers come from the server (one series per distributor, never a duplicate).
 // Without a server (demo), the phone keeps its own series.
@@ -56,17 +97,25 @@ export async function nextNumbers(kind: 'bill' | 'cn' | 'receipt', count = 1): P
   const url = await server();
   if (!url) return null;
   if (!navigator.onLine) throw new Error('offline');
-  const r = await fetch(`${url}/v1/number`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ kind, count }) });
+  const r = await fetch(`${url}/v1/number`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify({ kind, count }) });
   if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).error ?? 'Could not get a bill number'), { name: r.status === 402 || r.status === 403 ? 'GuardError' : 'Error' });
   return await r.json();
 }
 
-/** PINs anyone would try first (the server refuses them too): 0000, 1111 … 9999, 1234, 4321, 1212, years 1950–2030 */
-export const WEAK_PIN_MSG = 'This PIN is too easy to guess (like 1234, 1111 or a year). Choose another 4-digit PIN.';
+/** PINs anyone would try first — the same list as the server (server/src/rules.ts weakPin): one digit repeated, pairs
+ *  repeated, straight or step-2 runs (1234, 1357, 2468, 9753), keypad lines (2580, 0852 …), years 1950–2030, and for
+ *  6 digits a date (DDMMYY or YYMMDD) */
+export const WEAK_PIN_MSG = 'This PIN is too easy to guess (a run like 1357, a repeat, a year or a date). Choose another.';
 export function weakPin(pin: string): boolean {
-  if (!/^\d{4}$/.test(pin)) return false;
-  if (/^(\d)\1{3}$/.test(pin) || ['1234', '4321', '1212'].includes(pin)) return true;
-  return Number(pin) >= 1950 && Number(pin) <= 2030;
+  if (!/^(\d{4}|\d{6})$/.test(pin)) return false;
+  const d = [...pin].map(Number);
+  if (new Set(d).size === 1) return true;
+  if (/^(\d\d)\1+$/.test(pin) || /^(\d\d\d)\1$/.test(pin)) return true;
+  for (const step of [1, 2, -1, -2]) if (d.every((x, i) => i === 0 || (x - d[i - 1] + 10) % 10 === (step + 10) % 10)) return true;
+  if (['2580', '0852', '1470', '0741', '3690', '0963', '7410', '9630', '1590', '9510', '3570', '0753', '147258', '258369', '852741', '123123', '112233', '102030', '010203'].some(k => pin.includes(k) && (k.length === pin.length || pin.length === 4))) return true;
+  if (pin.length === 4) { const y = Number(pin); return y >= 1950 && y <= 2030; }
+  const date = (dd: number, mm: number) => mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+  return date(d[0] * 10 + d[1], d[2] * 10 + d[3]) || date(d[4] * 10 + d[5], d[2] * 10 + d[3]);
 }
 
 // a credit note made without signal waits for its number (owner decision: with a server, numbers come from it only)
@@ -90,9 +139,10 @@ async function numberPendingCreditNotes() {
 }
 
 /** "Access removed" (staff removed by the owner): nothing of the firm's data stays on this phone */
-async function wipeLocal() {
+export async function wipeLocal() {
+  await clearToken();
   await Promise.all(db.tables.map(t => t.clear()));
-  for (const k of ['dbrox.token', 'dbrox.session']) localStorage.removeItem(k);
+  for (const k of ['dbrox.token', 'dbrox.session']) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
 }
 
 const PUSH_BYTES = 2 * 1024 * 1024; // one request carries at most ~2 MB (photos): a big backlog goes in several
@@ -114,6 +164,8 @@ export async function syncNow(): Promise<string> {
     if (!r.more) break;
   }
   if ((await db.meta.get('archiveDone'))?.value === 'pending' && msg.startsWith('Synced')) await fetchArchive();
+  // a staff PIN typed on this phone has reached the server: kept here as a hash only from now on
+  try { await securePins(true); } catch { /* tried again at the next sync */ }
   // company reps' orders that came in: stock and credit flags, like a salesman's order (owner / office phone only)
   try { const { flagArrivedOrders } = await import('./pipeline'); await flagArrivedOrders(); } catch { /* tried again next sync */ }
   return msg;
@@ -125,7 +177,7 @@ export async function fetchArchive(): Promise<number> {
   const url = await server();
   if (!url || !navigator.onLine) return 0;
   const call = async (path: string, body: object) => {
-    const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify(body) });
+    const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify(body) });
     return r.ok ? await r.json() : r.status === 404 ? 404 : null;
   };
   let saved = 0;
@@ -170,7 +222,7 @@ async function catchUpNewTables() {
   try {
     let from = Number((await db.meta.get('catchUpCursor'))?.value ?? 0), finished = false;
     for (let i = 0; i < 2000; i++) {
-      const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${localStorage.getItem('dbrox.token') ?? ''}` }, body: JSON.stringify({ cursor: from, changes: [], moves: 1, tables: fresh }) });
+      const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await authHeader()) }, body: JSON.stringify({ cursor: from, changes: [], moves: 1, tables: fresh }) });
       if (!r.ok) return; // tried again at the next sync; the main sync reports any login problem
       const res: { cursor: number; changes: Change[]; more?: boolean } = await r.json();
       const rows = (res.changes ?? []).filter(c => fresh.includes(c.table as TableName)); // an older server sends every table: the rest already came
@@ -198,7 +250,7 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
   if (running) return done('Sync already running.');
   running = true;
   try {
-    const token = localStorage.getItem('dbrox.token') ?? '';
+    const token = await getToken();
     const cursor = Number((await db.meta.get('cursor'))?.value ?? 0);
     await numberPendingCreditNotes();
     try { const { numberPendingReceipts } = await import('./receipts'); await numberPendingReceipts(); } catch { /* numbered at a later sync */ }
@@ -225,8 +277,9 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     }
     if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Please log in again. Anything not yet sent stays on this phone.'); }
     if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);
+    await touchServer(); // the phone reached the server: the 14-day offline clock starts again
     const res: { cursor: number; changes: Change[]; accepted: string[]; rejected?: string[]; current?: Change[]; more?: boolean; licence?: string; token?: string } = await r.json();
-    if (res.token) localStorage.setItem('dbrox.token', res.token); // renewed before it runs out
+    if (res.token) await setToken(res.token); // renewed before it runs out
     await saveLicence(res.licence); // every sync renews the licence
     const accepted = new Set(res.accepted);
     const refused = new Set(res.rejected ?? []);

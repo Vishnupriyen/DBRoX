@@ -132,3 +132,15 @@ describe('round 3 guard rules', () => {
     }
   });
 });
+
+// Security standard round (13 Nov 2026): the history log copied each saved record whole — a staff member's PIN, typed by
+// the owner, went into the audit entry (before/after), which is kept on the phone and synced to the server for good.
+describe('a staff PIN never goes into the history log', () => {
+  it('adding staff and changing their PIN leaves no PIN in any audit entry', async () => {
+    const cs = new ChangeSet(); const s = cs.put('staff', { name: 'Audit Test', phone: '9811100001', role: 'salesman', pin: '7265', active: true }, 'add staff'); await cs.commit('Staff added');
+    const cs2 = new ChangeSet(); cs2.put('staff', { ...s, pin: '4826' }, 'pin changed'); await cs2.commit('PIN changed');
+    const entries = (await db.audit.toArray()).filter(a => a.recordId === s.id);
+    expect(entries.length).toBe(2);
+    expect(JSON.stringify(entries)).not.toMatch(/7265|4826/);
+  });
+});

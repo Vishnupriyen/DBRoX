@@ -9,7 +9,10 @@ import { CompanyBills, OrderToCompany } from './ui/CompanyBills';
 import { isCompanyRole } from './core/types';
 import { addPoint } from './core/field';
 import { seedDemo } from './core/seed';
-import { ENV_SERVER, login, signup, startAutoSync, syncNow } from './core/sync';
+import { demoLogin, ENV_SERVER, login, PRIVACY_VERSION, server, signup, startAutoSync, syncNow, wipeLocal } from './core/sync';
+import { AWAY_LOCK_MINUTES, clearToken, hasVerifier, offlineState, pinLengthFor, securePins } from './core/secure';
+import { noticeAccepted } from './core/privacy';
+import { ConsentScreen, LockScreen, Notice, PinChange, PrivacyPage } from './ui/Privacy';
 import { t } from './core/i18n';
 import { Chat } from './ui/Chat';
 import { Home, type Page } from './ui/Home';
@@ -19,7 +22,7 @@ import { ErrorBoundary } from './ui/Safety';
 import { Billing } from './ui/Billing';
 import { refreshLicence, type LicenceState } from './core/licence';
 import { sound } from './core/sound';
-import { Volume2, VolumeX, RefreshCw, LogOut, Repeat } from 'lucide-react';
+import { Volume2, VolumeX, RefreshCw, LogOut, Repeat, ShieldCheck } from 'lucide-react';
 import { UndoToast } from './ui/UndoToast';
 import { OrdersReceived } from './ui/OrdersReceived';
 import { NewShop, NewShops, Targets } from './ui/Sales';
@@ -56,7 +59,7 @@ const TITLE: Partial<Record<Page, string>> = {
   plan: 'Delivery plan', live: 'Live vans', status: 'Delivery status', trips: 'Trip reports', load: 'Load vans', print: 'Load sheet', trip: 'My trip', pick: 'Pick orders',
   collect: 'Collect', outstanding: 'Outstanding', cash: 'Cash with staff', cheques: 'Cheques & UPI',
   bank: 'Bank', expenses: 'Expenses', pnl: 'P&L', cashflow: 'Cash flow', vans: 'Vans & drivers', export: 'Export', reports: 'Reports',
-  gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills',
+  gst: 'GST', today: 'Today', salary: 'Salary', staff: 'Staff', claims: 'Claims', dayclose: 'Day close', bills: 'Bills', privacy: 'Privacy & security',
   'inbound': 'Company bills', 'reorder': 'Order to company', 'lite-shops': 'Shop list', 'lite-plan': "Today's shops", 'lite-delivery': 'Delivery', 'lite-collect': 'Collection', 'lite-export': "Day's Excel", more: 'Menu', billing: 'Plan & billing', settings: 'Settings', links: 'Company links', tesrax: 'TESRAX report', boost: 'Business Boost',
 };
 // TESRAX "open a screen" names → pages (keeps old names working)
@@ -82,6 +85,23 @@ export default function App() {
   const [checkedIn, setCheckedIn] = useState(true);
   const [online, setOnline] = useState(navigator.onLine);
   const [lic, setLic] = useState<LicenceState | null>(null);
+  // security standard (13 Nov 2026): first-login notice, the owner's 6-digit PIN, the app lock, the 14-day offline limit
+  const [gate, setGate] = useState<{ step: 'consent' | 'pin'; length?: number } | null>(null);
+  const [locked, setLocked] = useState<number | null>(null); // the PIN length while the app is locked
+  const [offWarn, setOffWarn] = useState<number | null>(null);
+  const [loginMsg, setLoginMsg] = useState('');
+  const awayAt = useRef(0);
+  useEffect(() => {
+    if (!me) return;
+    const on = () => {
+      if (document.hidden) { awayAt.current = Date.now(); return; }
+      if (!awayAt.current || Date.now() - awayAt.current < AWAY_LOCK_MINUTES * 60000) return;
+      awayAt.current = 0;
+      void (async () => { if (await hasVerifier(me.tenantId, me.id)) setLocked((await pinLengthFor(me.phone)) ?? 4); })();
+    };
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, [me]);
   useEffect(() => {
     const on = (e: Event) => setLic((e as CustomEvent).detail);
     window.addEventListener('hanubix:licence', on);
@@ -107,17 +127,24 @@ export default function App() {
   useEffect(() => {
     (async () => {
       if (!ENV_SERVER) { await wireDemoRelay(); if (sideNow() === 'company') await seedCompanyDemo(); else await seedDemo(); }
+      const hasServer = !!(await server());
+      // a phone away from the server too long: 14 days → log in online; 30 days → its copy of the firm's data is removed
+      const off = await offlineState(hasServer);
+      if (off.wipe) { await wipeLocal(); setLoginMsg(`This phone had not reached the server for ${off.days} days, so its copy of the firm's data was removed. Log in to get it back.`); }
+      else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(`This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
+      setOffWarn(off.warnDaysLeft);
+      void securePins(hasServer).catch(() => {}); // plain PINs from an older version become hashes
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');
       if (saved) {
         const { tenantId, userId } = JSON.parse(saved);
         const s = await db.staff.get(userId);
-        if (s?.active) { setSession(tenantId, userId); await loadMe(userId); }
+        if (s?.active) { setSession(tenantId, userId); await loadMe(userId); if (!(await noticeAccepted())) setGate({ step: 'consent' }); }
       }
       setReady(true);
       startAutoSync();
     })();
-    const kicked = () => { localStorage.removeItem('dbrox.token'); setMe(null); };
+    const kicked = () => { void clearToken(); setMe(null); };
     window.addEventListener('dbrox:logout', kicked);
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);
@@ -152,16 +179,23 @@ export default function App() {
 
 
   if (!ready) return <div className="login"><div className="mark"><Brand /></div></div>;
-  if (!me) return <><DialogHost /><Login onIn={async (tenantId, userId) => {
+  if (!me) return <><DialogHost /><Login msg={loginMsg} onIn={async (tenantId, userId, mustPin) => {
     setSession(tenantId, userId);
     if (ENV_SERVER) await syncNow();
     const s = await loadMe(userId);
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
+    setLoginMsg(''); setOffWarn(null);
     setPage('home'); setModule(null);
+    if (mustPin) setGate({ step: 'pin', length: mustPin });
+    else if (!(await noticeAccepted())) setGate({ step: 'consent' });
   }} /></>;
 
-  const logout = () => { localStorage.removeItem('dbrox.session'); localStorage.removeItem('dbrox.token'); setMe(null); };
+  const logout = () => { localStorage.removeItem('dbrox.session'); void clearToken(); setGate(null); setLocked(null); setMe(null); };
+  // before anything else: the owner's new 6-digit PIN, the privacy notice on a first login, the app lock
+  if (gate?.step === 'pin') return <><PinChange me={me} length={gate.length ?? 6} forced onDone={async () => setGate((await noticeAccepted()) ? null : { step: 'consent' })} /><DialogHost /></>;
+  if (gate?.step === 'consent') return <><ConsentScreen me={me} onDone={() => setGate(null)} /><DialogHost /></>;
+  if (locked) return <><LockScreen me={me} length={locked} onOpen={() => setLocked(null)} onLogout={logout} /><DialogHost /></>;
   const home = () => { setPage('home'); };
   const go = (p: string) => { if (p.startsWith('module:')) { setPage('home'); setModule(p.slice(7)); } else setPage((ALIAS[p] ?? p) as Page); setRox(false); }; // a module (Bill, Inventory…) opens its tiles on Home
   const company = settings?.kind === 'company';
@@ -172,10 +206,11 @@ export default function App() {
   if (!checkedIn && settings) return <div className="app"><header className="top"><div className="wordmark"><Brand /></div><div className="firm">{firm}</div></header><main className="main"><CheckInGate me={me} settings={settings} onDone={() => setCheckedIn(true)} /></main><DialogHost /></div>;
 
   const body = () => {
+    if (page === 'privacy') return <PrivacyPage me={me} onLogout={logout} />;
     if (company) {
       if (page === 'home') return <CompanyHome role={me.role} go={p => setPage(p)} />;
       if (page in CO_TITLE) return <CompanyPage page={page as CoPage} role={me.role} go={p => setPage(p)} />;
-      if (page === 'more') return <CompanyMore onLogout={logout} />;
+      if (page === 'more') return <CompanyMore onLogout={logout} onPrivacy={() => setPage('privacy')} />;
       return <CompanyHome role={me.role} go={p => setPage(p)} />;
     }
     switch (page as Page) {
@@ -230,6 +265,7 @@ export default function App() {
       case 'inbound': return <CompanyBills />;
       case 'reorder': return <OrderToCompany />;
       case 'more': return <More key={moreKey} role={me.role} onLogout={logout} onPlan={() => setPage('billing')} go={go} />; // tapping More always shows the More menu
+      case 'privacy': return <PrivacyPage me={me} onLogout={logout} />;
     }
   };
 
@@ -254,6 +290,7 @@ export default function App() {
         </header>
       )}
       {!online && <div className="offline-bar">{t('offline')}</div>}
+      {offWarn !== null && <div className="offline-bar">{`Connect to the internet within ${offWarn} day${offWarn === 1 ? '' : 's'} to keep using this phone`}</div>}
       <PlanBanner lic={lic} onOpen={() => setPage('billing')} />
       <main className="main" key={page}><ErrorBoundary resetKey={page} onHome={home}>{body()}</ErrorBoundary></main>
       {printInv && <PrintBill invoice={printInv} onClose={() => setPrintInv(null)} />}
@@ -284,10 +321,11 @@ export default function App() {
 }
 
 // Company side "More": a short menu (sync, log out; in the demo, back to the distributor side)
-function CompanyMore({ onLogout }: { onLogout: () => void }) {
+function CompanyMore({ onLogout, onPrivacy }: { onLogout: () => void; onPrivacy: () => void }) {
   return (
     <div className="list">
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
+      <button className="item" onClick={onPrivacy}><ShieldCheck /> <span className="grow">Privacy & security</span></button>
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">Log out</span></button>
       {!ENV_SERVER && <button className="item" onClick={() => switchDemoSide('distributor')}><Repeat /> <span className="grow">Demo: open the distributor side</span></button>}
     </div>
@@ -313,23 +351,31 @@ function GradDefs() {
   return <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="44" y2="0"><stop offset="0" stopColor="#4FE3D6" /><stop offset="1" stopColor="#4FE3D6" /></linearGradient></defs></svg>;
 }
 
-function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
+function Login({ onIn, msg }: { onIn: (tenantId: string, userId: string, mustPin?: number) => void; msg?: string }) {
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
-  const [err, setErr] = useState('');
+  const [err, setErr] = useState(msg ?? '');
+  // how many digits: known on a phone that logged in before (owner 6, staff 4); otherwise up to 6 and the arrow
+  const [known, setKnown] = useState<number | null>(null);
+  useEffect(() => { if (phone.length === 10) void pinLengthFor(phone).then(setKnown); else setKnown(null); }, [phone]);
+  const [agree, setAgree] = useState(false);
+  const [aiScan, setAiScan] = useState(false);
   const [demo, setDemo] = useState<Staff[]>([]);
   const [firms, setFirms] = useState<{ tenantId: string; firm: string }[] | null>(null);
   const [tenant, setTenant] = useState<string | undefined>();
   const [newFirm, setNewFirm] = useState<{ firmName: string; ownerName: string; gstin: string; kind?: 'company' } | null>(null);
-  useEffect(() => { if (!ENV_SERVER) db.staff.toArray().then(setDemo); }, []);
+  useEffect(() => { void server().then(url => { if (!url) void db.staff.toArray().then(setDemo); }); }, []); // the demo only: no server set
   const go = async (p = phone, n = pin) => {
     setErr('');
+    if (n.length !== 4 && n.length !== 6) { setErr('Type your 4-digit PIN (owner: 6 digits)'); return; }
     const r = await login(p, n, tenant);
     if (!r) { setErr(t('wrongPin')); setPin(''); return; }
+    if ('error' in r) { setErr(r.error); setPin(''); return; }
     if ('choose' in r) { setFirms(r.choose); return; }
-    onIn(r.tenantId, r.userId);
+    onIn(r.tenantId, r.userId, r.mustChangePin ? r.pinLength ?? 6 : undefined);
   };
-  const press = (d: string) => { const n = (pin + d).slice(0, 4); setPin(n); if (n.length === 4 && phone.length === 10) void go(phone, n); };
+  const press = (d: string) => { const n = (pin + d).slice(0, known ?? 6); setPin(n); if (known && n.length === known && phone.length === 10) void go(phone, n); };
+  const dots = known ?? Math.min(6, Math.max(4, pin.length));
 
   if (newFirm) return (
     <div className="login">
@@ -339,9 +385,13 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
         <div className="field"><label>Your name</label><input value={newFirm.ownerName} onChange={e => setNewFirm({ ...newFirm, ownerName: e.target.value })} /></div>
         <div className="field"><label>GSTIN</label><input value={newFirm.gstin} onChange={e => setNewFirm({ ...newFirm, gstin: e.target.value.toUpperCase() })} /></div>
         <div className="field"><label>{t('phone')}</label><input inputMode="numeric" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} /></div>
-        <div className="field"><label>Choose a {t('pin')}</label><input inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></div>
+        <div className="field"><label>Choose a 6-digit PIN</label><input inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} /></div>
+        {/* DPDP: the notice before any data is taken; the box is never ticked for the person; AI photo reading is a separate choice */}
+        <details className="card"><summary><b>Read the privacy notice</b></summary><Notice /></details>
+        <label className="check"><input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} /><span>I have read the privacy notice and agree</span></label>
+        <label className="check"><input type="checkbox" checked={aiScan} onChange={e => setAiScan(e.target.checked)} /><span>Turn on AI photo reading of bills (optional, can be changed later)</span></label>
         {err && <div style={{ color: 'var(--bad)' }}>{err}</div>}
-        <button className="btn primary big block" onClick={async () => { try { setErr(''); const r = await signup({ ...newFirm, phone, pin }); onIn(r.tenantId, r.userId); } catch (e) { setErr((e as Error).message); } }}>Start free trial</button>
+        <button className="btn primary big block" disabled={!agree} onClick={async () => { try { setErr(''); const r = await signup({ ...newFirm, phone, pin, consent: { version: PRIVACY_VERSION, optional: { ai_scan: aiScan } } }); onIn(r.tenantId, r.userId); } catch (e) { setErr((e as Error).message); } }}>Start free trial</button>
         <button className="btn ghost block" onClick={() => setNewFirm(null)}>← Log in instead</button>
       </div>
     </div>
@@ -350,7 +400,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
   if (firms) return (
     <div className="login">
       <div className="login-hero"><div className="mark"><Brand /></div><div className="tag" style={{ color: 'var(--on-navy-2)', margin: '6px 0 0' }}>{'Which firm?'}</div></div>
-      <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && !('choose' in r)) onIn(r.tenantId, r.userId); })(); }}>{f.firm}</button>)}</div>
+      <div className="stack">{firms.map(f => <button key={f.tenantId} className="btn big block" onClick={() => { setTenant(f.tenantId); setFirms(null); void (async () => { const r = await login(phone, pin, f.tenantId); if (r && 'error' in r) setErr(r.error); else if (r && !('choose' in r)) onIn(r.tenantId, r.userId, r.mustChangePin ? r.pinLength ?? 6 : undefined); })(); }}>{f.firm}</button>)}</div>
     </div>
   );
 
@@ -366,7 +416,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
       <label className="eyebrow" htmlFor="login-phone">{t('phone')}</label>
       <input id="login-phone" className="phone" inputMode="numeric" autoComplete="tel" placeholder="98765 43210" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} />
       <div className="eyebrow" style={{ marginTop: 16 }}>{t('pin')}</div>
-      <div className="pins" aria-label={t('pin')}>{[0, 1, 2, 3].map(i => <span key={i} className={pin.length > i ? 'on' : ''} />)}</div>
+      <div className="pins" aria-label={t('pin')}>{Array.from({ length: dots }, (_, i) => <span key={i} className={pin.length > i ? 'on' : ''} />)}</div>
       <div className="pad">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => <button key={d} onClick={() => press(d)}>{d}</button>)}
         <button onClick={() => setPin(p => p.slice(0, -1))} aria-label="Delete"><Delete size={24} /></button>
@@ -379,7 +429,7 @@ function Login({ onIn }: { onIn: (tenantId: string, userId: string) => void }) {
       {demo.length > 0 && (
         <div className="card" style={{ marginTop: 20 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>Demo logins — tap one</div>
-          <div className="row">{demo.filter(s => s.active).map(s => <button key={s.id} className="btn small" onClick={() => { setPhone(s.phone); setPin(s.pin); void go(s.phone, s.pin); }}>{s.name}</button>)}</div>
+          <div className="row">{demo.filter(s => s.active).map(s => <button key={s.id} className="btn small" onClick={async () => { const r = await demoLogin(s.id); if (r) onIn(r.tenantId, r.userId); }}>{s.name}</button>)}</div>
           <div className="segmented" style={{ marginTop: 12 }}>
             <button className={sideNow() === 'distributor' ? 'on' : ''} onClick={() => sideNow() !== 'distributor' && switchDemoSide('distributor')}>{'Distributor demo'}</button>
             <button className={sideNow() === 'company' ? 'on' : ''} onClick={() => sideNow() !== 'company' && switchDemoSide('company')}>{'Company demo'}</button>
