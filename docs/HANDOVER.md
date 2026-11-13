@@ -24,6 +24,9 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - **A failed check is never "a one-off".** Find the cause and fix it (regression test first) — a rerun alone hides it.
 
 ## 13 Nov 2026
+- **Security standard approved** (ISO 27001 / SOC 2 now, certificates later; DPDP Act in full): a round after the convenience
+  round, before the server takes real data. Full list: docs/HANUBIX_SECURITY_STANDARD.md (top risks: unencrypted backups, no
+  real activity log, staff PINs in plain text on phones, no DPDP, cron jobs not set up on Hostinger). Owner decisions in its section 10.
 - Home header: HANUBIX logo with RETAIL INTELLIGENCE under it (edge to edge, clear gap); name + dot and firm name stacked
   on the right; long firm names never squeeze the logo. Module names stay generic (Bill, Delivery, …) — owner's decision.
 

@@ -9,6 +9,14 @@
 - Move to AWS Lightsail Mumbai when there are many paying distributors — no change to the app.
 - Domain: **hanubix.com** (or the founder's choice) — bought by the founder.
 
+## Security standard (founder, 13 Nov 2026 — approved)
+Build to ISO 27001 / SOC 2 standard now; buy the certificates later, when a big brand asks. India's DPDP Act 2023 is law and is
+done in full. One "Security standard" round goes **after the convenience round and before the server takes real distributor
+data**: (1) server activity log — who did what and when, never edited; (2) phone data encrypted at rest; (3) off-site backup
+encrypted (check `deploy/backup.sh`); (4) written rules (ISMS policies — drafted by the security agent); (5) alerts and a
+monthly access review; (6) DPDP: consent notice, access/correct/delete requests, breach reporting, retention.
+The security agent's detailed list: `docs/HANUBIX_SECURITY_STANDARD.md`.
+
 ## What gets built, in this order (locked)
 0. **Server online + domain** — everything below needs it. Phones keep working offline and sync to it.
 1. **Website — hanubix.com**: opening TESRAX sphere animation, what Hanubix does for distributors and for brands, features,
