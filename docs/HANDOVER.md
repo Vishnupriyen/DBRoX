@@ -1,4 +1,4 @@
-# Handover — where we are (12 Nov 2026, evening)
+# Handover — where we are (13 Nov 2026, afternoon)
 
 Start of a new chat: read this file, `CLAUDE.md`, `docs/HANUBIX_LOCKED_SIGNATURE.md` and `docs/HANUBIX_PLAN_LOCKED.md`, then carry on.
 Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, one recommendation, and approval before building.
@@ -32,15 +32,26 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   real activity log, staff PINs in plain text on phones, no DPDP, cron jobs not set up on Hostinger). Owner decisions in its section 10.
 - Home header: HANUBIX logo with RETAIL INTELLIGENCE under it (edge to edge, clear gap); name + dot and firm name stacked
   on the right; long firm names never squeeze the logo. Module names stay generic (Bill, Delivery, …) — owner's decision.
-- **Security standard BUILT** (developer, 13 Nov; waiting for the independent tester + security sign-off, not pushed).
-  Status per item: section 0 of docs/HANUBIX_SECURITY_STANDARD.md. In short: encrypted backups (age) + restore drill;
-  hash-chained activity log with nightly check and off-site anchor; limited DB role; Hostinger cron jobs, monitor, security
-  watch, alerts, monthly access review; hardening script; Caddyfile; gate-tagged deploys (Cloud Run workflow gone);
-  security checks on GitHub; phone: PIN hashes only, token in the Android Keystore, app lock, screenshot block, 14-day
-  offline login / 30-day removal, Lock phone; owner PIN 6 digits (old owners asked at next login), owner tokens 14 days;
-  DPDP: consent at sign-up and first login, Privacy & security screen (choices, export, requests, PIN, activity), public
-  request form, erasure, breach register, retention job; 22 written policies in docs/security/ (founder signs each).
-  Bug found and fixed: a new staff member's PIN was copied into the history log (phone and server).
+- **Security standard BUILT, TESTED, SIGNED OFF AND PUSHED** (13 Nov; last commit of the round b2fd1e9, full gate + 154 server
+  tests green; independent tester and security agent signed off). Status per item: section 0 of docs/HANUBIX_SECURITY_STANDARD.md.
+  In short: encrypted backups (age) + restore drill; hash-chained activity log with nightly check and off-site anchor; limited DB
+  role; Hostinger cron jobs, monitor, security watch, alerts, monthly access review; hardening script; Caddyfile; gate-tagged
+  deploys (Cloud Run workflow gone); two GitHub security workflows (security.yml weekly scan + security-checks.yml on every push);
+  phone: PIN hashes only, token in the Android Keystore, app lock, screenshot block, 14-day offline login / 30-day removal, Lock
+  phone; owner PIN 6 digits (old owners asked at next login, can't skip by restarting), owner tokens 14 days; DPDP: consent at
+  sign-up and first login, Privacy & security screen, public request form, erasure (bill numbers/amounts kept), breach register,
+  retention job; 22 written policies in docs/security/ (founder signs each).
+  Bugs found by the tester and fixed (each with a regression test): staff PIN copied into the history log; 30-day offline wipe
+  deleted unsent bills/payments; "Access removed" wiped unsent work (now: phone keeps it, only the same firm's owner/office can
+  log in there to send it, then it is wiped); check-then-wipe race (now one transaction); harden.sh could lock the founder out.
+  Founder's answers used: log 12 months online / 5 years archived; 14-day offline lock; 6-digit owner PIN; backup key held offline
+  by the founder; grievance officer R. Vishnupriyen; alert channel and GRIEVANCE_EMAIL are settings to fill; privacy notice
+  marked "Draft — legal review pending".
+  **Still open from the round:** SecurePlugin.java + screenshot block not yet run on a real phone (next APK + phone check must
+  confirm); Postgres row-level security (own round, founder decides); owner DB password still reaches the server container
+  (corrective action 5 in docs/security/21-…, needs a one-shot migrate container); the minor wipe race above.
+- **Usage rules (owner, 13 Nov)** are now in CLAUDE.md ("Using usage wisely"): ask before big jobs, tell the size, parts with his
+  yes before each, full gate once per part, cheap models for checks, never wait in the foreground, one Hanubix chat at a time.
 - **Founder to do for security**: make the age key (deploy/README.md step 1, private key offline); set DB_APP_PASSWORD,
   ADMIN_ALLOW_IPS, an alert channel and GRIEVANCE_EMAIL in deploy/.env; GCS bucket (Mumbai, write-only account, 35 days);
   run harden.sh + install-cron.sh on the VPS; outside uptime check; first restore drill and breach drill; sign the 22
@@ -80,11 +91,24 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner
-- **"Build it"** — the convenience round (see the plan doc): "Do this next" Home for every role (picture: /tmp files are gone in a new
-  session — redraw from the description; sphere stays in the bottom bar), WhatsApp/Collect on shops, search everywhere, next job opens
-  after save, Bill all approved, TESRAX "bill <shop>" + typo help ("biscut", "box"), repeat last order, route-ordered collect,
-  tappable day close, today's sales on owner Home, driver no-trip page, offline note, short New shop, reports in one place, company
-  rows tappable, Team today call/remind, reject reason + approve undo, owner alerts, signed-bill photo, beat on a map.
+- **NEXT (owner, 13 Nov): move Hanubix into a claude.ai Project, then the convenience round in 4 parts.**
+  1. **Project "Hanubix"** (owner creates it in the Claude app; instructions text and file list were given in chat on 13 Nov):
+     instructions = CLAUDE.md rules in short; knowledge = this file, CLAUDE.md, QUALITY.md, HANUBIX_PLAN_LOCKED.md,
+     HANUBIX_LOCKED_SIGNATURE.md, HANUBIX_SECURITY_STANDARD.md. Re-upload this file whenever it changes.
+     Way of working: one **Head-office chat** (short; the owner's words become GitHub cards) + **one new work chat per part**
+     (closed when the part is done). Departments talk through **GitHub Issues cards** (label per department + status: to do /
+     in progress / waiting for Vishnu / done), never chat to chat. Departments that run alone are added one at a time as
+     scheduled tasks, only when they have steady work (e.g. weekly TESRAX check, Marketing).
+  2. **Card board setup** — small, about 1 part, no app code: labels, card template, cards for Parts 1–4.
+  3. **Convenience round, 4 parts** (each: build → tester → one full gate → real phone screenshots → owner's yes → next part):
+     - Part 1 Owner/office Home (medium): "Do this next" list, today's sales, owner alerts, Bill all approved, reject reason +
+       approve undo, tappable day-close checklist; plus the minor wipe race fix.
+     - Part 2 Salesman (medium): repeat last order, WhatsApp/Collect on every shop, route-ordered collection, short New shop,
+       beat on a map, next job opens after save.
+     - Part 3 Search and TESRAX (small–medium): search everywhere, TESRAX "bill <shop>" + typo help ("biscut", "box"),
+       reports in one place.
+     - Part 4 Driver, godown, company (small–medium): driver no-trip page, offline "will send" note, signed-bill photo,
+       company rows tappable, Team today call/remind.
 - **"Set up the team"** — ~30 new agents in 8 departments (Product, TESRAX quality, Security, Reliability and cost, Growth, Customers,
   Money and compliance, Founder's office); rule: nothing goes out without the founder's yes; watchers as plain scripts on the server;
   cheap models for routine work; chief of staff daily list + Monday review as scheduled tasks.
@@ -109,5 +133,6 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   create the Google Maps key and add it as the MAPS_API_KEY secret.
 
 ## Latest APK
-https://github.com/Vishnupriyen/Hanubix/actions/runs/43240572801/artifacts/13954407358 (sign in to GitHub first). Newer pushes build a
-new one automatically.
+Look it up, never trust a link here: newest successful "APK" run on apk → its artifact
+(https://github.com/Vishnupriyen/Hanubix/actions/runs/<run>/artifacts/<id>, sign in to GitHub first). Last one sent to the owner
+(13 Nov, header change 95d06f7): runs/43360278695/artifacts/14007403468. The security round push (b2fd1e9) builds a newer one.
