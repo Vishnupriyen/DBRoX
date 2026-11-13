@@ -256,3 +256,16 @@ Each: file, issue, fix.
 - Backup private-key custody (who holds the paper copy) and the alert channel (WhatsApp number, security mailbox).
 - Name of the grievance officer and the privacy contact email for DPDP.
 - Whether a lawyer reviews the privacy policy and breach timelines (recommended, one-time).
+
+---
+
+## Already done since this list was written (commit 2c5eb24, 13 Nov 2026) — don't redo
+- **Security headers** on every server reply (nosniff, frame DENY, HSTS 1 year, no-referrer) — test in `server/test/update-safety.test.ts`.
+- **Login-signing secret**: refused if shorter than 32 characters; the public dev secret only under NODE_ENV=development/test —
+  `server/test/config-safety.test.ts`.
+- **Scanning (item 8, part)**: `.github/scripts/security-scan.sh` + "Security scan" workflow (every Monday, on push to main, by
+  hand; runs from `main` once released): npm audit, gitleaks over the whole history, mobsfscan, semgrep OWASP rules, Android settings.
+  Accepted findings with reasons and review dates: `.github/security-accepted.txt` (xlsx 0.18.5 until 31 Dec; two mobsfscan false
+  positives). Still open from item 8: Dependabot, CodeQL, pinned Docker images, alerting.
+- **Security agent** (`.claude/agents/security-operations.md`) now runs the scan and the OWASP API Top 10 / MASVS checks, each
+  proven by a test.
