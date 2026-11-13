@@ -24,6 +24,9 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - **A failed check is never "a one-off".** Find the cause and fix it (regression test first) — a rerun alone hides it.
 
 ## 13 Nov 2026
+- Open (tester, minor, not reproduced): a save landing just after a wipe commits could leave unsent rows with no token and no
+  'access removed' marker (sync.ts ~202) — a later login of another firm could push them; and App.tsx:138 may show "Access removed."
+  without the count in that race. Fix in the next part.
 - **Security standard approved** (ISO 27001 / SOC 2 now, certificates later; DPDP Act in full): a round after the convenience
   round, before the server takes real data. Full list: docs/HANUBIX_SECURITY_STANDARD.md (top risks: unencrypted backups, no
   real activity log, staff PINs in plain text on phones, no DPDP, cron jobs not set up on Hostinger). Owner decisions in its section 10.
