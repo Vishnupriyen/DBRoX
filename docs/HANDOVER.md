@@ -99,7 +99,13 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
      (closed when the part is done). Departments talk through **GitHub Issues cards** (label per department + status: to do /
      in progress / waiting for Vishnu / done), never chat to chat. Departments that run alone are added one at a time as
      scheduled tasks, only when they have steady work (e.g. weekly TESRAX check, Marketing).
-  2. **Card board setup** — small, about 1 part, no app code: labels, card template, cards for Parts 1–4.
+  2. **Card board — DONE (13 Nov).** Labels in `.github/labels.json` (one `dept: …` per department incl. opportunities-partnerships,
+     + `status: to do / in progress / waiting for Vishnu / done`); pushing a change to that file creates/updates them (workflow
+     `labels.yml`). Card template `.github/ISSUE_TEMPLATE/card.md`. Cards for Parts 1–4 are GitHub issues (see the Issues tab).
+     How it works: a card carries one `dept:` label (who has it now) and one `status:` label; a department finishes, comments,
+     swaps to the next `dept:` label. No GitHub Project board (labels filtered = the columns).
+     Also opened: #10 (Security checks red: trivy-action@0.28.0 not found) and #11 (CI server deploy test red on the runner, SBOM
+     step without npm ci) — both were red before the board, found on the first pull request into apk (#5).
   3. **Convenience round, 4 parts** (each: build → tester → one full gate → real phone screenshots → owner's yes → next part):
      - Part 1 Owner/office Home (medium): "Do this next" list, today's sales, owner alerts, Bill all approved, reject reason +
        approve undo, tappable day-close checklist; plus the minor wipe race fix.
