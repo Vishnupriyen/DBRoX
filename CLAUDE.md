@@ -43,3 +43,7 @@ Specialists, whenever their area is touched: **gst-accounts-specialist** (bills,
 P&L, e-invoice, GSTR-1, Tally — after step 4, before release) and **tesrax-language-specialist** (any TESRAX change, and
 every week on the TESRAX report's misses).
 Small fixes may skip 1–3, never 5. The owner is told about a step only when it changes what they get.
+**Keeping usage low (owner, 13 Nov 2026):** long-output work — the gate, chaos, server tests, waiting on GitHub runs, reading
+CI/emulator logs, fetching the APK link — goes to **check-runner** (cheap model, reports in ≤10 lines), so the main chat stays
+small. Reviews and tests use cheaper models; the strongest model only for hard building and design. Start a new chat after each
+big piece of work (docs/HANDOVER.md carries everything over).
