@@ -135,7 +135,8 @@ export default function App() {
       else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(off.kept ? 'Connect to the internet and log in — your unsent work is kept.' : `This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
       setOffWarn(off.warnDaysLeft);
       const removed = await accessRemovedState();
-      if (removed) { localStorage.removeItem('dbrox.session'); setLoginMsg(accessRemovedMsg(removed.unsent)); }
+      if (removed && !removed.unsent && await finishRemovedPhone()) setLoginMsg('Access removed. This phone\'s copy of the firm\'s data has been removed.');
+      else if (removed) { localStorage.removeItem('dbrox.session'); setLoginMsg(accessRemovedMsg(removed.unsent)); }
       void securePins(hasServer).catch(() => {}); // plain PINs from an older version become hashes
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');

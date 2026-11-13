@@ -44,8 +44,11 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
       if (r.ok) {
         const j = await r.json();
         if (j.choose) return { choose: j.choose }; // same phone under two distributors → the app asks which firm
-        const removed = await accessRemovedState();
-        if (removed && !['owner', 'office', 'cadmin'].includes(String(j.role))) return { error: accessRemovedMsg(removed.unsent) };
+        // a phone whose person was removed with unsent work: only the same firm's owner or office may log in (a brand's
+        // head office for a company phone); with nothing left unsent the wipe is finished first
+        let removed = await accessRemovedState();
+        if (removed && !removed.unsent && await wipeLocal()) removed = null;
+        if (removed && !(j.tenantId === removed.tenantId && (removed.kind === 'company' ? ['cadmin'] : ['owner', 'office']).includes(String(j.role)))) return { error: accessRemovedMsg(removed.unsent) };
         await setToken(j.token);
         await rememberPin(j.tenantId, j.userId, phone, pin); // a salted hash only: the offline login and the app lock
         await touchServer();
@@ -61,7 +64,7 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
   }
   // offline: only a phone that reached the server in the last 14 days; the PIN checked against its hash on this phone
   const removed = await accessRemovedState();
-  if (removed) return { error: `${accessRemovedMsg(removed.unsent)} Connect to the internet.` };
+  if (removed) return { error: removed.unsent ? `${accessRemovedMsg(removed.unsent)} Connect to the internet.` : accessRemovedMsg(0) };
   const off = await offlineState(!!url);
   if (off.mustLogin) return { error: `This phone has not reached the server for ${off.days} days. Connect to the internet to log in.` };
   await securePins(!!url);
@@ -86,17 +89,17 @@ export async function unsentCount(): Promise<number> {
   return n;
 }
 export async function hasUnsent(): Promise<boolean> { return (await unsentCount()) > 0; }
-export const accessRemovedMsg = (n: number) => `Access removed. This phone has ${n} unsent record${n === 1 ? '' : 's'} — the owner or office must log in here to send them.`;
+export const accessRemovedMsg = (n: number) => n > 0 ? `Access removed. This phone has ${n} unsent record${n === 1 ? '' : 's'} — the owner or office must log in here to send them.` : 'Access removed.';
 /** a phone whose person was removed while it held unsent work: waiting for the owner or office (null when not) */
-export async function accessRemovedState(): Promise<{ unsent: number } | null> {
-  const v = (await db.meta.get('accessRemoved'))?.value as { unsent: number } | undefined;
-  return v ? { unsent: await unsentCount() } : null;
+export async function accessRemovedState(): Promise<{ unsent: number; tenantId: string; kind: string } | null> {
+  const v = (await db.meta.get('accessRemoved'))?.value as { tenantId?: string; kind?: string } | undefined;
+  return v ? { unsent: await unsentCount(), tenantId: String(v.tenantId ?? ''), kind: String(v.kind ?? 'distributor') } : null;
 }
-/** after the owner or office logged in and synced on such a phone: once nothing is unsent, the phone's copy is removed */
+/** after the owner or office logged in and synced on such a phone: once nothing is unsent, the phone's copy is removed
+ *  (the check and the wipe are one step: wipeLocal) */
 export async function finishRemovedPhone(): Promise<boolean> {
-  if (!(await db.meta.get('accessRemoved')) || await hasUnsent()) return false;
-  await wipeLocal();
-  return true;
+  if (!(await db.meta.get('accessRemoved'))) return false;
+  return wipeLocal();
 }
 /**
  * At start: a phone away from the server for 14 days must log in online; at 30 days its copy of the firm's data is
@@ -108,9 +111,8 @@ export async function offlineCheck(): Promise<{ wiped: boolean; mustLogin: boole
   let off = await offlineState(!!url);
   if (off.mustLogin && navigator.onLine) { try { await syncNow(); } catch { /* still offline */ } off = await offlineState(!!url); }
   if (!off.mustLogin) return { wiped: false, mustLogin: false, kept: false, days: off.days, warnDaysLeft: off.warnDaysLeft };
-  const unsent = await hasUnsent();
-  if (off.wipe && !unsent) { await wipeLocal(); return { wiped: true, mustLogin: true, kept: false, days: off.days, warnDaysLeft: null }; }
-  return { wiped: false, mustLogin: true, kept: unsent, days: off.days, warnDaysLeft: null };
+  if (off.wipe && await wipeLocal()) return { wiped: true, mustLogin: true, kept: false, days: off.days, warnDaysLeft: null };
+  return { wiped: false, mustLogin: true, kept: await hasUnsent(), days: off.days, warnDaysLeft: null };
 }
 
 /** the demo (no server): tapping a name signs in at once — there is nothing to protect and no PIN to show */
@@ -188,10 +190,18 @@ async function numberPendingCreditNotes() {
 }
 
 /** "Access removed" (staff removed by the owner): nothing of the firm's data stays on this phone */
-export async function wipeLocal() {
+export async function wipeLocal(): Promise<boolean> {
+  // "nothing unsent?" and the clearing are ONE transaction over every table: a record saved meanwhile either lands
+  // first (the wipe is called off) or after (it stays) — it is never cleared unsent (tester, 13 Nov 2026)
+  const cleared = await db.transaction('rw', db.tables, async () => {
+    for (const t of SYNC_TABLES) if (await db.table(t).where('dirty').equals(1).count()) return false;
+    await Promise.all(db.tables.map(t => t.clear()));
+    return true;
+  });
+  if (!cleared) return false;
   await clearToken();
-  await Promise.all(db.tables.map(t => t.clear()));
   for (const k of ['dbrox.token', 'dbrox.session']) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
+  return true;
 }
 
 const PUSH_BYTES = 2 * 1024 * 1024; // one request carries at most ~2 MB (photos): a big backlog goes in several
@@ -323,16 +333,16 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     if (r.status === 403 && (await r.clone().json().catch(() => ({}))).error === 'Access removed') {
       // unsent work belongs to the firm: never wiped. The person's login is ended; the owner or office logs in here to
       // send it, and the phone is wiped after that (finishRemovedPhone). With nothing unsent, wiped at once.
+      if (await wipeLocal()) { window.dispatchEvent(new Event('dbrox:logout')); return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.'); }
       const n = await unsentCount();
-      if (n) {
-        await db.meta.put({ key: 'accessRemoved', value: { unsent: n, at: Date.now() } });
+      {
+        const st = (await db.settings.toCollection().first()) as { tenantId?: string; kind?: string } | undefined;
+        await db.meta.put({ key: 'accessRemoved', value: { unsent: n, at: Date.now(), tenantId: st?.tenantId ?? '', kind: st?.kind === 'company' ? 'company' : 'distributor' } });
         await clearToken(); localStorage.removeItem('dbrox.session');
         for (const v of await db.meta.where('key').startsWith('pinv:').toArray()) await db.meta.delete(v.key); // no offline login for anyone until the firm has its records
         window.dispatchEvent(new Event('dbrox:logout'));
         return done(accessRemovedMsg(n));
       }
-      await wipeLocal(); window.dispatchEvent(new Event('dbrox:logout'));
-      return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.');
     }
     if (r.status === 401 || r.status === 403) { localStorage.removeItem('dbrox.session'); window.dispatchEvent(new Event('dbrox:logout')); return done('Please log in again. Anything not yet sent stays on this phone.'); }
     if (!r.ok) return done(`Sync failed (${r.status}). Data is safe on this phone; will retry.`);

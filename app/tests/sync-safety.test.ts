@@ -92,6 +92,27 @@ describe('sync replies the phone must act on', () => {
     expect(logouts).toBe(2);
   });
 
+  // the tester on 08aa1b4: "nothing unsent?" and the wipe were two steps — a record saved in between was wiped
+  it('a record saved while the phone is being wiped is never lost (the check and the wipe are one step)', async () => {
+    const { finishRemovedPhone } = await import('../src/core/sync');
+    for (const t of db.tables) if (t.schema.indexes.some(i => i.name === 'dirty')) await t.toCollection().modify({ dirty: 0 });
+    await db.meta.put({ key: 'accessRemoved', value: { unsent: 0 } });
+    const cs = new ChangeSet(); const late = cs.put('shops', { name: 'Saved during the wipe' });
+    const [wiped] = await Promise.all([finishRemovedPhone(), cs.commit('late save')]);
+    const kept = await db.shops.get(late.id);
+    expect(wiped ? !!kept : !!kept).toBe(true); // whichever came first, the late record is still on the phone
+    const { wipeLocal } = await import('../src/core/sync');
+    expect(await wipeLocal()).toBe(false); // it is unsent: no wipe
+    expect(await db.shops.get(late.id)).toBeTruthy();
+    expect(await db.settings.count()).toBeGreaterThan(0);
+  });
+
+  it('the message never says "0 unsent records"', async () => {
+    const { accessRemovedMsg } = await import('../src/core/sync');
+    expect(accessRemovedMsg(0)).toBe('Access removed.');
+    expect(accessRemovedMsg(2)).toMatch(/2 unsent records/);
+  });
+
   it('"Access removed" with nothing unsent: the phone wipes its local data as before', async () => {
     for (const t of db.tables) if (t.schema.indexes.some(i => i.name === 'dirty')) await t.toCollection().modify({ dirty: 0 });
     await db.meta.delete('accessRemoved');

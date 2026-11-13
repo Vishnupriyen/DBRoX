@@ -43,6 +43,12 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   run harden.sh + install-cron.sh on the VPS; outside uptime check; first restore drill and breach drill; sign the 22
   policies; lawyer review of the privacy notice (later); delete the old GCP_SA_KEY GitHub secret. Open decision: Postgres
   row-level security (proposed as its own round).
+- **Open for the GST & Accounts specialist** (found 13 Nov, not reproduced): `app/tests/regressions.test.ts` "a paid bill
+  credited below zero becomes shop advance" failed once in a full gate (UTC step): outstanding showed ₹0 where the test
+  expected ₹0.44. It then passed 13 full runs and 40 runs of the test on its own. Likely cause: `shopOutstanding`
+  (`app/src/core/ledger.ts`) hides bill balances of ₹0.50 or less, so a 44-paise leftover after the credit is applied to the
+  shop's other bills shows as ₹0. What decides whether a leftover appears is probably the random record ids (e.g. which
+  stock lot a pick takes). To decide: is hiding ≤ ₹0.50 right for dues and statements? Then make the test deterministic.
 
 ## Done today
 - Midnight rep fix; credit note after a return + short delivery fix; phone check (Android emulator) runs to the end with time limits.

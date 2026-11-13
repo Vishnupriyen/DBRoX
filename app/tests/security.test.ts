@@ -190,7 +190,14 @@ describe('found by the tester: "Access removed" with unsent work (13 Nov 2026)',
       expect(msg).toMatch(/Access removed\. This phone has \d+ unsent record/);
       expect((await db.payments.get(pm.id))?.dirty).toBe(1);
       expect(await accessRemovedState()).not.toBeNull();
-      // nobody gets in offline; another staff role is refused; the owner logs in and the payment reaches the server
+      // another salesman (a valid login on the server) is refused on this phone: only the firm's owner or office
+      await srv.query(`INSERT INTO users(tenant_id, id, phone, name, role, pin_hash) VALUES ($1, 'rm-sm2', '9611100022', 'Kumar', 'salesman', $2)`, [up.tenantId, (await import('../../server/src/auth')).hashPin('7416')]);
+      expect(await login('9611100022', '7416')).toMatchObject({ error: expect.stringMatching(/owner or office must log in/) });
+      // a brand's head office (another firm) is refused too
+      const co = await srv.fetch('http://srv.test/v1/signup', { method: 'POST', body: JSON.stringify({ consent: CONSENT, firmName: 'Brand', ownerName: 'HO', phone: '9611100023', pin: '391742', kind: 'company' }), headers: { 'x-forwarded-for': '10.99.0.3' } }).then(r => r.json());
+      expect(co.userId).toBeTruthy();
+      expect(await login('9611100023', '391742')).toMatchObject({ error: expect.stringMatching(/owner or office must log in/) });
+      // nobody gets in offline; the owner logs in and the payment reaches the server
       online(false);
       try { expect(await login('9611100020', '391742')).toMatchObject({ error: expect.stringMatching(/Connect to the internet/) }); } finally { online(true); }
       expect(await login('9611100020', '391742')).toMatchObject({ userId: up.userId });
