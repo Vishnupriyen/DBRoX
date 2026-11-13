@@ -11,5 +11,5 @@ Rules:
 - Long output goes to a file in the scratchpad or /tmp; read only the lines that matter (pass/fail counts, ISSUE, FAILED, ✘, error messages).
 - Report in 10 lines or fewer: the verdict first (PASSED / FAILED), then for each failure the test or screen name, the one-line error, and the file:line if shown. Nothing else — no logs, no screenshots, no story.
 - If something is ambiguous (a run cancelled, an emulator problem rather than an app problem), say so in one line.
-- GitHub: use `gh api repos/Vishnupriyen/Hanubix/...` (numeric-id paths are refused by the proxy). APK links are
+- GitHub: use `gh api repos/Vishnupriyen/Hanubix/...` (numeric-id paths are refused by the proxy). APK links are ready as soon as the run's "build" job finishes (~4 min) — report the link then, never wait for the "emulator" job. APK links are
   https://github.com/Vishnupriyen/Hanubix/actions/runs/<run>/artifacts/<artifact id>.
