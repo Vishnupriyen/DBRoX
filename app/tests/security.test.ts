@@ -28,8 +28,8 @@ async function dump() {
   return JSON.stringify(out);
 }
 
+let tenant = '', owner = '';
 describe('the phone keeps no PIN and no token in plain sight', () => {
-  let tenant = '', owner = '';
   it('after sign-up, adding staff, syncing and logging in: no PIN anywhere in the phone database or localStorage', async () => {
     const { signup, login, syncNow } = await import('../src/core/sync');
     // an older app version left its token here: it moves into the secure store and leaves localStorage
@@ -101,5 +101,61 @@ describe('the phone keeps no PIN and no token in plain sight', () => {
     const { checkPinOffline } = await import('../src/core/secure');
     expect((await checkPinOffline('', OWNER_PIN, tenant, owner)).ok).toBe(true);
     expect((await checkPinOffline('', STAFF_PIN, tenant, owner)).ok).toBe(false);
+  });
+});
+
+// Independent tester, 13 Nov 2026: the 30-day removal wiped unsent work, and the forced 6-digit owner PIN could be
+// skipped by closing the app. Regression tests first.
+describe('found by the independent tester', () => {
+  it('the forced 6-digit PIN change is remembered on the phone until done (closing the app never skips it)', async () => {
+    const { login, pinChangeDue, changePin } = await import('../src/core/sync');
+    const up = await srv.fetch('http://srv.test/v1/signup', { method: 'POST', body: JSON.stringify({ consent: CONSENT, firmName: 'Old Owner Firm', ownerName: 'O', phone: '9611100009', pin: '391742' }), headers: { 'x-forwarded-for': '10.99.0.1' } }).then(r => r.json());
+    const { hashPin } = await import('../../server/src/auth');
+    await srv.query('UPDATE users SET pin_hash=$2, pin_len=4 WHERE id=$1', [up.userId, hashPin('3917')]);
+    const l = await login('9611100009', '3917');
+    expect(l).toMatchObject({ mustChangePin: true, pinLength: 6 });
+    expect(await pinChangeDue(up.tenantId, up.userId)).toBe(6); // what the app checks when it restores a saved session
+    await changePin(up.tenantId, up.userId, '9611100009', '3917', '615384');
+    expect(await pinChangeDue(up.tenantId, up.userId)).toBeNull();
+  });
+
+  it('31 days offline with unsent bills and payments: nothing is removed; after the online login they reach the server', async () => {
+    const { login, syncNow, offlineCheck } = await import('../src/core/sync');
+    const { touchServer } = await import('../src/core/secure');
+    const { bookOrder, approveOrder, suggestPick, pickOrder, approvePicked } = await import('../src/core/pipeline');
+    expect(await login(OWNER_PHONE, OWNER_PIN)).toMatchObject({ userId: owner });
+    setSession(tenant, owner);
+    const cs = new ChangeSet();
+    const co = cs.put('companies', { name: 'HUL', code: 'HUL', gstin: '', nextBillNo: 1 });
+    const p = cs.put('products', { companyId: co.id, name: 'Soap', code: 'S1', hsn: '3401', gst: 18, mrp: 50, rate: 40, purchaseRate: 30, caseSize: 12, aliases: [], active: true });
+    cs.put('batches', { productId: p.id, batch: 'L1', expiry: '2099-12-31', mrp: 50, qty: 50, godown: 'Main' });
+    const shop = cs.put('shops', { name: 'Kept Stores', area: 'A', beat: 'B', creditLimit: 1e9, creditDays: 7, cashOnly: false, type: 'retail', approved: true, aliases: [] });
+    await cs.commit('setup');
+    expect(await syncNow()).toMatch(/^Synced/);
+    // a bill made with signal (its number from the server), then the phone goes offline before it is sent
+    const ocs = new ChangeSet(); const o = await bookOrder(ocs, shop as never, [{ productId: p.id, qty: 2, rate: 40 }], 'test'); await ocs.commit('booked');
+    await approveOrder(o.id);
+    const pick = await suggestPick((await db.orders.get(o.id))!);
+    await pickOrder(o.id, pick.map(x => ({ productId: x.productId, qty: 2 })));
+    const { invoices } = await approvePicked(o.id);
+    online(false);
+    const pay = new ChangeSet();
+    const pm = pay.put('payments', { shopId: shop.id, amount: 50, mode: 'cash', date: '2026-11-13', collectedBy: owner, shopConfirmed: false, allocations: [{ invoiceId: invoices[0].id, amount: 50 }], advance: 0, settled: false });
+    await pay.commit('payment');
+    await touchServer(Date.now() - 31 * 86400000);
+    try {
+      const r = await offlineCheck();
+      expect(r).toMatchObject({ wiped: false, mustLogin: true, kept: true });
+      expect(await db.invoices.get(invoices[0].id)).toBeTruthy();
+      expect((await db.payments.get(pm.id))?.dirty).toBe(1);
+    } finally { online(true); }
+    expect(await login(OWNER_PHONE, OWNER_PIN)).toMatchObject({ userId: owner });
+    expect(await syncNow()).toMatch(/^Synced/);
+    const onServer = (await srv.query(`SELECT id FROM docs WHERE tenant_id=$1 AND id = ANY($2)`, [tenant, [invoices[0].id, pm.id]])).map(x => x.id).sort();
+    expect(onServer).toEqual([invoices[0].id, pm.id].sort());
+    // with nothing unsent, 31 days away does remove the phone's copy
+    await touchServer(Date.now() - 31 * 86400000);
+    online(false);
+    try { expect(await offlineCheck()).toMatchObject({ wiped: true }); expect(await db.invoices.count()).toBe(0); } finally { online(true); }
   });
 });

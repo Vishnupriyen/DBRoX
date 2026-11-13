@@ -216,4 +216,17 @@ describe('deploy kit', { timeout: 60000 }, () => {
       expect(r.status, `${f}: ${r.stderr}`).toBe(0);
     }
   });
+
+  // security review, 13 Nov 2026: an empty authorized_keys passed the check (passwords off → locked out), and the firewall
+  // was reset before SSH was allowed again (a moment with SSH blocked)
+  it('harden.sh needs a real SSH key line, and allows SSH before it tightens the firewall', () => {
+    const h = readFileSync(join(repo, 'deploy', 'harden.sh'), 'utf8');
+    expect(h).toMatch(/grep -Eqs? '\^\(ssh-\|ecdsa-\|sk-\)'/);
+    const sshFirst = h.indexOf('to any port 22'), deny = h.indexOf('ufw default deny incoming'), enable = h.indexOf('ufw --force enable');
+    expect(sshFirst).toBeGreaterThan(0);
+    expect(sshFirst).toBeLessThan(deny); expect(deny).toBeLessThan(enable);
+    expect(h).toMatch(/SSH_CLIENT/); // the session running the script stays allowed
+    // a reset only while the firewall is off (nothing is being blocked then)
+    for (const line of h.split('\n').filter(l => l.includes('ufw --force reset'))) expect(line).toMatch(/Status: active/);
+  });
 });

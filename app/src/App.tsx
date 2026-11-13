@@ -9,8 +9,8 @@ import { CompanyBills, OrderToCompany } from './ui/CompanyBills';
 import { isCompanyRole } from './core/types';
 import { addPoint } from './core/field';
 import { seedDemo } from './core/seed';
-import { demoLogin, ENV_SERVER, login, PRIVACY_VERSION, server, signup, startAutoSync, syncNow, wipeLocal } from './core/sync';
-import { AWAY_LOCK_MINUTES, clearToken, hasVerifier, offlineState, pinLengthFor, securePins } from './core/secure';
+import { demoLogin, ENV_SERVER, login, offlineCheck, pinChangeDue, PRIVACY_VERSION, server, signup, startAutoSync, syncNow } from './core/sync';
+import { AWAY_LOCK_MINUTES, clearToken, hasVerifier, pinLengthFor, securePins } from './core/secure';
 import { noticeAccepted } from './core/privacy';
 import { ConsentScreen, LockScreen, Notice, PinChange, PrivacyPage } from './ui/Privacy';
 import { t } from './core/i18n';
@@ -128,10 +128,11 @@ export default function App() {
     (async () => {
       if (!ENV_SERVER) { await wireDemoRelay(); if (sideNow() === 'company') await seedCompanyDemo(); else await seedDemo(); }
       const hasServer = !!(await server());
-      // a phone away from the server too long: 14 days → log in online; 30 days → its copy of the firm's data is removed
-      const off = await offlineState(hasServer);
-      if (off.wipe) { await wipeLocal(); setLoginMsg(`This phone had not reached the server for ${off.days} days, so its copy of the firm's data was removed. Log in to get it back.`); }
-      else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(`This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
+      // a phone away from the server too long: 14 days → log in online; 30 days → its copy of the firm's data is removed,
+      // never while it holds unsent work (core/sync.ts offlineCheck)
+      const off = await offlineCheck();
+      if (off.wiped) setLoginMsg(`This phone had not reached the server for ${off.days} days, so its copy of the firm's data was removed. Log in to get it back.`);
+      else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(off.kept ? 'Connect to the internet and log in — your unsent work is kept.' : `This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
       setOffWarn(off.warnDaysLeft);
       void securePins(hasServer).catch(() => {}); // plain PINs from an older version become hashes
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
@@ -139,7 +140,11 @@ export default function App() {
       if (saved) {
         const { tenantId, userId } = JSON.parse(saved);
         const s = await db.staff.get(userId);
-        if (s?.active) { setSession(tenantId, userId); await loadMe(userId); if (!(await noticeAccepted())) setGate({ step: 'consent' }); }
+        if (s?.active) {
+          setSession(tenantId, userId); await loadMe(userId);
+          const due = await pinChangeDue(tenantId, userId); // the forced 6-digit PIN can't be skipped by closing the app
+          if (due) setGate({ step: 'pin', length: due }); else if (!(await noticeAccepted())) setGate({ step: 'consent' });
+        }
       }
       setReady(true);
       startAutoSync();
@@ -181,7 +186,7 @@ export default function App() {
   if (!ready) return <div className="login"><div className="mark"><Brand /></div></div>;
   if (!me) return <><DialogHost /><Login msg={loginMsg} onIn={async (tenantId, userId, mustPin) => {
     setSession(tenantId, userId);
-    if (ENV_SERVER) await syncNow();
+    if (await server()) await syncNow(); // unsent work kept through a long time offline goes to the server right away
     const s = await loadMe(userId);
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));

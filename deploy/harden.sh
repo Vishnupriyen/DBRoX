@@ -9,19 +9,25 @@ set -euo pipefail
 [[ $(id -u) == 0 ]] || { echo "Run as root"; exit 1; }
 D="$(cd "$(dirname "$0")" && pwd)"
 # never lock ourselves out: SSH keys must already be in place before passwords are switched off
-if ! compgen -G "/root/.ssh/authorized_keys" >/dev/null && ! compgen -G "/home/*/.ssh/authorized_keys" >/dev/null; then
-  echo "✘ No SSH key is set up (authorized_keys). Add your key first (ssh-copy-id), then run this again."; exit 1
+# (a real key line, not just the file: an empty authorized_keys with passwords off would lock everyone out)
+if ! cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | grep -Eqs '^(ssh-|ecdsa-|sk-)'; then
+  echo "✘ No SSH key is set up (authorized_keys holds no key). Add your key first (ssh-copy-id), then run this again."; exit 1
 fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q ufw fail2ban unattended-upgrades age curl >/dev/null
 
-# firewall
-ufw --force reset >/dev/null
-ufw default deny incoming; ufw default allow outgoing
-ufw allow 80/tcp; ufw allow 443/tcp
+# firewall — SSH is allowed FIRST (and the address running this script stays allowed), then it is tightened: there is
+# never a moment with SSH blocked. A clean start (reset) only while the firewall is off, when it blocks nothing.
+ufw status | grep -q 'Status: active' || ufw --force reset >/dev/null   # only if not 'Status: active'
+CUR_IP=${SSH_CLIENT%% *}
+[[ -n "$CUR_IP" ]] && ufw allow from "$CUR_IP" to any port 22 proto tcp
 if [[ -n "${SSH_ALLOW_FROM:-}" ]]; then for ip in $SSH_ALLOW_FROM; do ufw allow from "$ip" to any port 22 proto tcp; done
 else ufw limit 22/tcp; echo "⚠ SSH is open to every address (rate-limited). Set SSH_ALLOW_FROM to your own IPs and run again."; fi
+ufw allow 80/tcp; ufw allow 443/tcp
+ufw default deny incoming; ufw default allow outgoing
+# with SSH_ALLOW_FROM set, the open-to-everyone SSH rules of an earlier run are removed (the allowed addresses stay)
+if [[ -n "${SSH_ALLOW_FROM:-}" ]]; then for r in 'limit 22/tcp' 'allow 22/tcp' 'allow 22' 'allow OpenSSH'; do ufw delete $r >/dev/null 2>&1 || true; done; fi
 ufw --force enable
 
 # SSH: keys only

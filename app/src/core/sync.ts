@@ -48,6 +48,9 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
         await rememberPin(j.tenantId, j.userId, phone, pin); // a salted hash only: the offline login and the app lock
         await touchServer();
         await saveLicence(j.licence);
+        // the owner's forced 6-digit PIN: kept on the phone until done, so closing the app never skips it
+        if (j.mustChangePin) await db.meta.put({ key: mustKey(j.tenantId, j.userId), value: Number(j.pinLength ?? 6) });
+        else await db.meta.delete(mustKey(j.tenantId, j.userId));
         return { tenantId: j.tenantId, userId: j.userId, ...(j.mustChangePin ? { mustChangePin: true, pinLength: Number(j.pinLength ?? 6) } : {}) };
       }
       if (r.status === 401) return null;
@@ -63,6 +66,33 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
   const s = await db.staff.get(c.userId);
   if (!s || !s.active) return null;
   return { tenantId: c.tenantId, userId: c.userId };
+}
+
+const mustKey = (tenantId: string, userId: string) => `mustPin:${tenantId}|${userId}`;
+/** a PIN change the server asked for and not yet done on this phone: the PIN length to choose, or null */
+export async function pinChangeDue(tenantId: string, userId: string): Promise<number | null> {
+  const v = (await db.meta.get(mustKey(tenantId, userId)))?.value;
+  return typeof v === 'number' ? v : null;
+}
+
+/** records on this phone not yet sent to the server */
+export async function hasUnsent(): Promise<boolean> {
+  for (const t of SYNC_TABLES) if (await db.table(t).where('dirty').equals(1).count()) return true;
+  return false;
+}
+/**
+ * At start: a phone away from the server for 14 days must log in online; at 30 days its copy of the firm's data is
+ * removed — but NEVER while it holds unsent work (a sync is tried first; if work is still unsent, everything is kept and
+ * only an online login is asked for, and that login sends the work at once).
+ */
+export async function offlineCheck(): Promise<{ wiped: boolean; mustLogin: boolean; kept: boolean; days: number; warnDaysLeft: number | null }> {
+  const url = await server();
+  let off = await offlineState(!!url);
+  if (off.mustLogin && navigator.onLine) { try { await syncNow(); } catch { /* still offline */ } off = await offlineState(!!url); }
+  if (!off.mustLogin) return { wiped: false, mustLogin: false, kept: false, days: off.days, warnDaysLeft: off.warnDaysLeft };
+  const unsent = await hasUnsent();
+  if (off.wipe && !unsent) { await wipeLocal(); return { wiped: true, mustLogin: true, kept: false, days: off.days, warnDaysLeft: null }; }
+  return { wiped: false, mustLogin: true, kept: unsent, days: off.days, warnDaysLeft: null };
 }
 
 /** the demo (no server): tapping a name signs in at once — there is nothing to protect and no PIN to show */
@@ -88,6 +118,7 @@ export async function changePin(tenantId: string, userId: string, phone: string,
   const j = await api<{ token: string }>('/v1/pin/change', { old, pin });
   await setToken(j.token);
   await rememberPin(tenantId, userId, phone, pin);
+  await db.meta.delete(mustKey(tenantId, userId));
 }
 export const OFFLINE_DAYS = OFFLINE_LOGIN_DAYS;
 

@@ -37,6 +37,13 @@ privacy notice drafted, marked "Draft — legal review pending".
 
 Found while building (regression tests first): a new staff member's PIN was copied whole into the history log (phone and
 server). Fixed in the app (`noSecrets`), on the server (stripped at sync) and for old entries (retention job, once).
+Found by the independent tester and security review (fixed, regression tests first): the 30-day removal could delete
+unsent work — now a sync is tried first and a phone with unsent records is never wiped (online login only, the work is
+sent right after it); the forced 6-digit owner PIN could be skipped by closing the app — now remembered on the phone until
+done; `harden.sh` accepted an empty authorized_keys and reset the firewall before allowing SSH — now needs a real key line
+and allows SSH (and the current session's address) first. Open: the server container still receives the DB owner
+password through `.env` (it only uses the limited role for requests); moving migrations and the log-month maintenance
+to a one-shot container is a separate change (compose, deploy.sh, start-up and the retention job) — not done in this round.
 
 ## 1. Top risks, most dangerous first (fix before real distributor data goes on the Hostinger server)
 
