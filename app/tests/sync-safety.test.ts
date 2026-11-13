@@ -74,18 +74,32 @@ describe('sync replies the phone must act on', () => {
     expect(await db.shops.where('dirty').equals(1).count()).toBe(0);
   });
 
-  it('"Access removed": the phone wipes its local data; "log in again" keeps it', async () => {
+  // the tester, 13 Nov 2026: "Access removed" wiped the phone even with unsent work (bills, payments, stock lost)
+  it('"Access removed" with unsent work: nothing is wiped, the login is cleared and the phone waits for the owner or office', async () => {
     const cs = new ChangeSet(); cs.put('shops', { name: 'Unsent' }); await cs.commit('x');
     let logouts = 0; window.addEventListener('dbrox:logout', () => logouts++);
     vi.stubGlobal('fetch', async () => ok({ error: 'Please log in again' }, 401));
-    const { syncNow } = await import('../src/core/sync');
+    const { syncNow, accessRemovedState } = await import('../src/core/sync');
     await syncNow();
     expect(await db.shops.count()).toBe(1);
     vi.stubGlobal('fetch', async () => ok({ error: 'Access removed' }, 403));
+    const msg = await syncNow();
+    expect(msg).toMatch(/Access removed\. This phone has \d+ unsent records? — the owner or office must log in here to send them\./);
+    expect(await db.shops.count()).toBe(1); // kept
+    expect((await accessRemovedState())!.unsent).toBeGreaterThan(0);
+    const { getToken } = await import('../src/core/secure');
+    expect(await getToken()).toBe('');
+    expect(logouts).toBe(2);
+  });
+
+  it('"Access removed" with nothing unsent: the phone wipes its local data as before', async () => {
+    for (const t of db.tables) if (t.schema.indexes.some(i => i.name === 'dirty')) await t.toCollection().modify({ dirty: 0 });
+    await db.meta.delete('accessRemoved');
+    vi.stubGlobal('fetch', async () => ok({ error: 'Access removed' }, 403));
+    const { syncNow } = await import('../src/core/sync');
     await syncNow();
     expect(await db.shops.count()).toBe(0);
     expect(await db.settings.count()).toBe(0);
-    expect(logouts).toBe(2);
   });
 });
 

@@ -9,7 +9,7 @@ import { CompanyBills, OrderToCompany } from './ui/CompanyBills';
 import { isCompanyRole } from './core/types';
 import { addPoint } from './core/field';
 import { seedDemo } from './core/seed';
-import { demoLogin, ENV_SERVER, login, offlineCheck, pinChangeDue, PRIVACY_VERSION, server, signup, startAutoSync, syncNow } from './core/sync';
+import { accessRemovedMsg, accessRemovedState, demoLogin, ENV_SERVER, finishRemovedPhone, login, offlineCheck, pinChangeDue, PRIVACY_VERSION, server, signup, startAutoSync, syncNow } from './core/sync';
 import { AWAY_LOCK_MINUTES, clearToken, hasVerifier, pinLengthFor, securePins } from './core/secure';
 import { noticeAccepted } from './core/privacy';
 import { ConsentScreen, LockScreen, Notice, PinChange, PrivacyPage } from './ui/Privacy';
@@ -134,6 +134,8 @@ export default function App() {
       if (off.wiped) setLoginMsg(`This phone had not reached the server for ${off.days} days, so its copy of the firm's data was removed. Log in to get it back.`);
       else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(off.kept ? 'Connect to the internet and log in — your unsent work is kept.' : `This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
       setOffWarn(off.warnDaysLeft);
+      const removed = await accessRemovedState();
+      if (removed) { localStorage.removeItem('dbrox.session'); setLoginMsg(accessRemovedMsg(removed.unsent)); }
       void securePins(hasServer).catch(() => {}); // plain PINs from an older version become hashes
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');
@@ -149,7 +151,7 @@ export default function App() {
       setReady(true);
       startAutoSync();
     })();
-    const kicked = () => { void clearToken(); setMe(null); };
+    const kicked = () => { void clearToken(); setMe(null); void accessRemovedState().then(r => { if (r) setLoginMsg(accessRemovedMsg(r.unsent)); }); };
     window.addEventListener('dbrox:logout', kicked);
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);
@@ -187,6 +189,10 @@ export default function App() {
   if (!me) return <><DialogHost /><Login msg={loginMsg} onIn={async (tenantId, userId, mustPin) => {
     setSession(tenantId, userId);
     if (await server()) await syncNow(); // unsent work kept through a long time offline goes to the server right away
+    // the owner or office sent a removed person's unsent work: now this phone's copy is removed
+    if (await finishRemovedPhone()) { setLoginMsg('The unsent records were sent to the office. This phone\'s copy of the firm\'s data has been removed.'); return; }
+    const still = await accessRemovedState();
+    if (still?.unsent) { void notify('Not all sent yet', `${still.unsent} records still wait to be sent. Sync again with signal.`); }
     const s = await loadMe(userId);
     if (!s) { void notify('Could not load your data', 'Check the internet and try again.'); return; }
     localStorage.setItem('dbrox.session', JSON.stringify({ tenantId, userId }));
@@ -360,6 +366,7 @@ function Login({ onIn, msg }: { onIn: (tenantId: string, userId: string, mustPin
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [err, setErr] = useState(msg ?? '');
+  useEffect(() => { if (msg) setErr(msg); }, [msg]);
   // how many digits: known on a phone that logged in before (owner 6, staff 4); otherwise up to 6 and the arrow
   const [known, setKnown] = useState<number | null>(null);
   useEffect(() => { if (phone.length === 10) void pinLengthFor(phone).then(setKnown); else setKnown(null); }, [phone]);

@@ -44,6 +44,8 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
       if (r.ok) {
         const j = await r.json();
         if (j.choose) return { choose: j.choose }; // same phone under two distributors → the app asks which firm
+        const removed = await accessRemovedState();
+        if (removed && !['owner', 'office', 'cadmin'].includes(String(j.role))) return { error: accessRemovedMsg(removed.unsent) };
         await setToken(j.token);
         await rememberPin(j.tenantId, j.userId, phone, pin); // a salted hash only: the offline login and the app lock
         await touchServer();
@@ -58,6 +60,8 @@ export async function login(phone: string, pin: string, tenantId?: string): Prom
     } catch { /* offline: fall back to the PIN check on this phone */ }
   }
   // offline: only a phone that reached the server in the last 14 days; the PIN checked against its hash on this phone
+  const removed = await accessRemovedState();
+  if (removed) return { error: `${accessRemovedMsg(removed.unsent)} Connect to the internet.` };
   const off = await offlineState(!!url);
   if (off.mustLogin) return { error: `This phone has not reached the server for ${off.days} days. Connect to the internet to log in.` };
   await securePins(!!url);
@@ -76,9 +80,23 @@ export async function pinChangeDue(tenantId: string, userId: string): Promise<nu
 }
 
 /** records on this phone not yet sent to the server */
-export async function hasUnsent(): Promise<boolean> {
-  for (const t of SYNC_TABLES) if (await db.table(t).where('dirty').equals(1).count()) return true;
-  return false;
+export async function unsentCount(): Promise<number> {
+  let n = 0;
+  for (const t of SYNC_TABLES) n += await db.table(t).where('dirty').equals(1).count();
+  return n;
+}
+export async function hasUnsent(): Promise<boolean> { return (await unsentCount()) > 0; }
+export const accessRemovedMsg = (n: number) => `Access removed. This phone has ${n} unsent record${n === 1 ? '' : 's'} — the owner or office must log in here to send them.`;
+/** a phone whose person was removed while it held unsent work: waiting for the owner or office (null when not) */
+export async function accessRemovedState(): Promise<{ unsent: number } | null> {
+  const v = (await db.meta.get('accessRemoved'))?.value as { unsent: number } | undefined;
+  return v ? { unsent: await unsentCount() } : null;
+}
+/** after the owner or office logged in and synced on such a phone: once nothing is unsent, the phone's copy is removed */
+export async function finishRemovedPhone(): Promise<boolean> {
+  if (!(await db.meta.get('accessRemoved')) || await hasUnsent()) return false;
+  await wipeLocal();
+  return true;
 }
 /**
  * At start: a phone away from the server for 14 days must log in online; at 30 days its copy of the firm's data is
@@ -303,6 +321,16 @@ async function syncOnce(): Promise<{ msg: string; more: boolean }> {
     }
     const r = await fetch(`${url}/v1/sync`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cursor, changes, moves: 1, tables: SYNC_TABLES }) }); // moves: this phone sends stock as movements; tables: only what this version knows
     if (r.status === 403 && (await r.clone().json().catch(() => ({}))).error === 'Access removed') {
+      // unsent work belongs to the firm: never wiped. The person's login is ended; the owner or office logs in here to
+      // send it, and the phone is wiped after that (finishRemovedPhone). With nothing unsent, wiped at once.
+      const n = await unsentCount();
+      if (n) {
+        await db.meta.put({ key: 'accessRemoved', value: { unsent: n, at: Date.now() } });
+        await clearToken(); localStorage.removeItem('dbrox.session');
+        for (const v of await db.meta.where('key').startsWith('pinv:').toArray()) await db.meta.delete(v.key); // no offline login for anyone until the firm has its records
+        window.dispatchEvent(new Event('dbrox:logout'));
+        return done(accessRemovedMsg(n));
+      }
       await wipeLocal(); window.dispatchEvent(new Event('dbrox:logout'));
       return done('Your access was removed by the owner. This phone\'s copy of the firm\'s data has been removed.');
     }

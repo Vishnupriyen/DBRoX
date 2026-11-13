@@ -3,7 +3,7 @@
 // and a phone offline longer than 14 days must log in online (30 days: its copy of the firm's data is removed).
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { ChangeSet, db, setSession } from '../src/core/db';
+import { ChangeSet, db, onSide, RoxDB, setSession } from '../src/core/db';
 import { CONSENT } from '../../server/test/fixtures';
 
 type Server = Awaited<ReturnType<typeof import('../../server/test/harness').startServer>>;
@@ -157,5 +157,48 @@ describe('found by the independent tester', () => {
     await touchServer(Date.now() - 31 * 86400000);
     online(false);
     try { expect(await offlineCheck()).toMatchObject({ wiped: true }); expect(await db.invoices.count()).toBe(0); } finally { online(true); }
+  });
+});
+
+describe('found by the tester: "Access removed" with unsent work (13 Nov 2026)', () => {
+  it('a removed salesman\'s unsent payment is kept; only the owner or office can log in to send it; then the phone is wiped', async () => {
+    const { syncNow, login, accessRemovedState, finishRemovedPhone } = await import('../src/core/sync');
+    // a fresh firm and owner on the main phone; a salesman added
+    const up = await srv.fetch('http://srv.test/v1/signup', { method: 'POST', body: JSON.stringify({ consent: CONSENT, firmName: 'Removed Firm', ownerName: 'O', phone: '9611100020', pin: '391742' }), headers: { 'x-forwarded-for': '10.99.0.2' } }).then(r => r.json());
+    const sid = (await srv.query(`SELECT id FROM docs WHERE tenant_id=$1 AND tbl='settings'`, [up.tenantId]))[0].id as string;
+    const phone = new RoxDB(`removed-${Date.now()}`);
+    await onSide(phone, async () => {
+      await db.open();
+      setSession(up.tenantId, up.userId);
+      const cs = new ChangeSet();
+      cs.put('settings', { id: sid, firmName: 'Removed Firm', gstin: '', address: '', stateCode: '33', phone: '9611100020', serverUrl: 'http://srv.test', modules: {}, billFormat: 'A5', returnApprovalLimit: 0, discountAlertPct: 0 });
+      await cs.commit('settings');
+      expect(await login('9611100020', '391742')).toMatchObject({ userId: up.userId });
+      const cs2 = new ChangeSet();
+      cs2.put('staff', { id: 'rm-sm', name: 'Babu', phone: '9611100021', role: 'salesman', pin: '7265', active: true });
+      await cs2.commit('setup');
+      expect(await syncNow()).toMatch(/^Synced/);
+      // the salesman logs in on this phone and takes a payment offline
+      expect(await login('9611100021', '7265')).toMatchObject({ userId: 'rm-sm' });
+      setSession(up.tenantId, 'rm-sm');
+      const pay = new ChangeSet();
+      const pm = pay.put('payments', { shopId: 'x', amount: 75, mode: 'cash', date: '2026-11-13', collectedBy: 'rm-sm', shopConfirmed: false, allocations: [], advance: 75, settled: false, status: 'ok' });
+      await pay.commit('payment');
+      // the owner removes him (from the server side, as another phone would)
+      await srv.query(`UPDATE users SET active=false WHERE tenant_id=$1 AND id='rm-sm'`, [up.tenantId]);
+      const msg = await syncNow();
+      expect(msg).toMatch(/Access removed\. This phone has \d+ unsent record/);
+      expect((await db.payments.get(pm.id))?.dirty).toBe(1);
+      expect(await accessRemovedState()).not.toBeNull();
+      // nobody gets in offline; another staff role is refused; the owner logs in and the payment reaches the server
+      online(false);
+      try { expect(await login('9611100020', '391742')).toMatchObject({ error: expect.stringMatching(/Connect to the internet/) }); } finally { online(true); }
+      expect(await login('9611100020', '391742')).toMatchObject({ userId: up.userId });
+      setSession(up.tenantId, up.userId);
+      expect(await syncNow()).toMatch(/^Synced/);
+      expect((await srv.query(`SELECT id FROM docs WHERE tenant_id=$1 AND id=$2`, [up.tenantId, pm.id])).length).toBe(1);
+      expect(await finishRemovedPhone()).toBe(true);
+      expect(await db.payments.count()).toBe(0);
+    });
   });
 });
