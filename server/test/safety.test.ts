@@ -1,5 +1,6 @@
 // Pre-pilot safety round 1 (11 Nov 2026): every attack the security probe proved must be REFUSED by the server.
 // Each block below failed before its fix (regression tests written first).
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -53,7 +54,7 @@ const cnNo = async (token: string) => { const r = await post('/v1/number', { kin
 const T = { owner: '', office: '', salesman: '', godown: '', delivery: '', tenant: '', ownerId: '' };
 const staffPin: Record<string, string> = { office: '6831', salesman: '2958', godown: '7416', delivery: '5072' };
 beforeAll(async () => {
-  const s = await post('/v1/signup', { firmName: 'Safe Agencies', ownerName: 'Owner', phone: '9700000001', pin: '4826' });
+  const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Safe Agencies', ownerName: 'Owner', phone: '9700000001', pin: '482613' });
   expect(s.status, JSON.stringify(s.body)).toBe(200);
   T.owner = s.body.token; T.tenant = s.body.tenantId; T.ownerId = s.body.userId;
   const roles = ['office', 'salesman', 'godown', 'delivery'] as const;
@@ -68,7 +69,7 @@ beforeAll(async () => {
 describe('1. login: tries kept in Postgres, per phone and per IP; common PINs refused; token renewal', () => {
   it('refuses common PINs at signup', async () => {
     for (const pin of ['1234', '0000', '7777', '4321', '1212', '1987', '2026']) {
-      const r = await post('/v1/signup', { firmName: 'X', ownerName: 'X', phone: '9700000099', pin }, undefined, freshIp());
+      const r = await post('/v1/signup', { consent: CONSENT, firmName: 'X', ownerName: 'X', phone: '9700000099', pin }, undefined, freshIp());
       expect(r.status, pin).toBe(400);
     }
   });
@@ -76,13 +77,13 @@ describe('1. login: tries kept in Postgres, per phone and per IP; common PINs re
   it('a stranger cannot lock the owner out from another place, and the tries survive a server restart', async () => {
     const stranger = freshIp();
     for (let i = 0; i < 5; i++) await post('/v1/login', { phone: '9700000001', pin: '0001' }, undefined, stranger);
-    expect((await post('/v1/login', { phone: '9700000001', pin: '4826' }, undefined, stranger)).status).toBe(429);
+    expect((await post('/v1/login', { phone: '9700000001', pin: '482613' }, undefined, stranger)).status).toBe(429);
     // kept in the database: a second server instance (Cloud Run) knows about them too
     const { buildApp } = await import('../src/app.js'); const other = await buildApp(pool);
-    expect((await post('/v1/login', { phone: '9700000001', pin: '4826' }, undefined, stranger, other)).status).toBe(429);
+    expect((await post('/v1/login', { phone: '9700000001', pin: '482613' }, undefined, stranger, other)).status).toBe(429);
     await other.close();
     // the owner, on their own phone's connection, still gets in
-    expect((await post('/v1/login', { phone: '9700000001', pin: '4826' }, undefined, freshIp())).status).toBe(200);
+    expect((await post('/v1/login', { phone: '9700000001', pin: '482613' }, undefined, freshIp())).status).toBe(200);
   });
 
   it('one place spraying one PIN over many phones is stopped', async () => {
@@ -115,7 +116,9 @@ describe('1. login: tries kept in Postgres, per phone and per IP; common PINs re
     const short = signToken({ t: T.tenant, u: T.ownerId, r: 'owner', e: 0 }, 5);
     const r = await sync(short);
     expect(typeof r.body.token).toBe('string');
-    expect(readToken(r.body.token)!.exp).toBeGreaterThan(Date.now() / 1000 + 25 * 86400);
+    // the owner's tokens last 14 days (security standard, 13 Nov 2026: the owner can export everything); staff 30
+    expect(readToken(r.body.token)!.exp).toBeGreaterThan(Date.now() / 1000 + 13 * 86400);
+    expect(readToken(r.body.token)!.exp).toBeLessThan(Date.now() / 1000 + 15 * 86400);
     expect((await sync(T.owner)).body.token).toBeUndefined(); // a fresh one: nothing to renew
   });
 });
@@ -231,7 +234,7 @@ describe('4. time, refused records, grace lock', () => {
   });
 
   it('a locked plan still takes bills and orders dated before the lock day (made offline in grace)', async () => {
-    const s = await post('/v1/signup', { firmName: 'Lapsed', ownerName: 'O', phone: '9700000050', pin: '4826' }, undefined, freshIp());
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Lapsed', ownerName: 'O', phone: '9700000050', pin: '482613' }, undefined, freshIp());
     const no = await billNo(s.body.token);
     await pool.query(`UPDATE tenants SET trial_ends = current_date - 30 WHERE id=$1`, [s.body.tenantId]);
     const lockOn = (await pool.query(`SELECT (current_date - 30 + 8)::text d`)).rows[0].d as string;
@@ -288,7 +291,7 @@ describe('6. staff phone / PIN change, removal', () => {
   });
 
   it('the owner changing their own PIN gets a fresh token back (their phone stays signed in)', async () => {
-    const r = await sync(T.owner, [ch('staff', T.ownerId, { name: 'Owner', phone: '9700000001', role: 'owner', pin: '5927', active: true }, 1000)]);
+    const r = await sync(T.owner, [ch('staff', T.ownerId, { name: 'Owner', phone: '9700000001', role: 'owner', pin: '592718', active: true }, 1000)]);
     expect(typeof r.body.token).toBe('string');
     expect((await sync(r.body.token)).status).toBe(200);
     T.owner = r.body.token;
@@ -329,7 +332,7 @@ describe('8. size', () => {
     const r = await sync(T.salesman, [ch('visits', 'v-big', { note: big }), ch('visits', 'v-small', { note: 'ok' })]);
     expect(r.body.rejected).toEqual(['visits|v-big']);
     expect(r.body.accepted).toEqual(['visits|v-small']);
-    const s = await post('/v1/signup', { firmName: 'Photos', ownerName: 'O', phone: '9700000060', pin: '4826' }, undefined, freshIp());
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Photos', ownerName: 'O', phone: '9700000060', pin: '482613' }, undefined, freshIp());
     const photo = 'data:image/jpeg;base64,' + Buffer.from(Array.from({ length: 180 * 1024 }, (_, i) => (i * 7919) % 251)).toString('base64');
     for (let k = 0; k < 4; k++) await sync(s.body.token, Array.from({ length: 10 }, (_, i) => ch('shops', `ph-${k}-${i}`, { name: 'p', photo })));
     const pull = await sync(s.body.token);
@@ -368,7 +371,7 @@ describe('9. relay queue and AI scans', () => {
 
   it('sign-ups are limited per place', async () => {
     const ip = freshIp(); const codes: number[] = [];
-    for (let i = 0; i < 7; i++) codes.push((await post('/v1/signup', { firmName: 'F', ownerName: 'O', phone: `95000000${10 + i}`, pin: '4826' }, undefined, ip)).status);
+    for (let i = 0; i < 7; i++) codes.push((await post('/v1/signup', { consent: CONSENT, firmName: 'F', ownerName: 'O', phone: `95000000${10 + i}`, pin: '482613' }, undefined, ip)).status);
     expect(codes.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
     expect(codes.slice(5)).toEqual([429, 429]);
   });
@@ -382,7 +385,7 @@ describe('9. relay queue and AI scans', () => {
 
 describe('3b. a company head office keeps its own price to distributors', () => {
   it('cadmin saves and reads purchaseRate (PTD); a rep never sees it', async () => {
-    const co = await post('/v1/signup', { firmName: 'Brand', ownerName: 'HO', phone: '9700000070', pin: '4826', kind: 'company' }, undefined, freshIp());
+    const co = await post('/v1/signup', { consent: CONSENT, firmName: 'Brand', ownerName: 'HO', phone: '9700000070', pin: '482613', kind: 'company' }, undefined, freshIp());
     await sync(co.body.token, [ch('products', 'P1', { name: 'Oil', rate: 100, purchaseRate: 90 }), ch('staff', 'rep1', { name: 'Rep', phone: '9700000071', role: 'rep', pin: '6153', active: true })]);
     expect((await doc('products', 'P1')).purchaseRate).toBe(90);
     expect((await sync(co.body.token)).body.changes.find((c: Ch) => c.id === 'P1').data.purchaseRate).toBe(90);

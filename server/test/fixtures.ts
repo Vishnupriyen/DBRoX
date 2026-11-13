@@ -29,3 +29,7 @@ export async function freePort(): Promise<number> {
     s.listen(0, '127.0.0.1', () => { const a = s.address(); const p = typeof a === 'object' && a ? a.port : 0; s.close(() => resolve(p)); });
   });
 }
+
+/** a sign-up's privacy consent (DPDP, 13 Nov 2026): the notice version the person ticked; AI photo reading on for tests */
+import { readFileSync as readShared } from 'node:fs';
+export const CONSENT = { version: (JSON.parse(readShared(new URL('../../shared/privacy.json', import.meta.url), 'utf8')) as { version: string }).version, optional: { ai_scan: true } };

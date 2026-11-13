@@ -1,5 +1,6 @@
 // Archive (10 Nov 2026): old records move out of the live table into compressed month bundles. Nothing is lost:
 // a new phone fetches them, a claim on an old bill still finds it, and an old bill edited later comes back to life.
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -47,7 +48,7 @@ describe('archive', () => {
   });
 
   it('a distributor\'s old bills move to the archive; recent ones and master records stay live', async () => {
-    D = (await post('/v1/signup', { firmName: 'Sri Murugan', ownerName: 'O', phone: '9855500001', pin: '4826' })).body;
+    D = (await post('/v1/signup', { consent: CONSENT, firmName: 'Sri Murugan', ownerName: 'O', phone: '9855500001', pin: '482613' })).body;
     await issueNumbers(pool, D.tenantId);
     await sync(D.token, [ch('companies', { id: 'cK', name: 'Kaveri', code: 'KAV', nextBillNo: 1 }), ch('products', { id: 'dp1', companyId: 'cK', name: 'Oil', rate: 40, purchaseRate: 36, active: true }),
       ch('shops', { id: 's1', name: 'Shop', area: 'X', beat: 'Mon', approved: true, aliases: [] }),
@@ -93,7 +94,7 @@ describe('archive', () => {
   });
 
   it('a brand keeps distributor bills live 120 days; a claim on an older bill still finds it; a late cancel fixes the totals', async () => {
-    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9855500009', pin: '4826', kind: 'company' })).body;
+    CO = (await post('/v1/signup', { consent: CONSENT, firmName: 'Kaveri', ownerName: 'HO', phone: '9855500009', pin: '482613', kind: 'company' })).body;
     await sync(CO.token, [ch('products', { id: 'P1', name: 'Kaveri Oil', code: 'K1', rate: 40, purchaseRate: 36, mrp: 50, gst: 5, caseSize: 12, active: true }),
       ch('dbLinks', { id: 'L0', name: 'Sri Murugan', inviteCode: 'KAVA00', status: 'invited' })]);
     expect((await post('/v1/link/accept', { code: 'KAVA00', companyIdInDb: 'cK' }, D.token)).status).toBe(200);

@@ -22,5 +22,22 @@ export async function migrate(p: pg.Pool = pool) {
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
+  // the limited role's rights cover every table, including ones a migration just added (activity log stays read-only)
+  if ((await p.query(`SELECT to_regproc('hanubix_grants') AS f`)).rows[0].f) await p.query('SELECT hanubix_grants()');
   } finally { await p.query('SELECT pg_advisory_unlock(727001)'); }
+}
+
+/**
+ * The pool every request uses: the limited role hanubix_app (security standard, 13 Nov 2026). The owner pool (DATABASE_URL)
+ * runs the migrations and then gives hanubix_app its password (DB_APP_PASSWORD, in deploy/.env). Without that setting
+ * (development, tests) the owner pool is used; production refuses to start without it (index.ts).
+ */
+export async function appPool(owner: pg.Pool = pool): Promise<pg.Pool> {
+  const pw = process.env.DB_APP_PASSWORD ?? '';
+  if (!pw) return owner;
+  const lit = (await owner.query('SELECT quote_literal($1) AS q', [pw])).rows[0].q as string;
+  await owner.query(`ALTER ROLE hanubix_app WITH LOGIN PASSWORD ${lit}`);
+  const u = new URL(config.databaseUrl);
+  u.username = 'hanubix_app'; u.password = encodeURIComponent(pw);
+  return new pg.Pool({ connectionString: u.toString(), max: Number(process.env.DB_POOL ?? 10) });
 }

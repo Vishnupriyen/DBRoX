@@ -1,5 +1,6 @@
 // Scale design (stress test, 10 Nov 2026): the relay runs in the background; a brand's reports come from running totals
 // on the server; head office never downloads every bill; a manager or rep gets only their own distributors.
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -36,8 +37,8 @@ const bill = (id: string, shop: string, qty: number, taxable: number, extra: Rec
 
 describe('scale design', () => {
   it('setup: a brand, two linked distributors, a rep who works only the first', async () => {
-    CO = (await post('/v1/signup', { firmName: 'Kaveri', ownerName: 'HO', phone: '9844400001', pin: '4826', kind: 'company' })).body;
-    for (let i = 0; i < 2; i++) D.push((await post('/v1/signup', { firmName: `Dist ${i}`, ownerName: 'O', phone: `98444001${i}0`, pin: '4826' })).body);
+    CO = (await post('/v1/signup', { consent: CONSENT, firmName: 'Kaveri', ownerName: 'HO', phone: '9844400001', pin: '482613', kind: 'company' })).body;
+    for (let i = 0; i < 2; i++) D.push((await post('/v1/signup', { consent: CONSENT, firmName: `Dist ${i}`, ownerName: 'O', phone: `98444001${i}0`, pin: '482613' })).body);
     for (const d of D) await issueNumbers(pool, d.tenantId);
     await sync(CO.token, [ch('products', { id: 'P1', name: 'Kaveri Oil', code: 'K1', rate: 40, purchaseRate: 36, mrp: 50, gst: 5, caseSize: 12, active: true }),
       ch('dbLinks', { id: 'L0', name: 'Dist 0', inviteCode: 'KAVS00', status: 'invited' }), ch('dbLinks', { id: 'L1', name: 'Dist 1', inviteCode: 'KAVS01', status: 'invited' }),

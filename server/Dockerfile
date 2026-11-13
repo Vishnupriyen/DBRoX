@@ -1,5 +1,6 @@
-# DBRoX server for Google Cloud Run (Mumbai: asia-south1)
-FROM node:22-slim AS build
+# Hanubix server (Hostinger KVM 2). NODE_IMAGE is the exact digest pinned by deploy/pin-images.sh.
+ARG NODE_IMAGE=node:22-slim
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -9,7 +10,7 @@ COPY scripts ./scripts
 COPY shared ./shared
 RUN npm run build
 
-FROM node:22-slim
+FROM ${NODE_IMAGE}
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package*.json ./

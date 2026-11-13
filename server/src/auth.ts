@@ -16,24 +16,36 @@ export function verifyPin(pin: string, stored: string): boolean {
   return timingSafeEqual(want, got);
 }
 
-export interface Claims { t: string; u: string; r: string; e: number; exp: number }
+export interface Claims { t: string; u: string; r: string; e: number; exp: number; k?: number }
+
+/** the owner and a brand's head office hold the money and can export everything: shorter tokens (14 days) */
+export const tokenDays = (role: string) => (role === 'owner' || role === 'cadmin' ? 14 : 30);
+/** PIN length by role (owner decision 13 Nov 2026): owner and head office 6 digits, everyone else 4 */
+export const pinLength = (role: string) => (role === 'owner' || role === 'cadmin' ? 6 : 4);
+export const pinFits = (role: string, pin: unknown) => typeof pin === 'string' && new RegExp(`^\\d{${pinLength(role)}}$`).test(pin);
 
 const b64 = (b: Buffer | string) => Buffer.from(b).toString('base64url');
 
 // Small signed token (HMAC-SHA256). "e" = token epoch: bumping it in the users table logs the phone out.
-export function signToken(c: Omit<Claims, 'exp'>, days = 30): string {
-  const body = b64(JSON.stringify({ ...c, exp: Math.floor(Date.now() / 1000) + days * 86400 }));
+// "k" = key id: 1 for JWT_SECRET. During a key change JWT_SECRET_OLD still opens tokens until they are renewed.
+export function signToken(c: Omit<Claims, 'exp' | 'k'>, days = tokenDays(c.r)): string {
+  const body = b64(JSON.stringify({ ...c, k: 1, exp: Math.floor(Date.now() / 1000) + days * 86400 }));
   const sig = createHmac('sha256', config.jwtSecret).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
+const sigOk = (body: string, sig: string, secret: string) => {
+  if (!secret) return false;
+  const want = createHmac('sha256', secret).update(body).digest('base64url');
+  return want.length === sig.length && timingSafeEqual(Buffer.from(want), Buffer.from(sig));
+};
 
 export function readToken(token: string | undefined): Claims | null {
   if (!token) return null;
   const [body, sig] = token.replace(/^Bearer\s+/i, '').split('.');
   if (!body || !sig) return null;
-  const want = createHmac('sha256', config.jwtSecret).update(body).digest('base64url');
-  if (want.length !== sig.length || !timingSafeEqual(Buffer.from(want), Buffer.from(sig))) return null;
-  const c = JSON.parse(Buffer.from(body, 'base64url').toString()) as Claims;
+  if (!sigOk(body, sig, config.jwtSecret) && !sigOk(body, sig, config.jwtSecretOld)) return null;
+  let c: Claims;
+  try { c = JSON.parse(Buffer.from(body, 'base64url').toString()) as Claims; } catch { return null; }
   if (c.exp < Date.now() / 1000) return null;
   return c;
 }

@@ -1,33 +1,59 @@
 # Hanubix server on the Hostinger KVM 2 (plan locked 12 Nov 2026). One machine: Postgres, the Hanubix server, Caddy (HTTPS).
 # The server image is tagged with the git commit, so the previous version is always on the machine for a rollback.
+# Images are pinned to exact digests by deploy/pin-images.sh (PG_IMAGE, CADDY_IMAGE in .env); the tags are the fallback.
+x-logs: &logs
+  logging: { driver: json-file, options: { max-size: 20m, max-file: "10" } }
+
 services:
   db:
-    image: postgres:16
+    image: ${PG_IMAGE:-postgres:16}
     restart: unless-stopped
+    <<: *logs
     environment:
       POSTGRES_DB: dbrox
       POSTGRES_USER: hanubix
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes: [ "pgdata:/var/lib/postgresql/data" ]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U hanubix -d dbrox"], interval: 10s, retries: 6 }
+    security_opt: [ "no-new-privileges:true" ]
+    shm_size: 256m
+    mem_limit: 3g
 
   server:
     image: hanubix-server:${TAG:-none}   # the version live now (.live-tag); deploy.sh sets it
     restart: unless-stopped
+    <<: *logs
     env_file: .env
     environment:
       NODE_ENV: production
       PORT: "8080"
+      # the owner role runs the migrations only; every request uses the limited role hanubix_app (DB_APP_PASSWORD in .env)
       DATABASE_URL: postgres://hanubix:${DB_PASSWORD}@db:5432/dbrox
     depends_on: { db: { condition: service_healthy } }
     stop_grace_period: 30s   # a stopping server finishes the requests and relay batch in hand
     expose: [ "8080" ]
+    read_only: true
+    tmpfs: [ "/tmp" ]
+    security_opt: [ "no-new-privileges:true" ]
+    mem_limit: 2g
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 30s, timeout: 10s, retries: 3 }
 
   caddy:
-    image: caddy:2
+    image: ${CADDY_IMAGE:-caddy:2}
     restart: unless-stopped
+    <<: *logs
     ports: [ "80:80", "443:443" ]
-    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN in .env} --to server:8080
-    volumes: [ "caddydata:/data" ]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ADMIN_ALLOW_IPS: ${ADMIN_ALLOW_IPS:-127.0.0.1/32}
+    volumes: [ "caddydata:/data", "caddyconfig:/config", "./Caddyfile:/etc/caddy/Caddyfile:ro" ]
+    read_only: true
+    tmpfs: [ "/tmp" ]
+    security_opt: [ "no-new-privileges:true" ]
+    cap_drop: [ "ALL" ]
+    cap_add: [ "NET_BIND_SERVICE" ]
+    mem_limit: 512m
+    # any HTTP answer on port 80 (Caddy sends plain requests on to HTTPS) means Caddy is serving
+    healthcheck: { test: ["CMD-SHELL", "wget -q -S -O /dev/null --max-redirect=0 http://127.0.0.1:80/ 2>&1 | grep -q HTTP/"], interval: 30s, timeout: 10s, retries: 3 }
 
-volumes: { pgdata: {}, caddydata: {} }
+volumes: { pgdata: {}, caddydata: {}, caddyconfig: {} }

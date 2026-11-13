@@ -1,5 +1,6 @@
 // Regression tests for the independent code review of the company module (10 Nov 2026). Each failed before its fix.
 process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -32,15 +33,15 @@ const ch = (table: string, data: Record<string, unknown>, updatedAt = at()) => (
 const sync = async (token: string, changes: ReturnType<typeof ch>[] = []) => (await post('/v1/sync', { cursor: 0, changes }, token)).body;
 const doc = async (tenant: string, tbl: string, id: string) => (await pool.query('SELECT data FROM docs WHERE tenant_id=$1 AND tbl=$2 AND id=$3', [tenant, tbl, id])).rows[0]?.data;
 const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
-const login = async (phone: string) => (await post('/v1/login', { phone, pin: '4826' })).body as { token: string; tenantId: string; userId: string };
+const login = async (phone: string) => (await post('/v1/login', { phone, pin: ['9833300001', '9833300002', '9833300003'].includes(phone) ? '482613' : '4826' })).body as { token: string; tenantId: string; userId: string };
 
 let A = { token: '', tenantId: '' }, B = { token: '', tenantId: '' }, D = { token: '', tenantId: '' };
 let mgr = { token: '', userId: '' }, rep = { token: '', userId: '' };
 describe('setup', () => {
   it('two companies, one distributor, a manager and a rep', async () => {
-    A = (await post('/v1/signup', { firmName: 'Alpha Foods', ownerName: 'HO', phone: '9833300001', pin: '4826', kind: 'company' })).body;
-    B = (await post('/v1/signup', { firmName: 'Beta Snacks', ownerName: 'HO', phone: '9833300002', pin: '4826', kind: 'company' })).body;
-    D = (await post('/v1/signup', { firmName: 'Durai Agencies', ownerName: 'D', phone: '9833300003', pin: '4826', gstin: '33DURAI0000A1Z5' })).body;
+    A = (await post('/v1/signup', { consent: CONSENT, firmName: 'Alpha Foods', ownerName: 'HO', phone: '9833300001', pin: '482613', kind: 'company' })).body;
+    B = (await post('/v1/signup', { consent: CONSENT, firmName: 'Beta Snacks', ownerName: 'HO', phone: '9833300002', pin: '482613', kind: 'company' })).body;
+    D = (await post('/v1/signup', { consent: CONSENT, firmName: 'Durai Agencies', ownerName: 'D', phone: '9833300003', pin: '482613', gstin: '33DURAI0000A1Z5' })).body;
     await sync(A.token, [
       ch('staff', { id: 'm1', name: 'Mani (ASM)', phone: '9833300011', role: 'manager', level: 'ASM', pin: '4826', active: true }),
       ch('staff', { id: 'r1', name: 'Ravi (Rep)', phone: '9833300012', role: 'rep', managerId: 'm1', pin: '4826', active: true }),

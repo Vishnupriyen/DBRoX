@@ -3,10 +3,12 @@ import cors from '@fastify/cors';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { billingState, isUpgrade, istToday, makeLicence, PACKS, sealLicence, TIERS, type Billing } from './licence.js';
 import type pg from 'pg';
-import { config } from './config.js';
-import { hashPin, readToken, signToken, verifyPin, type Claims } from './auth.js';
+import { config, rates } from './config.js';
+import { hashPin, pinFits, pinLength, readToken, signToken, verifyPin, type Claims } from './auth.js';
+import { logEvent, phoneMark, rotateLog, type SecEvent } from './seclog.js';
+import { addConsent, CONSENT_KINDS, consentsOf, DUE_DAYS, eraseSubject, exportPerson, firmConsent, grievance, PRIVACY_VERSION, retention } from './privacy.js';
 import { badLines, badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
-import { clearHits, hit, isLocked } from './limits.js';
+import { clearHits, hit, isLocked, tooMany } from './limits.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
 import { relayIdle } from './link.js';
@@ -38,10 +40,32 @@ const CODE = (e: unknown) => String((e as { code?: string }).code ?? (e as Error
 const newId = () => randomBytes(12).toString('base64url');
 const err = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
 
-export async function buildApp(pool: pg.Pool) {
+/** pool: the limited role (hanubix_app) every request uses. owner: the database owner, for the maintenance jobs that
+ *  drop old activity-log months (the limited role cannot drop anything). Tests pass one pool for both. */
+export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
+  const owner = opts.owner ?? pool;
+  const R = rates();
   // trustProxy 1: Cloud Run's front end adds the caller's address last; only that one is trusted (per-place limits)
   const app = Fastify({ logger: process.env.NODE_ENV === 'production', bodyLimit: 12 * 1024 * 1024, trustProxy: (_addr: string, hop: number) => hop < 1 });
   await app.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',') });
+  // security headers on every answer (Caddy adds HSTS and the rest in front too; these hold even without it)
+  app.addHook('onSend', async (req, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+    if (req.url.startsWith('/v1/')) reply.header('Cache-Control', 'no-store');
+    if (process.env.NODE_ENV === 'production') reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    return payload;
+  });
+  // requests per minute from one place (an office behind one router shares this); Razorpay's webhook is signed and exempt
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/v1/') || req.url.startsWith('/v1/razorpay/')) return;
+    if (tooMany(`place:${req.ip}`, R.perPlace)) return reply.code(429).send({ error: 'Too many requests from this connection. Wait a minute and try again.' });
+  });
+  /** one activity-log row for this request (its address added) */
+  const sec = (req: FastifyRequest, e: SecEvent) => logEvent(pool, { ...e, ip: req.ip });
+  /** a login's own limit per minute on a costly route */
+  const perUser = (c: Claims, route: string, max: number) => { if (tooMany(`${route}:${c.t}:${c.u}`, max)) throw err(429, 'Too many requests. Wait a minute and try again.'); };
   // keep the raw text of every JSON body: Razorpay's signature is over the exact bytes it sent
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     (req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
@@ -83,14 +107,16 @@ export async function buildApp(pool: pg.Pool) {
   });
 
   // New distributor: firm + owner. Owner logs in with phone + PIN (Google sign-in can be added later).
-  app.post('/v1/signup', async req => {
-    const b = req.body as { firmName?: string; ownerName?: string; phone?: string; pin?: string; gstin?: string; address?: string; kind?: string };
+  app.post('/v1/signup', { bodyLimit: 16 * 1024 }, async req => {
+    const b = req.body as { firmName?: string; ownerName?: string; phone?: string; pin?: string; gstin?: string; address?: string; kind?: string; consent?: { version?: string; optional?: Record<string, boolean> } };
     const kind = b.kind === 'company' ? 'company' : 'distributor';
     const ownerRole = kind === 'company' ? 'cadmin' : 'owner';
     // a free trial costs us (AI scans, storage): a few sign-ups per place per hour
     if (await hit(pool, `signup:${req.ip}`, SIGNUP_PER_HOUR + 1, 60, 60) || await isLocked(pool, [`signup:${req.ip}`])) throw err(429, 'Too many sign-ups from this connection. Try again in an hour.');
-    if (!b.firmName || !b.ownerName || !/^[6-9]\d{9}$/.test(b.phone ?? '') || !/^\d{4}$/.test(b.pin ?? '')) throw err(400, 'Firm, owner name, 10-digit mobile and 4-digit PIN needed');
-    if (weakPin(b.pin!)) throw err(400, 'This PIN is too easy to guess (like 1234, 1111 or a year). Choose another 4-digit PIN.');
+    if (!b.firmName || !b.ownerName || !/^[6-9]\d{9}$/.test(b.phone ?? '') || !pinFits(ownerRole, b.pin)) throw err(400, `Firm, owner name, 10-digit mobile and ${pinLength(ownerRole)}-digit PIN needed`);
+    if (weakPin(b.pin!)) throw err(400, `This PIN is too easy to guess (like 123456, 111111 or a date). Choose another ${pinLength(ownerRole)}-digit PIN.`);
+    // DPDP: nothing is taken before the person has read the privacy notice and ticked the box (never pre-ticked)
+    if (b.consent?.version !== PRIVACY_VERSION) throw err(400, 'Please read the privacy notice and tick the box to continue.');
     const exists = await pool.query('SELECT 1 FROM users WHERE phone=$1', [b.phone]);
     if (exists.rowCount) throw err(409, 'This phone number already has a DBRoX login');
     const tenantId = newId();
@@ -100,7 +126,9 @@ export async function buildApp(pool: pg.Pool) {
     try {
       await client.query('BEGIN');
       await client.query(`INSERT INTO tenants(id, name, status, trial_ends, kind) VALUES ($1,$2,'trial', current_date + 60, $3)`, [tenantId, b.firmName, kind]);
-      await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash) VALUES ($1,$2,$3,$4,$5,$6)', [tenantId, userId, b.phone, b.ownerName, ownerRole, hashPin(b.pin!)]);
+      await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash,pin_len,last_login) VALUES ($1,$2,$3,$4,$5,$6,$7,now())', [tenantId, userId, b.phone, b.ownerName, ownerRole, hashPin(b.pin!), b.pin!.length]);
+      await addConsent(client, tenantId, userId, 'privacy', true, req.ip);
+      for (const k of CONSENT_KINDS.slice(1)) if (typeof b.consent.optional?.[k] === 'boolean') await addConsent(client, tenantId, userId, k, b.consent.optional[k], req.ip);
       const settings = {
         id: newId(), tenantId, createdAt: now, updatedAt: now, firmName: b.firmName, gstin: b.gstin ?? '', address: b.address ?? '', stateCode: (b.gstin ?? '33').slice(0, 2), phone: b.phone,
         modules: { sales: true, bill: true, inventory: true, delivery: true, collection: true, accountant: true, gst: true, payroll: true },
@@ -110,33 +138,41 @@ export async function buildApp(pool: pg.Pool) {
       await client.query('INSERT INTO docs(tenant_id,tbl,id,data,updated_at) VALUES ($1,$2,$3,$4,$5),($1,$6,$7,$8,$5)', [tenantId, 'settings', settings.id, settings, now, 'staff', userId, staff]);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    await sec(req, { tenant: tenantId, actor: userId, role: ownerRole, event: 'signup', detail: { kind } });
     return { tenantId, userId, token: signToken({ t: tenantId, u: userId, r: ownerRole, e: 0 }), licence: await licenceFor(tenantId) };
   });
 
-  app.post('/v1/login', async (req, reply) => {
+  app.post('/v1/login', { bodyLimit: 16 * 1024 }, async (req, reply) => {
     const b = req.body as { phone?: string; pin?: string };
     if (!b.phone || !b.pin) throw err(400, 'Phone and PIN needed');
     // wrong tries are counted in the database: per phone from one place (5 → 15 min), per phone from anywhere (10 → a
     // short 10 min, so nobody can lock someone else out for long), per place over all phones (20 → 30 min)
     const pair = `login:${b.phone}|${req.ip}`, onePhone = `login:${b.phone}`, place = `loginip:${req.ip}`;
-    if (await isLocked(pool, [pair, onePhone, place])) throw err(429, 'Too many wrong PINs. Try again in a few minutes.');
+    if (await isLocked(pool, [pair, onePhone, place])) { await sec(req, { event: 'login.locked', target: phoneMark(b.phone), ok: false }); throw err(429, 'Too many wrong PINs. Try again in a few minutes.'); }
     const bt = (req.body as { tenantId?: string }).tenantId;
-    const all = (await pool.query('SELECT u.tenant_id, u.id, u.role, u.pin_hash, u.active, u.token_epoch, t.name AS firm FROM users u JOIN tenants t ON t.id=u.tenant_id WHERE u.phone=$1 AND u.active', [b.phone])).rows;
+    const all = (await pool.query('SELECT u.tenant_id, u.id, u.role, u.pin_hash, u.pin_len, u.active, u.token_epoch, t.name AS firm FROM users u JOIN tenants t ON t.id=u.tenant_id WHERE u.phone=$1 AND u.active', [b.phone])).rows;
     const ok = all.filter(u => verifyPin(b.pin!, u.pin_hash) && (!bt || u.tenant_id === bt));
     if (!ok.length) {
-      await hit(pool, pair, 5, 15, 15); await hit(pool, onePhone, 10, 15, 10); await hit(pool, place, 20, 60, 30);
+      const locked = [await hit(pool, pair, 5, 15, 15), await hit(pool, onePhone, 10, 15, 10), await hit(pool, place, 20, 60, 30)].some(Boolean);
+      await sec(req, { tenant: all.length === 1 ? all[0].tenant_id : null, actor: all.length === 1 ? all[0].id : null, event: 'login.fail', target: phoneMark(b.phone), ok: false });
+      if (locked) await sec(req, { event: 'login.locked', target: phoneMark(b.phone), ok: false });
       reply.code(401); return { error: 'Wrong phone or PIN' };
     }
     await clearHits(pool, [pair, onePhone]);
     // the same phone under two distributors: the app shows "Which firm?" and sends tenantId
     if (ok.length > 1) return { choose: ok.map(u => ({ tenantId: u.tenant_id, firm: u.firm })) };
     const u = ok[0];
-    return { tenantId: u.tenant_id, userId: u.id, role: u.role, token: signToken({ t: u.tenant_id, u: u.id, r: u.role, e: u.token_epoch }), licence: await licenceFor(u.tenant_id) };
+    await pool.query('UPDATE users SET last_login = now() WHERE tenant_id=$1 AND id=$2', [u.tenant_id, u.id]);
+    await sec(req, { tenant: u.tenant_id, actor: u.id, role: u.role, event: 'login.ok' });
+    // an owner or head office still on a 4-digit PIN is asked to set 6 digits now (owner decision, 13 Nov 2026)
+    const mustChangePin = Number(u.pin_len ?? 4) < pinLength(u.role);
+    return { tenantId: u.tenant_id, userId: u.id, role: u.role, token: signToken({ t: u.tenant_id, u: u.id, r: u.role, e: u.token_epoch }), licence: await licenceFor(u.tenant_id), ...(mustChangePin ? { mustChangePin: true, pinLength: pinLength(u.role) } : {}) };
   });
 
   // Numbers are issued here, never on the phone: one running series per distributor, no duplicates across phones.
   app.post('/v1/number', async req => {
     const c = await auth(req);
+    perUser(c, 'number', R.number);
     const b = req.body as { kind?: 'bill' | 'cn' | 'receipt'; count?: number };
     const kind = b.kind ?? 'bill';
     // company head office: credit-note numbers for claim settlements only
@@ -157,6 +193,7 @@ export async function buildApp(pool: pg.Pool) {
   // Sync: push this phone's changes, pull everything newer than the phone's cursor.
   app.post('/v1/sync', async req => {
     const c = await auth(req);
+    perUser(c, 'sync', R.sync);
     const b = req.body as { cursor?: number; moves?: number; tables?: unknown; changes?: { table: string; id: string; updatedAt: string; data: Record<string, unknown> }[] };
     // a phone that sends stock as movements (this app); an older app sends whole lots (see 'batches' below)
     const movesPhone = b.moves === 1;
@@ -171,6 +208,7 @@ export async function buildApp(pool: pg.Pool) {
     const st = changes.length ? await stateFor(c.t) : null;
     const kind = changes.length ? await tenantKind(pool, c.t) : 'distributor';
     // nothing to save ("anything new?"): no transaction and no lock, straight to the pull
+    const staffEvents: SecEvent[] = [];
     if (changes.length) {
     const written: { table: string; id: string }[] = [];
     let queued = false;
@@ -275,8 +313,9 @@ export async function buildApp(pool: pg.Pool) {
           await client.query('SAVEPOINT staff');
           try {
             const r = await upsertStaffLogin(client, c.t, data, kind);
-            if (!r.ok) { await client.query('ROLLBACK TO SAVEPOINT staff'); refuse(key); continue; }
+            if (!r.ok) { await client.query('ROLLBACK TO SAVEPOINT staff'); refuse(key); staffEvents.push({ event: 'staff.refused', target: ch.id, ok: false, detail: { role: String(data.role ?? '') } }); continue; }
             await client.query('RELEASE SAVEPOINT staff');
+            if (r.change) staffEvents.push({ event: `staff.${r.change}`, target: ch.id, detail: { role: String(data.role ?? ''), pinChanged: !!r.pinChanged } });
             if (ch.id === c.u && r.epoch !== undefined && r.epoch !== c.e) freshToken = signToken({ t: c.t, u: c.u, r: c.r, e: r.epoch }); // own PIN/phone changed
           } catch (e) { await client.query('ROLLBACK TO SAVEPOINT staff'); app.log.warn({ code: CODE(e) }, 'staff login'); refuse(key); continue; }
           data.pin = ''; // never store PINs inside documents
@@ -354,6 +393,7 @@ export async function buildApp(pool: pg.Pool) {
     // the other side of each company link gets what may cross (after the save, under its own lock)
     await afterSave(pool, c.t, kind, written, queued);
     }
+    for (const e of staffEvents) await sec(req, { ...e, tenant: c.t, actor: c.u, role: c.r });
 
     const cursor = Number(b.cursor ?? 0);
     // a brand's phones never download every distributor bill: head office gets reports from the server instead; a
@@ -434,7 +474,7 @@ export async function buildApp(pool: pg.Pool) {
     const c = await auth(req);
     const linkId = String((req.body as { linkId?: string }).linkId ?? '');
     const r = (await pool.query('SELECT company_tenant, db_tenant FROM links WHERE id=$1', [linkId])).rows[0];
-    if (!r || !((r.db_tenant === c.t && c.r === 'owner') || (r.company_tenant === c.t && c.r === 'cadmin'))) throw err(403, 'Not your link');
+    if (!r || !((r.db_tenant === c.t && c.r === 'owner') || (r.company_tenant === c.t && c.r === 'cadmin'))) { await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'tenant.denied', target: 'link/resync', ok: false }); throw err(403, 'Not your link'); }
     await resyncLink(pool, linkId);
     return { ok: true };
   });
@@ -454,6 +494,7 @@ export async function buildApp(pool: pg.Pool) {
     codeGuard(c.t);
     const r = await acceptInvite(pool, c.t, String(b.code ?? ''), b.companyIdInDb || undefined).catch(e => { if ((e as { statusCode?: number }).statusCode === 404) codeWrong(c.t); throw e; });
     await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, `linked company ${r.company}`]);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'link.accept' });
     return r;
   });
   app.post('/v1/link/leave', async req => {
@@ -461,6 +502,7 @@ export async function buildApp(pool: pg.Pool) {
     if (c.r !== 'owner') throw err(403, 'Only the distributor owner can do this');
     const r = await leaveLink(pool, c.t, String((req.body as { linkId?: string }).linkId ?? ''));
     await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, 'left company link']);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'link.leave' });
     return r;
   });
 
@@ -469,6 +511,9 @@ export async function buildApp(pool: pg.Pool) {
     const b = req.body as { kind?: ScanKind; file?: string };
     // photo reading costs money per read: the people who enter purchases, expenses and orders in the office only
     if (!['owner', 'office', 'godown'].includes(c.r)) throw err(403, 'Photo reading is for the owner, office and godown.');
+    perUser(c, 'scan', R.scan);
+    // DPDP: bill photos go to an AI company outside the firm, so this is the owner's own, separate choice (Menu → Privacy)
+    if (!(await firmConsent(pool, c.t, 'ai_scan'))) throw err(403, 'AI photo reading is off. The owner can turn it on in Menu → Privacy.');
     if (!b.kind || !['purchase', 'expense', 'order'].includes(b.kind) || !b.file) throw err(400, 'kind and file needed');
     const month = new Date().toISOString().slice(0, 7);
     const plan = (await pool.query('SELECT plan FROM tenants WHERE id=$1', [c.t])).rows[0]?.plan ?? 'all';
@@ -480,6 +525,7 @@ export async function buildApp(pool: pg.Pool) {
     // one cap for the whole service per day (our AI bill can never run away)
     const today = (await pool.query(`INSERT INTO scan_daily(day, count) VALUES (current_date, 1) ON CONFLICT (day) DO UPDATE SET count = scan_daily.count + 1 RETURNING count`)).rows[0].count;
     if (today > Number(process.env.SCAN_DAILY_CAP ?? 2000)) throw err(429, 'Photo reading is very busy today. Please try tomorrow, or send the Excel/PDF file.');
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'scan', detail: { kind: b.kind } });
     return await scanWithAI(b.kind, b.file);
   });
 
@@ -509,7 +555,7 @@ export async function buildApp(pool: pg.Pool) {
     const sig = String(req.headers['x-razorpay-signature'] ?? '');
     const secret = config.razorpay.webhookSecret;
     const expect = secret ? createHmac('sha256', secret).update(raw).digest('hex') : '';
-    if (!secret || sig.length !== expect.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) { reply.code(401); return { error: 'bad signature' }; }
+    if (!secret || sig.length !== expect.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) { await sec(req, { event: 'razorpay.webhook', ok: false, detail: { why: 'bad signature' } }); reply.code(401); return { error: 'bad signature' }; }
     const body = req.body as { event?: string; payload?: { subscription?: { entity?: { id?: string; current_end?: number; notes?: { tenantId?: string } } }; payment?: { entity?: { id?: string } } } };
     const eventId = String(req.headers['x-razorpay-event-id'] ?? `${body.event}:${body.payload?.payment?.entity?.id ?? body.payload?.subscription?.entity?.id}:${body.payload?.subscription?.entity?.current_end ?? ''}`);
     const sub = body.payload?.subscription?.entity;
@@ -517,6 +563,7 @@ export async function buildApp(pool: pg.Pool) {
     if (!tenantId && sub?.id) tenantId = (await pool.query('SELECT id FROM tenants WHERE rzp_subscription_id=$1', [sub.id])).rows[0]?.id ?? null;
     const fresh = await pool.query('INSERT INTO payment_events(id, tenant_id, event, body) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING RETURNING id', [eventId, tenantId, body.event ?? '', body]);
     if (!fresh.rowCount) return { ok: true, duplicate: true };
+    await sec(req, { tenant: tenantId, actor: 'razorpay', role: 'payment', event: 'razorpay.webhook', detail: { event: body.event ?? '' } });
     if (!tenantId) return { ok: true, ignored: 'no distributor' };
     if ((body.event === 'subscription.charged' || body.event === 'subscription.activated') && sub?.current_end) {
       // paid up to the end of this billing period (Razorpay sends unix seconds); a waiting downgrade starts now
@@ -529,25 +576,42 @@ export async function buildApp(pool: pg.Pool) {
     return { ok: true };
   });
 
-  /** Cloud Scheduler's key, compared in constant time */
-  const cronOk = (req: FastifyRequest) => {
-    const k = String(req.headers['x-cron-key'] ?? '');
-    if (!config.cronKey) return false;
-    return timingSafeEqual(createHash('sha256').update(k).digest(), createHash('sha256').update(config.cronKey).digest());
+  /** the scheduled jobs' key (deploy/cron-call.sh, from inside the machine), compared in constant time. Wrong keys are
+   *  counted per place (5 → 30 minutes' lock) and every refusal is written to the activity log. */
+  const cron = async (req: FastifyRequest, job: string, code = 403) => {
+    const k = String(req.headers['x-cron-key'] ?? ''), place = `cronkey:${req.ip}`;
+    if (await isLocked(pool, [place])) { await sec(req, { event: 'cron.denied', target: job, ok: false, detail: { why: 'locked' } }); throw err(429, 'Too many wrong keys'); }
+    const ok = !!config.cronKey && timingSafeEqual(createHash('sha256').update(k).digest(), createHash('sha256').update(config.cronKey).digest());
+    if (!ok) { await hit(pool, place, 5, 15, 30); await sec(req, { event: 'cron.denied', target: job, ok: false }); throw err(code, code === 401 ? 'Cron key needed' : 'No'); }
+  };
+  /** a job's run: job_runs (monitor.sh checks each ran in its window) and, for the daily/monthly ones, the activity log */
+  const jobDone = async (req: FastifyRequest, job: string, detail: Record<string, unknown>, quiet = false) => {
+    await pool.query(`INSERT INTO job_runs(job, last_at, last_ok_at, ok, detail) VALUES ($1, now(), now(), true, $2)
+      ON CONFLICT (job) DO UPDATE SET last_at = now(), last_ok_at = now(), ok = true, detail = EXCLUDED.detail`, [job, JSON.stringify(detail)]);
+    if (!quiet) await sec(req, { actor: 'cron', role: 'system', event: `cron.${job}`, detail });
   };
   // ---------------------------------------------------------------- the Hanubix console (our side only)
-  const admin = (req: FastifyRequest) => {
-    const k = String(req.headers['x-admin-key'] ?? '');
-    if (!config.adminKey || k.length !== config.adminKey.length || !timingSafeEqual(Buffer.from(k), Buffer.from(config.adminKey))) throw err(401, 'Admin key needed');
+  /** the console's key: Caddy lets only the founder's addresses reach /v1/admin; here every use and every refusal is
+   *  logged, wrong keys are counted per place (5 → 30 minutes' lock), and calls per minute are limited. */
+  const admin = async (req: FastifyRequest) => {
+    const k = String(req.headers['x-admin-key'] ?? ''), place = `adminkey:${req.ip}`;
+    const target = `${req.method} ${req.routeOptions?.url ?? req.url}`;
+    const tenant = (req.params as { id?: string; tenant?: string } | undefined)?.id ?? (req.params as { tenant?: string } | undefined)?.tenant ?? null;
+    if (tooMany(`admin:${req.ip}`, R.admin)) throw err(429, 'Too many requests');
+    if (await isLocked(pool, [place])) { await sec(req, { event: 'admin.denied', target, ok: false, detail: { why: 'locked' } }); throw err(429, 'Too many wrong keys. Try again later.'); }
+    if (!config.adminKey || k.length !== config.adminKey.length || !timingSafeEqual(Buffer.from(k), Buffer.from(config.adminKey))) {
+      await hit(pool, place, 5, 15, 30); await sec(req, { event: 'admin.denied', target, ok: false }); throw err(401, 'Admin key needed');
+    }
+    await sec(req, { tenant, actor: 'admin', role: 'admin', event: 'admin.ok', target });
   };
   app.get('/v1/admin/tenants', async req => {
-    admin(req);
+    await admin(req);
     const rows = (await pool.query('SELECT id FROM tenants ORDER BY created_at DESC LIMIT 1000')).rows;
     const today = istToday();
     return { tenants: await Promise.all(rows.map(async r => { const b = (await billingOf(r.id))!; return { id: r.id, ...b, ...billingState(b, today) }; })) };
   });
   app.post('/v1/admin/tenants/:id/plan', async req => {
-    admin(req);
+    await admin(req);
     const id = (req.params as { id: string }).id;
     const { tier, pack } = req.body as { tier?: string; pack?: string };
     const b = await billingOf(id); if (!b) throw err(404, 'Distributor not found');
@@ -563,7 +627,7 @@ export async function buildApp(pool: pg.Pool) {
   });
   // a payment received outside Razorpay (bank transfer, cash): mark paid up to a date
   app.post('/v1/admin/tenants/:id/paid', async req => {
-    admin(req);
+    await admin(req);
     const id = (req.params as { id: string }).id;
     const { until } = req.body as { until?: string };
     if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until)) throw err(400, 'until must be YYYY-MM-DD');
@@ -574,20 +638,26 @@ export async function buildApp(pool: pg.Pool) {
   // Daily job (Cloud Scheduler, 00:05 IST): a downgrade starts once the paid month is over; status kept for reports.
   // safety net for the background relay (Cloud Scheduler, every minute): empties anything a stopped instance left behind
   app.post('/v1/cron/relay', async req => {
-    if (!cronOk(req)) throw err(403, 'No');
-    return { relayed: await drainRelay(pool) };
+    await cron(req, 'relay');
+    const relayed = await drainRelay(pool);
+    await jobDone(req, 'relay', { relayed }, !relayed);
+    return { relayed };
   });
   // every few minutes: head office's stock figures for every brand (changed products; everything once a day)
   app.post('/v1/cron/cover', async req => {
-    if (!cronOk(req)) throw err(403, 'No');
+    await cron(req, 'cover');
     const { refreshAllCover } = await import('./reports.js');
-    return { brands: await refreshAllCover(pool) };
+    const brands = await refreshAllCover(pool);
+    await jobDone(req, 'cover', { brands }, true);
+    return { brands };
   });
 
   // daily (Cloud Scheduler, 02:00 IST): old records move to the compressed archive (nothing is deleted)
   app.post('/v1/cron/archive', async req => {
-    if (!cronOk(req)) throw err(403, 'No');
-    return await archiveAll(pool);
+    await cron(req, 'archive');
+    const r = await archiveAll(pool);
+    await jobDone(req, 'archive', r as unknown as Record<string, unknown>);
+    return r;
   });
 
   // ---------------------------------------------------------------- the archive, for a new phone (old bills, so dues and
@@ -601,13 +671,14 @@ export async function buildApp(pool: pg.Pool) {
     const c = await auth(req);
     const b = req.body as { tbl?: string; month?: string };
     const tbl = String(b.tbl ?? ''), month = String(b.month ?? '');
-    if (!archiveTables(c.r).includes(tbl) || !/^\d{4}-\d{2}$/.test(month)) throw err(403, 'Not available');
+    if (!archiveTables(c.r).includes(tbl) || !/^\d{4}-\d{2}$/.test(month)) { await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'tenant.denied', target: `archive/${tbl}`, ok: false }); throw err(403, 'Not available'); }
     const rows = await archiveMonth(pool, c.t, tbl, month);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'archive.month', target: `${tbl}/${month}`, detail: { rows: rows.length } });
     return { changes: rows.filter(r => mayDownload(c.r, c.u, tbl, r.data)).map(r => ({ table: tbl, id: r.id, updatedAt: r.updatedAt, data: forRole(c.r, tbl, r.data) })) };
   });
 
   app.post('/v1/cron/daily', async req => {
-    if (!cronOk(req)) throw err(401, 'Cron key needed');
+    await cron(req, 'daily', 401);
     const today = istToday();
     await pool.query(`UPDATE tenants SET pack = COALESCE(pending_pack, pack), tier = COALESCE(pending_tier, tier), pending_pack = NULL, pending_tier = NULL
       WHERE (pending_pack IS NOT NULL OR pending_tier IS NOT NULL) AND COALESCE(paid_until, trial_ends) < $1::date`, [today]);
@@ -618,6 +689,7 @@ export async function buildApp(pool: pg.Pool) {
       await pool.query('UPDATE tenants SET status=$2 WHERE id=$1 AND status IS DISTINCT FROM $2', [r.id, s.status]);
       if ((s.status === 'trial' && s.daysLeft === 10) || s.status === 'grace') reminders.push({ id: r.id, status: s.status, daysLeft: s.daysLeft });
     }
+    await jobDone(req, 'daily', { tenants: rows.length, reminders: reminders.length });
     return { ok: true, tenants: rows.length, reminders };
   });
 
@@ -627,7 +699,216 @@ export async function buildApp(pool: pg.Pool) {
     if (c.r !== 'owner') throw err(403, 'Only the owner can allow support access');
     await pool.query(`INSERT INTO support_access(tenant_id, granted_by, expires_at) VALUES ($1,$2, now() + interval '24 hours')`, [c.t, c.u]);
     await pool.query('INSERT INTO access_log(tenant_id, actor, action) VALUES ($1,$2,$3)', [c.t, c.u, 'support access granted 24h']);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'support.grant', detail: { hours: 24 } });
     return { ok: true };
+  });
+
+  // ---------------------------------------------------------------- security standard (13 Nov 2026)
+  const OWNERISH = (r: string) => r === 'owner' || r === 'cadmin';
+  // change my own PIN; the owner and a brand's head office choose 6 digits. Every other phone of this person logs out.
+  app.post('/v1/pin/change', { bodyLimit: 16 * 1024 }, async req => {
+    const c = await auth(req);
+    const b = req.body as { old?: string; pin?: string };
+    const place = `pinchange:${c.t}:${c.u}`;
+    if (await isLocked(pool, [place])) throw err(429, 'Too many wrong PINs. Try again in a few minutes.');
+    const u = (await pool.query('SELECT pin_hash FROM users WHERE tenant_id=$1 AND id=$2', [c.t, c.u])).rows[0];
+    if (!u || !verifyPin(String(b.old ?? ''), u.pin_hash)) {
+      await hit(pool, place, 5, 15, 15); await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'pin.change', ok: false });
+      throw err(401, 'Your current PIN is not right');
+    }
+    if (!pinFits(c.r, b.pin)) throw err(400, `Choose a ${pinLength(c.r)}-digit PIN`);
+    if (weakPin(b.pin!)) throw err(400, `This PIN is too easy to guess (a run, a repeat, a year or a date). Choose another ${pinLength(c.r)}-digit PIN.`);
+    if (b.pin === b.old) throw err(400, 'Choose a new PIN, not the one you have now');
+    const r = await pool.query('UPDATE users SET pin_hash=$3, pin_len=$4, token_epoch = token_epoch + 1, updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING token_epoch', [c.t, c.u, hashPin(b.pin!), b.pin!.length]);
+    await clearHits(pool, [place]);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'pin.change' });
+    return { ok: true, token: signToken({ t: c.t, u: c.u, r: c.r, e: Number(r.rows[0].token_epoch) }) };
+  });
+  // "log out everywhere": every phone with my login must log in again
+  app.post('/v1/logout-all', async req => {
+    const c = await auth(req);
+    await pool.query('UPDATE users SET token_epoch = token_epoch + 1 WHERE tenant_id=$1 AND id=$2', [c.t, c.u]);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'logout.all' });
+    return { ok: true };
+  });
+  // the owner's "Lock this phone" on a staff record: that person's phone is logged out at its next contact
+  app.post('/v1/staff/lock', async req => {
+    const c = await auth(req);
+    if (!OWNERISH(c.r)) throw err(403, 'Only the owner can do this');
+    const id = String((req.body as { staffId?: string }).staffId ?? '');
+    if (!id || id === c.u) throw err(400, 'Choose a staff member');
+    const r = await pool.query('UPDATE users SET token_epoch = token_epoch + 1 WHERE tenant_id=$1 AND id=$2', [c.t, id]);
+    if (!r.rowCount) throw err(404, 'This person has no login yet');
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'staff.lock', target: id });
+    return { ok: true };
+  });
+  // the owner's own slice of the activity log: who logged in, who changed staff, support access, privacy requests
+  const OWNER_EVENTS = ['signup', 'login.ok', 'login.fail', 'pin.change', 'logout.all', 'staff.add', 'staff.change', 'staff.remove', 'staff.lock', 'staff.refused',
+    'support.grant', 'support.read', 'consent', 'privacy.export', 'privacy.request', 'privacy.erase', 'link.accept', 'link.leave', 'admin.ok'];
+  app.post('/v1/security/activity', async req => {
+    const c = await auth(req);
+    if (!OWNERISH(c.r)) throw err(403, 'Only the owner can see this');
+    const rows = (await pool.query(`SELECT s.at, s.event, s.ok, s.target, s.actor, u.name FROM security_log s LEFT JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.actor
+      WHERE s.tenant_id = $1 AND s.event = ANY($2) ORDER BY s.id DESC LIMIT 200`, [c.t, OWNER_EVENTS])).rows;
+    const names = new Map((await pool.query(`SELECT id, data->>'name' AS name FROM docs WHERE tenant_id=$1 AND tbl='staff'`, [c.t])).rows.map(r => [String(r.id), String(r.name ?? '')]));
+    return { rows: rows.map(r => ({ at: new Date(r.at).toISOString(), event: r.event, ok: r.ok,
+      who: r.actor === 'admin' ? 'Hanubix support' : r.name ?? names.get(String(r.actor)) ?? '', about: r.target && names.has(String(r.target)) ? names.get(String(r.target)) : '' })) };
+  });
+
+  // DPDP: my consents, the notice version, the grievance officer, my requests
+  const privacyStatus = async (c: Claims) => ({
+    version: PRIVACY_VERSION, consents: await consentsOf(pool, c.t, c.u), firm: { ai_scan: await firmConsent(pool, c.t, 'ai_scan') }, grievance: grievance(),
+    nominee: (await pool.query('SELECT name, contact FROM nominees WHERE tenant_id=$1 AND user_id=$2', [c.t, c.u])).rows[0] ?? null,
+    requests: (await pool.query(`SELECT id, kind, status, due::text AS due, created_at FROM privacy_requests WHERE tenant_id=$1 AND requester=$2 ORDER BY created_at DESC LIMIT 10`, [c.t, c.u])).rows
+      .map(r => ({ id: r.id, kind: r.kind, status: r.status, due: String(r.due), at: new Date(r.created_at).toISOString() })),
+  });
+  app.post('/v1/privacy/status', async req => privacyStatus(await auth(req)));
+  app.post('/v1/privacy/consent', async req => {
+    const c = await auth(req);
+    const b = req.body as { kind?: string; granted?: boolean; version?: string };
+    const kind = String(b.kind ?? '');
+    if (!CONSENT_KINDS.includes(kind) || typeof b.granted !== 'boolean') throw err(400, 'Unknown choice');
+    if (kind === 'privacy' && (b.version !== PRIVACY_VERSION || !b.granted)) throw err(400, 'Please read the privacy notice and tick the box to continue.');
+    if (kind === 'ai_scan' && !OWNERISH(c.r)) throw err(403, 'The owner decides AI photo reading for the firm');
+    await addConsent(pool, c.t, c.u, kind, b.granted, req.ip);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'consent', detail: { kind, granted: b.granted } });
+    return privacyStatus(c);
+  });
+  app.post('/v1/privacy/export', async req => {
+    const c = await auth(req);
+    perUser(c, 'export', 5);
+    const data = await exportPerson(pool, c.t, c.u);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'privacy.export' });
+    return data;
+  });
+  const REQUEST_KINDS = ['access', 'correct', 'delete', 'delete_account', 'nominate', 'grievance'];
+  app.post('/v1/privacy/request', { bodyLimit: 16 * 1024 }, async req => {
+    const c = await auth(req);
+    const b = req.body as { kind?: string; note?: string };
+    const kind = String(b.kind ?? '');
+    if (!REQUEST_KINDS.includes(kind)) throw err(400, 'Unknown request');
+    if (kind === 'delete_account' && !OWNERISH(c.r)) throw err(403, 'Only the owner can close the firm\'s account');
+    const id = newId();
+    const due = (await pool.query(`INSERT INTO privacy_requests(id, tenant_id, requester, kind, subject_kind, subject_id, note, due) VALUES ($1,$2,$3,$4,$5,$3,$6, current_date + $7::int) RETURNING due::text AS due`,
+      [id, c.t, c.u, kind, OWNERISH(c.r) ? 'owner' : 'staff', String(b.note ?? '').slice(0, 1000), DUE_DAYS])).rows[0].due;
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'privacy.request', target: id, detail: { kind } });
+    return { id, due: String(due) };
+  });
+  app.post('/v1/privacy/nominee', { bodyLimit: 16 * 1024 }, async req => {
+    const c = await auth(req);
+    const b = req.body as { name?: string; contact?: string };
+    const name = String(b.name ?? '').trim().slice(0, 100), contact = String(b.contact ?? '').trim().slice(0, 100);
+    if (!name || !contact) throw err(400, 'Name and phone or email of the person needed');
+    await pool.query(`INSERT INTO nominees(tenant_id, user_id, name, contact) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id, user_id) DO UPDATE SET name=EXCLUDED.name, contact=EXCLUDED.contact, at=now()`, [c.t, c.u, name, contact]);
+    await sec(req, { tenant: c.t, actor: c.u, role: c.r, event: 'privacy.request', detail: { kind: 'nominate' } });
+    return privacyStatus(c);
+  });
+  // the public form (website): shop owners and anyone without a login ask for access, correction or erasure
+  app.post('/v1/privacy/public-request', { bodyLimit: 16 * 1024 }, async req => {
+    if (await hit(pool, `privacyform:${req.ip}`, R.publicForm + 1, 60, 60) || await isLocked(pool, [`privacyform:${req.ip}`])) throw err(429, 'Too many requests from this connection. Try again in an hour.');
+    const b = req.body as { name?: string; contact?: string; firm?: string; kind?: string; note?: string };
+    const kind = String(b.kind ?? '');
+    if (!['access', 'correct', 'delete', 'grievance'].includes(kind) || !String(b.name ?? '').trim() || !String(b.contact ?? '').trim()) throw err(400, 'Your name, a phone or email to reply to, and what you are asking for are needed');
+    const id = newId();
+    const note = [`From: ${String(b.name).trim().slice(0, 100)}`, `Firm: ${String(b.firm ?? '').trim().slice(0, 120)}`, String(b.note ?? '').slice(0, 1000)].join('\n');
+    const due = (await pool.query(`INSERT INTO privacy_requests(id, requester, contact, kind, subject_kind, note, due) VALUES ($1,'public',$2,$3,'shop',$4, current_date + $5::int) RETURNING due::text AS due`,
+      [id, String(b.contact).trim().slice(0, 100), kind, note, DUE_DAYS])).rows[0].due;
+    await sec(req, { actor: 'public', role: 'public', event: 'privacy.request', target: id, detail: { kind } });
+    return { id, due: String(due), grievance: grievance() };
+  });
+
+  // the control panel: privacy requests with due dates; erasure needs the request id typed again (second confirmation)
+  app.get('/v1/admin/privacy', async req => {
+    await admin(req);
+    const rows = (await pool.query(`SELECT id, tenant_id, requester, contact, kind, subject_kind, subject_id, note, status, due::text AS due, (status = 'open' AND due < current_date) AS overdue, created_at
+      FROM privacy_requests ORDER BY (status = 'open') DESC, due LIMIT 500`)).rows;
+    return { requests: rows };
+  });
+  app.post('/v1/admin/privacy/:id/erase', async req => {
+    await admin(req);
+    const id = (req.params as { id: string }).id;
+    const b = req.body as { confirm?: string; tenantId?: string; subjectKind?: string; subjectId?: string };
+    if (b.confirm !== id) throw err(400, 'Type the request id again to confirm the erasure');
+    const r = (await pool.query('SELECT * FROM privacy_requests WHERE id=$1', [id])).rows[0];
+    if (!r) throw err(404, 'No such request');
+    if (r.status !== 'open') throw err(409, 'This request is already closed');
+    const tenant = String(r.tenant_id ?? b.tenantId ?? ''), kind = String(b.subjectKind ?? (r.subject_kind === 'owner' ? 'staff' : r.subject_kind) ?? ''), subject = String(b.subjectId ?? r.subject_id ?? '');
+    if (!tenant || !subject || !['staff', 'shop'].includes(kind)) throw err(400, 'Say which firm and which person or shop to erase');
+    const counts = await eraseSubject(pool, tenant, kind as 'staff' | 'shop', subject);
+    await pool.query(`UPDATE privacy_requests SET status='done', closed_at=now(), result=$2 WHERE id=$1`, [id, JSON.stringify(counts)]);
+    await sec(req, { tenant, actor: 'admin', role: 'admin', event: 'privacy.erase', target: id, detail: { kind, ...counts } });
+    return { ok: true, ...counts };
+  });
+  app.post('/v1/admin/privacy/:id/close', async req => {
+    await admin(req);
+    const id = (req.params as { id: string }).id;
+    const b = req.body as { status?: string; note?: string };
+    if (!['done', 'refused'].includes(String(b.status))) throw err(400, 'status: done or refused');
+    const r = await pool.query(`UPDATE privacy_requests SET status=$2, closed_at=now(), result=$3 WHERE id=$1 AND status='open'`, [id, b.status, JSON.stringify({ note: String(b.note ?? '').slice(0, 500) })]);
+    if (!r.rowCount) throw err(404, 'No open request with this id');
+    await sec(req, { actor: 'admin', role: 'admin', event: 'privacy.close', target: id, detail: { status: String(b.status) } });
+    return { ok: true };
+  });
+  // the breach register and "which firms were touched" (docs/security/09-incident-response.md)
+  app.get('/v1/admin/breach', async req => { await admin(req); return { breaches: (await pool.query('SELECT * FROM breaches ORDER BY found_at DESC LIMIT 200')).rows }; });
+  app.post('/v1/admin/breach', async req => {
+    await admin(req);
+    const b = req.body as { summary?: string; severity?: string; tenants?: string[] };
+    if (!String(b.summary ?? '').trim()) throw err(400, 'What happened?');
+    const sev = ['low', 'medium', 'high', 'critical'].includes(String(b.severity)) ? String(b.severity) : 'medium';
+    const r = (await pool.query('INSERT INTO breaches(summary, severity, tenants) VALUES ($1,$2,$3) RETURNING id', [String(b.summary).slice(0, 2000), sev, Array.isArray(b.tenants) ? b.tenants.map(String) : []])).rows[0];
+    await sec(req, { actor: 'admin', role: 'admin', event: 'breach.open', target: String(r.id), detail: { severity: sev } });
+    return { id: Number(r.id) };
+  });
+  app.post('/v1/admin/breach/:id', async req => {
+    await admin(req);
+    const id = Number((req.params as { id: string }).id);
+    const b = req.body as { boardNotified?: boolean; peopleNotified?: boolean; closed?: boolean; note?: string };
+    await pool.query(`UPDATE breaches SET board_notified_at = CASE WHEN $2 THEN COALESCE(board_notified_at, now()) ELSE board_notified_at END,
+      people_notified_at = CASE WHEN $3 THEN COALESCE(people_notified_at, now()) ELSE people_notified_at END,
+      closed_at = CASE WHEN $4 THEN COALESCE(closed_at, now()) ELSE closed_at END,
+      notes = CASE WHEN $5::text <> '' THEN notes || jsonb_build_array(jsonb_build_object('at', now(), 'note', $5::text)) ELSE notes END WHERE id=$1`,
+      [id, !!b.boardNotified, !!b.peopleNotified, !!b.closed, String(b.note ?? '').slice(0, 2000)]);
+    await sec(req, { actor: 'admin', role: 'admin', event: 'breach.update', target: String(id), detail: { board: !!b.boardNotified, people: !!b.peopleNotified, closed: !!b.closed } });
+    return { ok: true };
+  });
+  app.post('/v1/admin/breach/affected', async req => {
+    await admin(req);
+    const b = req.body as { from?: string; to?: string; ip?: string; actor?: string };
+    if (!b.from || !b.to || isNaN(Date.parse(b.from)) || isNaN(Date.parse(b.to))) throw err(400, 'from and to (date and time) needed');
+    const rows = (await pool.query(`SELECT s.tenant_id, t.name, count(*)::int AS events, min(s.at) AS first, max(s.at) AS last FROM security_log s LEFT JOIN tenants t ON t.id = s.tenant_id
+      WHERE s.at BETWEEN $1 AND $2 AND s.tenant_id IS NOT NULL AND ($3::text IS NULL OR s.ip = $3) AND ($4::text IS NULL OR s.actor = $4)
+      GROUP BY 1, 2 ORDER BY events DESC`, [b.from, b.to, b.ip ?? null, b.actor ?? null])).rows;
+    return { tenants: rows };
+  });
+  // support may read a firm's records only inside the owner's 24-hour window; every read and refusal is logged
+  app.post('/v1/admin/support/:tenant/docs', async req => {
+    await admin(req);
+    const tenant = (req.params as { tenant: string }).tenant;
+    const b = req.body as { tbl?: string; limit?: number };
+    const open = (await pool.query('SELECT 1 FROM support_access WHERE tenant_id=$1 AND expires_at > now() LIMIT 1', [tenant])).rowCount;
+    if (!open) { await sec(req, { tenant, actor: 'admin', role: 'support', event: 'support.denied', ok: false }); throw err(403, 'No support access: the owner has not allowed it, or the 24 hours are over'); }
+    const tbl = String(b.tbl ?? '');
+    if (!(READ.office ?? []).includes(tbl)) throw err(400, 'Unknown table');
+    const rows = (await pool.query('SELECT id, data, updated_at FROM docs WHERE tenant_id=$1 AND tbl=$2 ORDER BY updated_at DESC LIMIT $3', [tenant, tbl, Math.min(Math.max(1, Number(b.limit ?? 50)), 200)])).rows;
+    await sec(req, { tenant, actor: 'admin', role: 'support', event: 'support.read', target: tbl, detail: { rows: rows.length } });
+    return { docs: rows.map(r => ({ id: r.id, updatedAt: new Date(r.updated_at).toISOString(), data: forRole('office', tbl, r.data) })) };
+  });
+  app.post('/v1/admin/seclog/verify', async req => {
+    await admin(req);
+    const r = (await pool.query('SELECT seclog_verify() AS id')).rows[0].id;
+    return { whole: r === null, brokenAt: r === null ? null : Number(r) };
+  });
+
+  // monthly (1st, 03:30 IST): retention — small tables purged, activity-log months over 12 exported then dropped,
+  // archived months over 5 years removed. {"dryRun": true} only counts. Bills and payments are never touched here.
+  app.post('/v1/cron/retention', async req => {
+    await cron(req, 'retention');
+    const dry = !!(req.body as { dryRun?: boolean } | undefined)?.dryRun;
+    const counts = await retention(pool, dry);
+    const log = await rotateLog(owner, new Date(), 12, 5, dry);
+    await jobDone(req, dry ? 'retention-dry' : 'retention', { ...counts, logMonths: log.archivedMonths.length, logArchiveRemoved: log.archiveRemoved });
+    return { dry, counts, log };
   });
 
   app.setErrorHandler((e: Error & { statusCode?: number }, _req, reply) => {
@@ -642,31 +923,34 @@ const SIGNUP_PER_HOUR = 5;
 const ROLES = { distributor: ['owner', 'office', 'salesman', 'godown', 'delivery'], company: ['cadmin', 'manager', 'rep'] };
 /** the login row of a staff record, looked up by the staff id (never by phone): a phone change moves the login, a PIN or
  *  phone change logs the old phone out (token epoch +1). A clash or an easy new PIN refuses this record only. */
-async function upsertStaffLogin(client: pg.PoolClient, tenantId: string, s: Record<string, unknown>, kind: 'company' | 'distributor'): Promise<{ ok: boolean; epoch?: number }> {
+async function upsertStaffLogin(client: pg.PoolClient, tenantId: string, s: Record<string, unknown>, kind: 'company' | 'distributor'): Promise<{ ok: boolean; epoch?: number; change?: 'add' | 'change' | 'remove'; pinChanged?: boolean }> {
   const phone = String(s.phone ?? '');
   const role = String(s.role ?? '');
   if (!/^\d{10}$/.test(phone) || !ROLES[kind].includes(role)) return { ok: true }; // a company role never exists inside a distributor, nor the reverse
   const pin = String(s.pin ?? '');
   const id = String(s.id);
   // the same phone may exist under another distributor (a salesman serving two DBs); each firm has its own login row
-  const byId = (await client.query('SELECT phone, active, pin_hash, token_epoch FROM users WHERE tenant_id=$1 AND id=$2', [tenantId, id])).rows[0];
+  const byId = (await client.query('SELECT phone, role, active, pin_hash, token_epoch FROM users WHERE tenant_id=$1 AND id=$2', [tenantId, id])).rows[0];
   const byPhone = (await client.query('SELECT id, active FROM users WHERE tenant_id=$1 AND phone=$2 AND id <> $3', [tenantId, phone, id])).rows[0];
   if (byPhone) {
     if (byPhone.active) return { ok: false }; // two people of one firm can't share a login phone
     await client.query('DELETE FROM users WHERE tenant_id=$1 AND id=$2', [tenantId, byPhone.id]); // a removed person's old login: the phone is free again
   }
+  // PIN length by role: the owner and head office 6 digits, staff 4 (owner decision, 13 Nov 2026)
   if (!byId) {
-    if (!/^\d{4}$/.test(pin)) return { ok: true };
+    if (!pinFits(role, pin)) return { ok: true };
     if (weakPin(pin)) return { ok: false };
-    await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash,active) VALUES ($1,$2,$3,$4,$5,$6,$7)', [tenantId, id, phone, s.name, role, hashPin(pin), s.active !== false]);
-    return { ok: true, epoch: 0 };
+    await client.query('INSERT INTO users(tenant_id,id,phone,name,role,pin_hash,pin_len,active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [tenantId, id, phone, s.name, role, hashPin(pin), pin.length, s.active !== false]);
+    return { ok: true, epoch: 0, change: 'add', pinChanged: true };
   }
   // the same PIN sent again is not a change (existing easy PINs keep working until changed)
-  const pinChanged = /^\d{4}$/.test(pin) && !verifyPin(pin, byId.pin_hash);
+  const pinChanged = pinFits(role, pin) && !verifyPin(pin, byId.pin_hash);
   if (pinChanged && weakPin(pin)) return { ok: false };
   const bump = pinChanged || byId.phone !== phone || (byId.active && s.active === false) ? 1 : 0;
   const r = await client.query(
-    `UPDATE users SET phone=$3, name=$4, role=$5, active=$6, pin_hash = COALESCE($7, pin_hash), token_epoch = token_epoch + $8, updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING token_epoch`,
-    [tenantId, id, phone, s.name, role, s.active !== false, pinChanged ? hashPin(pin) : null, bump]);
-  return { ok: true, epoch: Number(r.rows[0].token_epoch) };
+    `UPDATE users SET phone=$3, name=$4, role=$5, active=$6, pin_hash = COALESCE($7, pin_hash), pin_len = CASE WHEN $7::text IS NULL THEN pin_len ELSE $9 END, token_epoch = token_epoch + $8, updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING token_epoch`,
+    [tenantId, id, phone, s.name, role, s.active !== false, pinChanged ? hashPin(pin) : null, bump, pin.length]);
+  const change = byId.active && s.active === false ? 'remove' as const
+    : pinChanged || byId.phone !== phone || byId.role !== role || (!byId.active && s.active !== false) ? 'change' as const : undefined;
+  return { ok: true, epoch: Number(r.rows[0].token_epoch), change, pinChanged };
 }

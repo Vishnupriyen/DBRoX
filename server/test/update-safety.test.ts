@@ -1,6 +1,7 @@
 // Updates without stopping the business (12 Nov 2026). For a day after an app update, old and new phones share one server:
 // a phone is sent only the tables it says it knows, so an older phone never meets a table it can't store. And a server
 // rolled back to its previous version must still run on the database the newer one left (migrations only ever add).
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -35,7 +36,7 @@ const now = () => new Date().toISOString();
 describe('old and new phones on one server', () => {
   let owner = '';
   beforeAll(async () => {
-    const s = await post('/v1/signup', { firmName: 'Update Agencies', ownerName: 'Owner', phone: '9700000301', pin: '4826' });
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Update Agencies', ownerName: 'Owner', phone: '9700000301', pin: '482613' });
     expect(s.status, JSON.stringify(s.body)).toBe(200);
     owner = s.body.token;
     const w = await post('/v1/sync', { cursor: 0, changes: [

@@ -3,6 +3,7 @@
 // of its movements, a movement that would take a lot below zero is refused (that record only), and every phone is
 // sent the true qty. A driver's delivery result is never wiped by an older copy of the bill from the owner's phone.
 // Written before the fix: (a)–(d) failed on the old newest-whole-record-wins sync.
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -49,7 +50,7 @@ const sumMoves = async (id: string) => Number((await pool.query(`SELECT COALESCE
 
 const T = { owner: '', office: '', godown: '', delivery: '', tenant: '' };
 beforeAll(async () => {
-  const s = await post('/v1/signup', { firmName: 'Stock Agencies', ownerName: 'Owner', phone: '9710000001', pin: '4826' });
+  const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Stock Agencies', ownerName: 'Owner', phone: '9710000001', pin: '482613' });
   expect(s.status, JSON.stringify(s.body)).toBe(200);
   T.owner = s.body.token; T.tenant = s.body.tenantId;
   const pins: Record<string, string> = { office: '6831', godown: '7416', delivery: '5072' };

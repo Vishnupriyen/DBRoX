@@ -1,5 +1,6 @@
 // Company ⇄ distributor link on a real database: the privacy wall holds end to end (independent review, 10 Nov 2026).
 process.env.RELAY_INLINE = '1'; // these tests check what crosses, so the relay runs inside each sync (production runs it in the background)
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -36,11 +37,11 @@ const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 describe('company link', () => {
   let co = { token: '', tenantId: '' }, dist = { token: '', tenantId: '' };
   it('a company signs up as a company, with a head-office login', async () => {
-    const s = await post('/v1/signup', { firmName: 'Kaveri Consumer', ownerName: 'HO', phone: '9822200001', pin: '4826', kind: 'company' });
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Kaveri Consumer', ownerName: 'HO', phone: '9822200001', pin: '482613', kind: 'company' });
     expect(s.status).toBe(200); co = s.body;
     expect((await pool.query('SELECT kind FROM tenants WHERE id=$1', [co.tenantId])).rows[0].kind).toBe('company');
     expect((await pool.query('SELECT role FROM users WHERE tenant_id=$1', [co.tenantId])).rows[0].role).toBe('cadmin');
-    const d = await post('/v1/signup', { firmName: 'Velan Agencies', ownerName: 'Velan', phone: '9822200002', pin: '4826' });
+    const d = await post('/v1/signup', { consent: CONSENT, firmName: 'Velan Agencies', ownerName: 'Velan', phone: '9822200002', pin: '482613' });
     dist = d.body;
     await issueNumbers(pool, dist.tenantId, 'VA');
   });

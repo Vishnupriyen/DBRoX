@@ -2,6 +2,7 @@
 // 100,000 distributors) with the same shape: each distributor carries several linked brands, one giant brand is linked
 // to most distributors. Measures every path that grows with scale, then the report scales the numbers up.
 // Usage: COMPANIES=20 DBS=600 PER_DB=3 GIANT=400 PRODUCTS=300 npx tsx test/stress-company.ts
+import { CONSENT } from './fixtures.js';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { tmpdir } from 'node:os';
@@ -44,8 +45,8 @@ const R: Record<string, unknown> = { companies: COMPANIES, distributors: DBS, br
 // ---- 1. sign up brands and distributors
 let t = performance.now();
 const base = 6000000000 + Math.floor(Math.random() * 300000000);
-const cos = await run(Array.from({ length: COMPANIES }, (_, i) => () => post('/v1/signup', { firmName: `Brand ${i}`, ownerName: 'HO', phone: String(base + i), pin: '3917', kind: 'company' })), 10);
-const dbs = await run(Array.from({ length: DBS }, (_, i) => () => post('/v1/signup', { firmName: `Distributor ${i}`, ownerName: 'O', phone: String(base + 100000 + i), pin: '3917', gstin: `33D${String(i).padStart(7, '0')}A1Z5` })), 20);
+const cos = await run(Array.from({ length: COMPANIES }, (_, i) => () => post('/v1/signup', { consent: CONSENT, firmName: `Brand ${i}`, ownerName: 'HO', phone: String(base + i), pin: '391742', kind: 'company' })), 10);
+const dbs = await run(Array.from({ length: DBS }, (_, i) => () => post('/v1/signup', { consent: CONSENT, firmName: `Distributor ${i}`, ownerName: 'O', phone: String(base + 100000 + i), pin: '391742', gstin: `33D${String(i).padStart(7, '0')}A1Z5` })), 20);
 log(`signed up ${COMPANIES} brands + ${DBS} distributors in ${((performance.now() - t) / 1000).toFixed(1)} s`);
 
 // which brands each distributor carries: brand 0 is the giant (GIANT distributors); the rest spread evenly

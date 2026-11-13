@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { CONSENT } from './fixtures.js';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { freePort } from './fixtures.js';
@@ -35,11 +36,11 @@ const post = async (url: string, body: unknown, token?: string) => {
 describe('DBRoX server', () => {
   let owner = { token: '', tenantId: '', userId: '' };
   it('signs up a distributor and logs in', async () => {
-    const s = await post('/v1/signup', { firmName: 'Test Agencies', ownerName: 'Owner', phone: '9811111111', pin: '4826' });
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Test Agencies', ownerName: 'Owner', phone: '9811111111', pin: '482613' });
     expect(s.status).toBe(200);
     owner = s.body;
     expect((await post('/v1/login', { phone: '9811111111', pin: '8642' })).status).toBe(401);
-    const l = await post('/v1/login', { phone: '9811111111', pin: '4826' });
+    const l = await post('/v1/login', { phone: '9811111111', pin: '482613' });
     expect(l.status).toBe(200);
     expect(l.body.tenantId).toBe(owner.tenantId);
   });
@@ -74,7 +75,7 @@ describe('DBRoX server', () => {
     const smPull = await post('/v1/sync', { cursor: 0, changes: [] }, sm.body.token);
     expect(smPull.body.changes.some((c: { table: string }) => c.table === 'bankLines')).toBe(false);
     // other distributors cannot see this data
-    const other = await post('/v1/signup', { firmName: 'Other', ownerName: 'X', phone: '9833333333', pin: '3917' });
+    const other = await post('/v1/signup', { consent: CONSENT, firmName: 'Other', ownerName: 'X', phone: '9833333333', pin: '391742' });
     const otherPull = await post('/v1/sync', { cursor: 0, changes: [] }, other.body.token);
     expect(otherPull.body.changes.some((c: { id: string }) => c.id === 'shop1')).toBe(false);
     // owner removes access → salesman's token stops working at once
@@ -129,7 +130,7 @@ describe('DBRoX server', () => {
   it('many phones of one distributor syncing at the same moment never freeze the server (capacity test, 9 Nov 2026)', async () => {
     // the sync held its distributor lock while asking the pool for a second connection: with every pooled connection
     // waiting on that same lock, nothing could ever finish
-    const s = await post('/v1/signup', { firmName: 'Busy Agencies', ownerName: 'Owner', phone: '9877700001', pin: '3917' });
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Busy Agencies', ownerName: 'Owner', phone: '9877700001', pin: '391742' });
     expect(s.status, JSON.stringify(s.body)).toBe(200);
     const now = new Date().toISOString();
     const res = await Promise.race([
@@ -142,7 +143,7 @@ describe('DBRoX server', () => {
 
   it('a new phone downloads only recent history-log rows; the full log stays on the server (working-app test, 9 Nov 2026)', async () => {
     // a month of a busy distributor = ~120,000 log rows (80% of all data): no phone needs them all
-    const s = await post('/v1/signup', { firmName: 'Log Agencies', ownerName: 'Owner', phone: '9877700002', pin: '3917' });
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Log Agencies', ownerName: 'Owner', phone: '9877700002', pin: '391742' });
     const old = new Date(Date.now() - 10 * 86400000).toISOString(), now = new Date().toISOString();
     await post('/v1/sync', { cursor: 0, changes: [
       { table: 'audit', id: 'a-old', updatedAt: old, data: { at: old, action: 'old' } },
@@ -168,7 +169,7 @@ describe('DBRoX server', () => {
 
   it('one phone under two distributors picks the firm', async () => {
     const now = new Date().toISOString();
-    const other = await post('/v1/login', { phone: '9833333333', pin: '3917' });
+    const other = await post('/v1/login', { phone: '9833333333', pin: '391742' });
     await post('/v1/sync', { cursor: 0, changes: [{ table: 'staff', id: 'sm2', updatedAt: now, data: { id: 'sm2', name: 'Karthik', phone: '9844444444', role: 'salesman', pin: '6153', active: true, updatedAt: now } }] }, other.body.token);
     const l = await post('/v1/login', { phone: '9844444444', pin: '6153' });
     expect(l.body.choose?.length).toBe(2);
@@ -178,7 +179,7 @@ describe('DBRoX server', () => {
 
   it('locks a phone after 5 wrong PINs', async () => {
     for (let i = 0; i < 5; i++) await post('/v1/login', { phone: '9833333333', pin: '0000' });
-    expect((await post('/v1/login', { phone: '9833333333', pin: '3917' })).status).toBe(429);
+    expect((await post('/v1/login', { phone: '9833333333', pin: '391742' })).status).toBe(429);
   });
 
   it('scan says clearly when AI is not configured', async () => {

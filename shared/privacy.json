@@ -1,0 +1,5 @@
+{
+  "version": "2026-11-13",
+  "note": "The privacy notice version. Changing the notice (app/src/core/privacy.ts) means a new version here: every person is asked again. Server and app read this one file.",
+  "optional": ["ai_scan", "location", "analytics", "whatsapp"]
+}

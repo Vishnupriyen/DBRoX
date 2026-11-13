@@ -1,0 +1,49 @@
+# Caddy in front of the Hanubix server: HTTPS (automatic certificates), security headers, size limits, access log.
+# Security standard 13 Nov 2026 (section 8, items 2, 7, 15, 16).
+{
+	admin off
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	# one request is never bigger than the server accepts (12 MB: a big sync with photos)
+	request_body {
+		max_size 13MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# scheduled jobs run only from inside the machine (deploy/cron-call.sh), never through the public address
+	@cron path /v1/cron/*
+	respond @cron 403
+
+	# the Hanubix control panel only from the founder's own addresses (ADMIN_ALLOW_IPS in .env, spaces between)
+	@admin_outside {
+		path /v1/admin/*
+		not remote_ip {$ADMIN_ALLOW_IPS:127.0.0.1/32}
+	}
+	respond @admin_outside 403
+
+	# Caddy talks to the server directly (one hop): the server trusts exactly one X-Forwarded-For hop. If a CDN is ever put
+	# in front, change trustProxy in server/src/app.ts first, or per-place limits could be fooled.
+	reverse_proxy server:8080
+
+	# the access log holds IPs and addresses (personal data): rotated, kept 90 days
+	log {
+		output file /data/logs/access.log {
+			roll_size 20MiB
+			roll_keep 10
+			roll_keep_for 2160h
+		}
+		format json
+	}
+}

@@ -4,12 +4,19 @@ import type pg from 'pg';
 
 type Doc = Record<string, unknown>;
 
-/** PINs anyone would try first: 0000, 1111 … 9999, 1234, 4321, 1212 and years 1950–2030 */
+/** PINs anyone would try first (4 or 6 digits): one digit repeated, pairs repeated (1212, 121212), straight or
+ *  step-2 runs up or down (1234, 1357, 2468, 9753, 135791…), keypad lines (2580, 0852, 1470…), years 1950–2030, and for
+ *  6 digits a date (DDMMYY or YYMMDD — a birthday). Phone and server use the same list (app/src/core/sync.ts). */
 export function weakPin(pin: string): boolean {
-  if (!/^\d{4}$/.test(pin)) return false;
-  if (/^(\d)\1{3}$/.test(pin) || ['1234', '4321', '1212'].includes(pin)) return true;
-  const y = Number(pin);
-  return y >= 1950 && y <= 2030;
+  if (!/^(\d{4}|\d{6})$/.test(pin)) return false;
+  const d = [...pin].map(Number);
+  if (new Set(d).size === 1) return true;
+  if (/^(\d\d)\1+$/.test(pin) || /^(\d\d\d)\1$/.test(pin)) return true;
+  for (const step of [1, 2, -1, -2]) if (d.every((x, i) => i === 0 || (x - d[i - 1] + 10) % 10 === (step + 10) % 10)) return true;
+  if (['2580', '0852', '1470', '0741', '3690', '0963', '7410', '9630', '1590', '9510', '3570', '0753', '147258', '258369', '852741', '123123', '112233', '102030', '010203'].some(k => pin.includes(k) && (k.length === pin.length || pin.length === 4))) return true;
+  if (pin.length === 4) { const y = Number(pin); return y >= 1950 && y <= 2030; }
+  const date = (dd: number, mm: number) => mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+  return date(d[0] * 10 + d[1], d[2] * 10 + d[3]) || date(d[4] * 10 + d[5], d[2] * 10 + d[3]);
 }
 
 // ---------------------------------------------------------------- bad text

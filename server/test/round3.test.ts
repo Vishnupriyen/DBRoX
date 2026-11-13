@@ -1,5 +1,6 @@
 // Pre-pilot round 3 (11 Nov 2026): the server's own word on the round-2 money rules, staff requests, collection
 // receipts and staff privacy. Each block failed before its server change (regression tests written first).
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -55,7 +56,7 @@ const T = { owner: '', office: '', salesman: '', salesman2: '', godown: '', deli
 const ID = { salesman: 'st-salesman', salesman2: 'st-salesman2', delivery: 'st-delivery', delivery2: 'st-delivery2', godown: 'st-godown' };
 const pins: Record<string, string> = { office: '6831', salesman: '2958', salesman2: '3069', godown: '7416', delivery: '5072', delivery2: '5183' };
 beforeAll(async () => {
-  const s = await post('/v1/signup', { firmName: 'Round Three Agencies', ownerName: 'Owner', phone: '9710000001', pin: '4826' });
+  const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Round Three Agencies', ownerName: 'Owner', phone: '9710000001', pin: '482613' });
   expect(s.status, JSON.stringify(s.body)).toBe(200);
   T.owner = s.body.token;
   const people = [['office', 'office'], ['salesman', 'salesman'], ['salesman2', 'salesman'], ['godown', 'godown'], ['delivery', 'delivery'], ['delivery2', 'delivery']] as const;
@@ -174,7 +175,7 @@ describe('16. staff privacy: each person downloads only their own advances, leav
   });
 
   it('a company rep downloads only his own orders, expenses and travel claims', async () => {
-    const s = await post('/v1/signup', { firmName: 'Brand Co', ownerName: 'HO', phone: '9710000091', pin: '4826', kind: 'company' }, undefined, freshIp());
+    const s = await post('/v1/signup', { consent: CONSENT, firmName: 'Brand Co', ownerName: 'HO', phone: '9710000091', pin: '482613', kind: 'company' }, undefined, freshIp());
     expect(s.status).toBe(200);
     const ho = s.body.token;
     expect((await sync(ho, [ch('staff', 'rep-a', { name: 'Rep A', phone: '9710000092', role: 'rep', pin: '3846', active: true }), ch('staff', 'rep-b', { name: 'Rep B', phone: '9710000093', role: 'rep', pin: '3957', active: true })])).body.rejected).toEqual([]);

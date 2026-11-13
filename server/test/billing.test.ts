@@ -1,4 +1,5 @@
 // Plans, payments and licences: pure rules first (fast), then the real server with a real database.
+import { CONSENT } from './fixtures.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHmac, createPublicKey, verify } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -71,7 +72,7 @@ describe('billing on the real server', () => {
   let o = { token: '', tenantId: '' };
 
   it('a new distributor starts a 60-day trial with every module, and the licence comes with login and sync', async () => {
-    const s = await call('POST', '/v1/signup', { firmName: 'Lock Test Agencies', ownerName: 'Owner', phone: '9822222222', pin: '4826' });
+    const s = await call('POST', '/v1/signup', { consent: CONSENT, firmName: 'Lock Test Agencies', ownerName: 'Owner', phone: '9822222222', pin: '482613' });
     expect(s.status).toBe(200); o = s.body;
     expect(lic(s.body.licence)).toMatchObject({ status: 'trial', pack: 'complete' });
     const sy = await call('POST', '/v1/sync', { cursor: 0, changes: [] }, as(o.token));

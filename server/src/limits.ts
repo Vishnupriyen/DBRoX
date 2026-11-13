@@ -22,3 +22,19 @@ export async function hit(pool: pg.Pool, key: string, max: number, windowMin: nu
 export async function clearHits(pool: pg.Pool, keys: string[]) {
   await pool.query('DELETE FROM rate_hits WHERE key = ANY($1)', [keys]);
 }
+
+/**
+ * Requests per minute, per key (a place, a login), counted in this server's memory: a sliding window of one minute.
+ * The server is one machine (Hostinger plan), so memory is the right place for the per-request counter; wrong PINs and
+ * wrong admin/cron keys are counted in Postgres above (they must survive a restart).
+ */
+const windows = new Map<string, number[]>();
+export function tooMany(key: string, perMinute: number, now = Date.now()): boolean {
+  const a = windows.get(key) ?? [];
+  while (a.length && a[0] <= now - 60000) a.shift();
+  if (a.length >= perMinute) { windows.set(key, a); return true; }
+  a.push(now); windows.set(key, a);
+  if (windows.size > 50000) for (const [k, v] of windows) if (!v.length || v[v.length - 1] <= now - 60000) windows.delete(k); // forget idle keys
+  return false;
+}
+export function resetRateWindows() { windows.clear(); }
