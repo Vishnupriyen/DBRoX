@@ -1,0 +1,24 @@
+# Card board labels (13 Nov 2026). Creates or updates every label in .github/labels.json.
+# Runs when that file changes, or by hand. Never deletes a label.
+name: Card board labels
+on:
+  push:
+    paths: ['.github/labels.json', '.github/workflows/labels.yml']
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  labels:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update labels
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          jq -c '.labels[]' .github/labels.json | while read -r l; do
+            name=$(jq -r .name <<<"$l"); color=$(jq -r .color <<<"$l"); desc=$(jq -r .description <<<"$l")
+            gh label create "$name" --color "$color" --description "$desc" --force --repo "$GITHUB_REPOSITORY"
+          done

@@ -1,0 +1,20 @@
+{
+  "_note": "The card board. One label per department + one status per card. Changing this file and pushing creates or updates the labels (workflow labels.yml). Labels are never deleted by it.",
+  "labels": [
+    { "name": "dept: business-analyst",       "color": "1D76DB", "description": "Flows, requirements, reports, done-when rules" },
+    { "name": "dept: systems-engineer",       "color": "1D76DB", "description": "Data, offline sync, server, scale" },
+    { "name": "dept: ux-designer",            "color": "1D76DB", "description": "Flows per role, fewest taps, clear words" },
+    { "name": "dept: developer",              "color": "1D76DB", "description": "Builds it, test first for any bug, gate green" },
+    { "name": "dept: independent-tester",     "color": "1D76DB", "description": "Checks the work without the developer's story" },
+    { "name": "dept: end-user-panel",         "color": "1D76DB", "description": "Real people run a made-up business before a release" },
+    { "name": "dept: ui-designer",            "color": "1D76DB", "description": "Real phone screenshots against the locked design" },
+    { "name": "dept: security-operations",    "color": "1D76DB", "description": "Data safety, backups, cost; signs off releases" },
+    { "name": "dept: gst-accounts",           "color": "1D76DB", "description": "Bills, tax, credit notes, ledgers, GSTR-1, Tally" },
+    { "name": "dept: tesrax-language",        "color": "1D76DB", "description": "How staff type to TESRAX; weekly misses" },
+    { "name": "dept: opportunities-partnerships", "color": "1D76DB", "description": "Opportunity scout, partners, catalogue, lead router" },
+    { "name": "status: to do",                "color": "BFBFBF", "description": "Waiting to be picked up" },
+    { "name": "status: in progress",          "color": "4FE3D6", "description": "A department is working on it" },
+    { "name": "status: waiting for Vishnu",   "color": "FBCA04", "description": "Needs the founder's answer or yes" },
+    { "name": "status: done",                 "color": "0E8A16", "description": "Finished and checked" }
+  ]
+}
