@@ -43,7 +43,13 @@ Specialists, whenever their area is touched: **gst-accounts-specialist** (bills,
 P&L, e-invoice, GSTR-1, Tally — after step 4, before release) and **tesrax-language-specialist** (any TESRAX change, and
 every week on the TESRAX report's misses).
 Small fixes may skip 1–3, never 5. The owner is told about a step only when it changes what they get.
-**Keeping usage low (owner, 13 Nov 2026):** long-output work — the gate, chaos, server tests, waiting on GitHub runs, reading
-CI/emulator logs, fetching the APK link — goes to **check-runner** (cheap model, reports in ≤10 lines), so the main chat stays
-small. Reviews and tests use cheaper models; the strongest model only for hard building and design. Start a new chat after each
-big piece of work (docs/HANDOVER.md carries everything over).
+**Using usage wisely (owner, 13 Nov 2026 — every chat and every agent follows this):**
+- **Ask before any big job.** Split it into parts; show the owner each part's result and get his yes before the next. Never run a
+  whole round ("build it complete") as one long job — tell him the size first ("about N parts").
+- **Full gate once per part, at the end.** While fixing, run only the tests that touch the change; the full gate (~16 min),
+  chaos and the full server suite run once before the push — never after every small fix.
+- **Models:** check-runner (haiku) for gates, CI waits, logs and the APK link; tester and security on sonnet (haiku for a
+  re-check of one fix); the strongest model only for hard building or design. Never wait in the foreground — background it.
+- **Read only what's needed:** summaries of logs, the lines of a file that matter, never whole long files or logs.
+- **One Hanubix chat at a time.** Suggest a fresh chat (with the handover) once a chat gets long — say it once.
+- **Report usage honestly:** when a job turns out bigger than said, stop and tell the owner before carrying on.
