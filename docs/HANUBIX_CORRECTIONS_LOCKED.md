@@ -59,9 +59,10 @@ This replaces the earlier 4-part "convenience round" plan in HANDOVER.md.
 48. Plan lock = current pricing, fully automatic. Today the lock still uses the old 6 Nov packs (last_mile, office, complete) and tiers
     (starter…enterprise) in server/src/licence.ts — replace with: DB DMS ₹999 (all modules), DB LMD + Collection + Payroll ₹399; company SFA
     ₹999 per active sales user, company DMS ₹999. Remove the demo module switch from the distributor's Menu. Automatic end to end: plan chosen
-    on the website or in the app → Razorpay UPI Autopay → webhook updates the sealed licence → modules on within a minute; monthly renewals
+    and paid ONLY on our website (never inside the app: Google Play takes a fee on in-app purchases of business software, even with
+    India's alternative billing; the Play app is consumption-only — log in and use, no buy/upgrade buttons or links to a pay page) → Razorpay UPI Autopay → webhook updates the sealed licence → modules on within a minute; monthly renewals
     automatic; failed payment → reminders → 7-day grace banner → lock (collect money + download data still allowed) → unlock the moment they
-    pay; self-service upgrade (now, pay the difference) / downgrade (month end); company SFA billed by active sales-user count; free trial
+    pay; self-service upgrade on the website (now, pay the difference) / downgrade (month end); company SFA billed by active sales-user count; free trial
     starts at sign-up and moves on by itself. Only manual case: bank transfer/cash marked paid in our control panel.
 
 ## Added to Part 4 (locked 14 Nov 2026)
