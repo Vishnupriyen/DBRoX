@@ -32,19 +32,20 @@ const dayMinus = (d: string, n: number) => { const x = new Date(`${d}T12:00:00`)
 
 // ---------- My files ----------
 /** this person's files from the last 30 days that their role may see now (a file made as owner is hidden when the same
- *  person logs in as office or salesman) */
+ *  person logs in as office or salesman). Role unknown on this phone (no staff row): owner-only kinds stay hidden. */
 export async function myFiles(): Promise<MyFile[]> {
   const role = await roleNow();
-  return (await allFiles()).filter(f => fresh(f) && (!role || role === 'owner' || !OWNER_ONLY_KINDS.includes((f.kind ?? kindOf(f.name)) as FileKind)));
+  return (await allFiles()).filter(f => fresh(f) && (role === 'owner' || !OWNER_ONLY_KINDS.includes((f.kind ?? kindOf(f.name)) as FileKind)));
 }
 /** keep a file (newest first). The same name with the same rows made again within a minute is kept once. */
-export async function keepFile(name: string, sheets: SheetData[]): Promise<void> {
+/** kind: tagged where the file is made (salary sheet, P&L, cash flow); the name rule only adds to it, never removes */
+export async function keepFile(name: string, sheets: SheetData[], tagged?: FileKind): Promise<void> {
   if (!me() || !sheets.some(s => s.rows.length)) return;
   const list = await allFiles();
   const at = new Date().toISOString();
   const same = list[0] && list[0].name === name && Date.now() - Date.parse(list[0].at) < 60_000 && JSON.stringify(list[0].sheets) === JSON.stringify(sheets);
   if (same) return;
-  const role = await roleNow(), kind = kindOf(name);
+  const role = await roleNow(), kind = tagged ?? kindOf(name);
   const file: MyFile = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, at, sheets, ...(role ? { role } : {}), ...(kind ? { kind } : {}) };
   await db.meta.put({ key: filesKey(), value: [file, ...list].slice(0, MAX_FILES) });
 }
@@ -79,6 +80,14 @@ export async function chatDays(now = today()): Promise<{ day: string; count: num
 export async function clearChatDay(day = today()): Promise<void> { if (me()) await db.meta.delete(chatKey(day)); }
 
 // ---------- Clearing (security, 14 Nov 2026) ----------
+/** every way a person's session ends on this phone (logout, offline too long, access removed, signed out by the server):
+ *  the saved session goes and that person's chats and My files with it. The firm's records and unsent work stay. */
+export async function forgetSession(): Promise<void> {
+  let uid = session().userId || '';
+  try { const saved = localStorage.getItem('dbrox.session'); if (saved) uid = (JSON.parse(saved) as { userId?: string }).userId || uid; } catch { /* a bad saved session is just removed */ }
+  try { localStorage.removeItem('dbrox.session'); } catch { /* no storage */ }
+  if (uid) await purgePersonal(uid).catch(() => {});
+}
 /** delete chats and My files from this phone: one person's, or everyone's when no id is given */
 export async function purgePersonal(userId?: string): Promise<void> {
   const prefixes = userId ? [`chat:${userId}:`, `myfiles:${userId}`] : ['chat:', 'myfiles:'];

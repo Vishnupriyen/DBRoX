@@ -90,6 +90,11 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   Paid outside test (₹1.5–2.5 lakh, CERT-In approved, retest included) once, after the dashboards, before selling widely.
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
+## Part 2 build log (developer, 14 Nov 2026)
+- Part 1 follow-ups: "orders to approve"/"needs ok"/"approvals" answer in place (new + needs-OK table, Open button; "approve" still opens
+  the screen); "aprove"/"loadsheet" typos; unknown role hides owner-only files; file kind tagged at the source; forgetSession() on every
+  way out (offline too long, access removed, kicked). Test: app/tests/part1-followups.test.ts.
+
 ## Waiting for the owner
 - **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the
   main session; ui-designer, security-operations and tesrax-language-specialist reviews of Part 1 were started 14 Nov evening.

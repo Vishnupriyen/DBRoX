@@ -10,6 +10,7 @@ import { daySummary } from './pipeline';
 import { salarySheet } from './payroll';
 import { downloadWorkbook } from './readers';
 import type { Trip } from './types';
+import type { FileKind } from './myfiles';
 
 type Sheet = { name: string; header: string[]; rows: (string | number)[][] };
 /** the lines an accountant needs at the top of any file: firm, GSTIN, period, the day it was made */
@@ -17,7 +18,7 @@ async function headBlock(period: string, note = 'Amounts in ₹') {
   const st = await getSettings();
   return [[`${st.firmName}${st.gstin ? ` · GSTIN ${st.gstin}` : ' · GSTIN not set'}`, ''], [`Period: ${period}`, ''], [`Made on ${showDate(today())} · ${note}`, ''], ['', '']] as (string | number)[][];
 }
-export interface FileReply { text: string; file: string; sheets: Sheet[] }
+export interface FileReply { text: string; file: string; sheets: Sheet[]; kind?: FileKind } // kind: owner-only files (P&L), tagged here
 
 /** P&L for today or this month (the P&L screen's periods) */
 export async function pnlFile(period: 'today' | 'month'): Promise<FileReply> {
@@ -34,6 +35,7 @@ export async function pnlFile(period: 'today' | 'month'): Promise<FileReply> {
     .flatMap(({ h, side }) => h.items.map(i => [side, h.label, i.d ? showDate(i.d) : '', i.t, i.v]));
   return {
     text: `P&L ${label}: income ${inr(t.income)}, expenses ${inr(t.expense)}, ${t.profit >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(t.profit))}.`,
+    kind: 'pnl',
     file: `PnL-${period === 'today' ? today() : today().slice(0, 7)}`,
     sheets: [{ name: 'P&L', header: [`Profit & loss — ${label}`, '₹ (before GST)'], rows: heads }, { name: 'Details', header: ['Side', 'Head', 'Date', 'Item', '₹'], rows: items }],
   };
@@ -134,4 +136,4 @@ export async function tripFile(): Promise<FileReply> {
   };
 }
 
-export const sendFile = (f: FileReply) => downloadWorkbook(f.file, f.sheets);
+export const sendFile = (f: FileReply) => downloadWorkbook(f.file, f.sheets, true, f.kind);

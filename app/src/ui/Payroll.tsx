@@ -112,7 +112,7 @@ export function Salary() {
   };
   return (
     <div className="stack">
-      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows))}><Download size={14} /> Excel</button></div>
+      <div className="sechead"><h3><IndianRupee size={18} style={{ verticalAlign: -3 }} /> {'Salary sheet'}</h3><div className="segmented" style={{ maxWidth: 220 }}>{[prev, cur].map(m => <button key={m} className={month === m ? 'on' : ''} onClick={() => setMonth(m)}>{showMonth(m)}</button>)}</div><button className="link" onClick={() => downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows), true, 'salary')}><Download size={14} /> Excel</button></div>
       {/* one card per person: fits any phone; the full sheet is the Excel */}
       <div className="list">{rows.map(r => (
         <div key={r.s.id} className="item">

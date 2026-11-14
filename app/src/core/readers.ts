@@ -1,4 +1,4 @@
-import { keepFile } from './myfiles';
+import { keepFile, type FileKind } from './myfiles';
 import { saveFile } from './files';
 // xlsx is loaded only when a file is read or downloaded, so the app opens fast on cheap phones
 const xlsx = () => import('xlsx');
@@ -244,21 +244,21 @@ export function readOpeningStockRows(rows: string[][]) {
 }
 
 // Excel out: any table the user sees can be downloaded.
-export async function downloadSheet(name: string, header: string[], rows: (string | number)[][], keep = true) {
+export async function downloadSheet(name: string, header: string[], rows: (string | number)[][], keep = true, kind?: FileKind) {
   const XLSX = await xlsx();
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
   await saveWorkbook(XLSX, wb, name);
-  if (keep) void keepFile(name, [{ name, header, rows }]).catch(() => {}); // every Excel made is kept in My files (14 Nov 2026)
+  if (keep) void keepFile(name, [{ name, header, rows }], kind).catch(() => {}); // every Excel made is kept in My files (14 Nov 2026)
 }
 
-export async function downloadWorkbook(name: string, sheets: { name: string; header: string[]; rows: (string | number)[][] }[], keep = true) {
+export async function downloadWorkbook(name: string, sheets: { name: string; header: string[]; rows: (string | number)[][] }[], keep = true, kind?: FileKind) {
   const XLSX = await xlsx();
   const wb = XLSX.utils.book_new();
   for (const s of sheets) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s.header, ...s.rows]), s.name.slice(0, 31));
   await saveWorkbook(XLSX, wb, name);
-  if (keep) void keepFile(name, sheets).catch(() => {});
+  if (keep) void keepFile(name, sheets, kind).catch(() => {});
 }
 // one way to save, browser or Android app (core/files.ts)
 async function saveWorkbook(XLSX: Awaited<ReturnType<typeof xlsx>>, wb: unknown, name: string) {

@@ -45,7 +45,7 @@ import { handleCompany } from './companyEngine';
 
 // Screens TESRAX can open by name. Checked per role so a driver asking for "delivery plan" is told it is the owner's screen.
 export const SCREENS: { page: string; name: string; roles: Role[]; words: string[] }[] = [
-  { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approve orders', 'orders to approve', 'pending orders', 'orders pending', 'orders waiting', 'approval', 'approvals', 'pending approvals', 'needs my approval', 'needs ok', 'waiting for me', 'new orders'] },
+  { page: 'orders-received', name: 'Orders received', roles: ['owner', 'office'], words: ['orders received', 'approve', 'approve orders', 'pending orders', 'orders pending', 'new orders'] }, // "approve" (do it) opens the screen; "orders to approve", "needs ok", "approvals" are answered in place (W.needsOk)
   { page: 'verify', name: 'Picked — to verify', roles: ['owner', 'office'], words: ['verify', 'to verify', 'picked', 'picked to verify', 'picked orders'] },
   { page: 'billed', name: 'Billed', roles: ['owner', 'office'], words: ['billed', 'billed bills', 'today bills'] },
   { page: 'newshops', name: 'New shops', roles: ['owner', 'office'], words: ['pending shops', 'new shop requests', 'shop requests', 'new shops', 'shops to approve'] },
@@ -157,7 +157,7 @@ export const W = {
   gstr: ['gstr', 'gst return', 'gstr1', 'gstr-1'],
   einv: ['e-invoice', 'einvoice', 'e invoice', 'irn'],
   claimFile: ['claim file', 'claims file', 'claim report', 'claims report', 'claims for', 'make claim', 'claim export', 'claims export', 'claim excel', 'claims excel', 'claim sheet'],
-  needsOk: ['needs ok', 'approval', 'waiting'],
+  needsOk: ['needs ok', 'needs my ok', 'my ok', 'approval', 'approvals', 'waiting', 'orders waiting', 'to approve'],
   openingDues: ['old dues', 'old due', 'opening balance', 'opening balances', 'opening dues', 'old balance', 'old outstanding', 'old bills'],
   openingStock: ['opening stock', 'old stock', 'stock on hand', 'closing stock'],
   scheme: ['scheme', 'offer'],
@@ -487,6 +487,8 @@ export function payAmount(r: string): number | undefined {
 function deny(what?: string, ownerOnly = false): Reply { return { text: what ? (ownerOnly ? `${what} is for the owner only. Ask the owner.` : `${what} is done by the owner or office. Ask them, or log in as one of them.`) : 'Your role cannot do this. Ask the owner.', tone: 'warn', refused: true }; }
 /** voice typing splits short codes: "GST R", "GST R1", "g s t r" → gstr / gstr1 ("gst" alone stays gst) */
 export function spokenCodes(t: string) {
+  // common slips of the keyboard, so the words below match ("orders to aprove", "loadsheet")
+  t = t.replace(/\b(aprove|approv|aproove|apprve)\b/g, 'approve').replace(/\b(aproval|approvl)\b/g, 'approval').replace(/\bload ?sheets?\b/g, 'load sheet');
   return t.replace(/\bg ?s ?t ?r(?: ?(1|one))?\b/g, (_m, one) => (one ? 'gstr1' : 'gstr'));
 }
 
@@ -1062,7 +1064,7 @@ async function salaryFile(role: Role, text: string): Promise<Reply> {
   const net = r2(rows.reduce((a, r) => a + r.net, 0));
   return {
     text: `Salary sheet ${showMonth(month)}: ${plural(rows.length, 'person', 'people')}, net to pay ${inr(net)}.`,
-    actions: rows.length ? [{ label: 'Send salary sheet (Excel)', run: () => { void downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows)); } }] : undefined,
+    actions: rows.length ? [{ label: 'Send salary sheet (Excel)', run: () => { void downloadSheet(`salary-${month}`, SALARY_HEADER, salaryCells(rows), true, 'salary'); } }] : undefined,
     link: { label: 'Open Salary', page: 'salary' },
   };
 }
@@ -1204,10 +1206,15 @@ async function schemesTable(): Promise<Reply> {
 }
 
 async function needsOkTable(role?: Role): Promise<Reply> {
-  const orders = (await db.orders.where('status').equals('needs_ok').toArray());
+  // every order still to approve: new ones and the ones a check stopped (needs OK); a salesman sees only his own
+  const boss = role === 'owner' || role === 'office' || !role;
+  const all = [...await db.orders.where('status').equals('new').toArray(), ...await db.orders.where('status').equals('needs_ok').toArray()];
+  const orders = boss ? all : all.filter(o => o.salesmanId === session().userId);
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
-  const boss = role === 'owner' || role === 'office';
-  return { text: orders.length ? `${plural(orders.length, 'order')} wait for your OK.${boss ? '' : ' Open "Today" to approve them.'}` : 'Nothing waiting for your OK.', ...(boss ? { link: { label: 'Open Orders received', page: 'orders-received' } } : {}), table: { name: 'Needs OK', columns: ['Shop', 'Date', 'Items', 'Why'], rows: orders.map(o => [shops.get(o.shopId) ?? '', o.date, o.lines.length, o.issues.join('; ')]) } };
+  const text = boss
+    ? (orders.length ? `${plural(orders.length, 'order')} wait for your OK.` : 'Nothing waiting for your OK.')
+    : (orders.length ? `${plural(orders.length, 'order')} of yours wait for the owner's OK.` : 'None of your orders is waiting for the owner\'s OK.');
+  return { text, ...(boss ? { link: { label: 'Open Orders received', page: 'orders-received' } } : {}), table: { name: 'Needs OK', columns: ['Shop', 'Date', 'Items', 'Why'], rows: orders.map(o => [shops.get(o.shopId) ?? '', showDate(o.date), o.lines.length, o.issues.join('; ')]) } };
 }
 
 

@@ -50,7 +50,7 @@ import { DialogHost, notify } from './ui/dialog';
 import type { Invoice, Settings, Staff } from './core/types';
 import { PrintBill } from './ui/PrintBill';
 import { Boost } from './ui/Boost';
-import { dailyPurge, purgePersonal } from './core/myfiles';
+import { dailyPurge, forgetSession, purgePersonal } from './core/myfiles';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, string>> = {
@@ -135,11 +135,11 @@ export default function App() {
       // never while it holds unsent work (core/sync.ts offlineCheck)
       const off = await offlineCheck();
       if (off.wiped) setLoginMsg(`This phone had not reached the server for ${off.days} days, so its copy of the firm's data was removed. Log in to get it back.`);
-      else if (off.mustLogin) { localStorage.removeItem('dbrox.session'); setLoginMsg(off.kept ? 'Connect to the internet and log in — your unsent work is kept.' : `This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
+      else if (off.mustLogin) { await forgetSession(); setLoginMsg(off.kept ? 'Connect to the internet and log in — your unsent work is kept.' : `This phone has not reached the server for ${off.days} days. Connect to the internet and log in.`); }
       setOffWarn(off.warnDaysLeft);
       const removed = await accessRemovedState();
       if (removed && !removed.unsent && await finishRemovedPhone()) setLoginMsg('Access removed. This phone\'s copy of the firm\'s data has been removed.');
-      else if (removed) { localStorage.removeItem('dbrox.session'); setLoginMsg(accessRemovedMsg(removed.unsent)); }
+      else if (removed) { await forgetSession(); setLoginMsg(accessRemovedMsg(removed.unsent)); }
       void securePins(hasServer).catch(() => {}); // plain PINs from an older version become hashes
       setFirm((await db.settings.toCollection().first())?.firmName ?? '');
       const saved = localStorage.getItem('dbrox.session');
@@ -155,7 +155,7 @@ export default function App() {
       setReady(true);
       startAutoSync();
     })();
-    const kicked = () => { void clearToken(); setMe(null); void accessRemovedState().then(r => { if (r) setLoginMsg(accessRemovedMsg(r.unsent)); }); };
+    const kicked = () => { void forgetSession(); void clearToken(); setMe(null); void accessRemovedState().then(r => { if (r) setLoginMsg(accessRemovedMsg(r.unsent)); }); };
     window.addEventListener('dbrox:logout', kicked);
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);

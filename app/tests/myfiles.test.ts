@@ -20,6 +20,7 @@ describe('My files', () => {
     expect(await myFiles()).toEqual([]);
   });
   it('each person sees only their own files', async () => {
+    await db.staff.put({ id: 'owner1', name: 'owner1', role: 'owner', active: true, phone: '9000000001' } as never); // the owner's P&L needs a known owner (unknown role hides it)
     await keepFile('Owner P&L', sheet('P&L'));
     setSession('demo', 'driver1');
     expect(await myFiles()).toEqual([]);
