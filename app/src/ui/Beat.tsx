@@ -61,7 +61,7 @@ export function Beat() {
       <div className="kpi navy">
         <div className="eyebrow" style={{ color: 'var(--on-navy-2)' }}>{DAYS[dayIdx]} · {"Today's beat"}</div>
         <div className="row" style={{ marginTop: 6, gap: 18 }}>
-          <div><div className="v">{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{list.length}</span></div><div className="l">{'shops done'}</div></div>
+          <div><div className="v">{done}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{list.length}</span></div><div className="l">{'shops done'}</div></div>
           <div><div className="v">{inr(totalDue)}</div><div className="l">{'to collect on this beat'}</div></div>
         </div>
       </div>

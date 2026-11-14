@@ -32,7 +32,7 @@ export function CheckInGate({ me, settings, onDone }: { me: Staff; settings: Set
   return (
     <div className="gate">
       <div className="eyebrow">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}</div>
-      <div className="h" style={{ fontSize: '1.625rem' }}>{me.name.split(' ')[0]}</div>
+      <div className="h" style={{ fontSize: 'var(--f5)' }}>{me.name.split(' ')[0]}</div>
       <div className="muted"><Clock size={16} style={{ verticalAlign: -3 }} /> {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {today()}{late && <span className="badge warn" style={{ marginLeft: 8 }}>{'after'} {threshold}</span>}</div>
       <button className="big-btn" disabled={busy} onClick={go}><span><LogIn /><br />{'Check in'}</span></button>
       <div className="muted"><MapPin size={14} style={{ verticalAlign: -2 }} /> {'Your location and time are recorded.'}</div>
@@ -70,7 +70,7 @@ export function Today() {
   return (
     <div className="stack">
       <div className="kpis">
-        <div className="kpi navy"><div className="v">{rows.filter(r => r.c).length}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{rows.length}</span></div><div className="l">{'checked in'}</div></div>
+        <div className="kpi navy"><div className="v">{rows.filter(r => r.c).length}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{rows.length}</span></div><div className="l">{'checked in'}</div></div>
         <div className="kpi"><div className="v" style={{ color: rows.some(r => r.c && late(r.c)) ? 'var(--warn)' : undefined }}>{rows.filter(r => r.c && late(r.c)).length}</div><div className="l">{'late'}</div></div>
       </div>
       <div className="list">
@@ -122,7 +122,7 @@ export function Salary() {
             {r.carry > 0 && <div className="s">{inr(r.carry)} {'carries to next month'}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="num" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>{inr(r.net)}</div>
+            <div className="num" style={{ fontWeight: 700, fontSize: 'var(--f4)' }}>{inr(r.net)}</div>
             {r.paid ? <span className="badge ok">{'paid'}</span> : <button className="btn small primary" disabled={!r.fixed} onClick={() => pay(r)}>{'Mark paid'}</button>}
           </div>
         </div>))}

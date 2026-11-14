@@ -68,7 +68,7 @@ export function Approve({ go }: { go?: (p: string) => void }) {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? 'godown'}{o.pickedAt ? ` at ${showTime(o.pickedAt)}` : ''}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 'var(--f4)' }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {'packed by'} {staff.get(o.pickedBy ?? '') ?? 'godown'}{o.pickedAt ? ` at ${showTime(o.pickedAt)}` : ''}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {diffs ? <div className="muted">{plural(diffs, 'line')} {'changed by the picker — shown in red'}</div> : <div className="muted">{'Packed exactly as ordered'}</div>}

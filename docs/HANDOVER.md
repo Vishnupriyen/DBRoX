@@ -91,6 +91,14 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner
+- **Correction round Part 1 (look & TESRAX) BUILT and pushed on the founder's word (14 Nov, "directly push") before the full gate
+  finished** — check the gate result for this push first; fix anything red before Part 2. Done: sphere 88 px with TESRAX inside the
+  disc (approved mock v5), bar on every screen incl. TESRAX, opening screen same sphere; Home = 6 modules (Sales, Bill, Delivery,
+  Accountant [Collection, GST, Day close inside], Stock, Payroll), no Search, owner card = Sales this month (net before GST, after
+  credit notes) + Outstanding (active shops) via core/ownerCard.ts; Menu = group cards + gold Business Boost; type scale 11/12/14/16/20/26
+  (--f1..--f6, 1rem = 14 px); TESRAX never jumps (Open button), Excel/PDF on every table, My files + chat history by day (30 days,
+  per person, phone only — core/myfiles.ts, not synced), Clear chat. Tester: 2 majors fixed with tests (owner-card.test.ts);
+  open: screen-type answers (P&L, Orders received) leave no file — planned with item 46 (Reports card, Part 4).
 - **NEXT (owner, 14 Nov): the CORRECTION ROUND — 47 items in 5 parts, locked in `docs/HANUBIX_CORRECTIONS_LOCKED.md`** (from the
   founder's handwritten review + chat). It REPLACES the 4-part convenience round below. Start with Part 1 (look and TESRAX): first
   show the Menu mock and the font-size screenshots, get his yes, then build. Each part: build → tester → one full gate → real phone

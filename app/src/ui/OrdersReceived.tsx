@@ -54,7 +54,7 @@ export function OrdersReceived() {
         return (
           <div key={o.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div><div className="t" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {o.salesman}{o.source === 'salesman' || o.source === 'company' ? '' : ` · ${o.source}`}</div></div>
+              <div><div className="t" style={{ fontWeight: 700, fontSize: 'var(--f4)' }}>{o.shop.name}</div><div className="muted">{o.shop.area} · {o.salesman}{o.source === 'salesman' || o.source === 'company' ? '' : ` · ${o.source}`}</div></div>
               <span className="amt num">{inr(value(o))}</span>
             </div>
             {/* shop history strip — the one line that decides credit */}

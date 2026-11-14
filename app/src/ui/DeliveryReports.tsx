@@ -82,11 +82,11 @@ export function PrintLoad() {
         <button className="btn primary" onClick={() => void printPage()}><Printer /> {'Print'}</button>
       </div>
       <div className="card" style={{ background: '#fff', color: '#000' }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: '1.125rem' }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{showDate(t.date)} · {'Driver'}: {t.driver || '—'}</span></div>
+        <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 'var(--f4)' }}>LOAD SHEET · {t.van.name} {t.van.number}</b><span>{showDate(t.date)} · {'Driver'}: {t.driver || '—'}</span></div>
         <div className="muted">{plural(t.invs.length, 'bill')} · {plural(stops.length, 'stop')} · {inr(t.invs.reduce((a, i) => a + i.total, 0))}</div>
         <h4 style={{ margin: '12px 0 4px' }}>A. {'By product'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>☐</th><th>{'Product'}</th><th>{'Batch · expiry'}</th><th>{'Cases'}</th><th>{'Pcs'}</th></tr></thead>
-          <tbody>{[...byProduct.values()].sort((a, b) => a.p.companyId.localeCompare(b.p.companyId) || a.p.name.localeCompare(b.p.name)).map(v => <tr key={v.p.id}><td style={{ fontSize: '1.125rem' }}>☐</td><td>{v.p.name}</td><td>{[...v.batches.entries()].map(([k, q]) => <div key={k}>{k} × {q}</div>)}</td><td className="num">{Math.floor(v.qty / v.p.caseSize) || ''}</td><td className="num">{v.qty % v.p.caseSize || (Math.floor(v.qty / v.p.caseSize) ? '' : v.qty)}</td></tr>)}</tbody></table>
+          <tbody>{[...byProduct.values()].sort((a, b) => a.p.companyId.localeCompare(b.p.companyId) || a.p.name.localeCompare(b.p.name)).map(v => <tr key={v.p.id}><td style={{ fontSize: 'var(--f4)' }}>☐</td><td>{v.p.name}</td><td>{[...v.batches.entries()].map(([k, q]) => <div key={k}>{k} × {q}</div>)}</td><td className="num">{Math.floor(v.qty / v.p.caseSize) || ''}</td><td className="num">{v.qty % v.p.caseSize || (Math.floor(v.qty / v.p.caseSize) ? '' : v.qty)}</td></tr>)}</tbody></table>
         <h4 style={{ margin: '14px 0 4px' }}>B. {'By stop'}</h4>
         <table className="tbl" style={{ background: '#fff' }}><thead><tr><th>#</th><th>{'Shop'}</th><th>{'Bills'}</th><th>{'Pcs'}</th><th>₹</th><th>{'Sign'}</th></tr></thead>
           <tbody>{stops.map((sid, k) => { const si = t.invs.filter(i => i.shopId === sid); return <tr key={sid}><td>{k + 1}</td><td>{shops.get(sid)}</td><td>{si.map(i => i.number).join(', ')}</td><td className="num">{si.flatMap(i => i.lines).reduce((a, l) => a + l.qty + l.freeQty, 0)}</td><td className="num">{inr(si.reduce((a, i) => a + i.total, 0))}</td><td style={{ width: 90 }}></td></tr>; })}</tbody></table>

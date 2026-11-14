@@ -8,8 +8,8 @@ import type { ModuleKey, Role } from '../core/types';
 import { licenceState } from '../core/licence';
 import { ENV_SERVER } from '../core/sync';
 import { MODULE_ICON } from './icons';
-import { Search, Send } from 'lucide-react';
-import { invoiceBalances } from '../core/ledger';
+import { Send } from 'lucide-react';
+import { ownerNumbers } from '../core/ownerCard';
 import { inr, plural } from '../core/i18n';
 import { waitingRequests } from '../core/requests';
 
@@ -23,7 +23,7 @@ export type Page = 'home'
   | 'lite-shops' | 'lite-plan' | 'lite-delivery' | 'lite-collect' | 'lite-export' | 'more' | 'billing'
   | 'inbound' | 'reorder' | 'settings' | 'links' | 'tesrax' | 'boost' | 'privacy'; // linked companies: their bills to receive, and the order to them
 
-interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: string }
+interface Tile { page?: Page; module?: string; icon: LucideIcon; en: string; count?: number; tone?: 'bad' | 'warn' | 'ok'; tag?: string; mod?: ModuleKey }
 
 export function standalone(mods: Record<ModuleKey, boolean> | undefined) { return !!mods && !mods.bill && !mods.sales; }
 // which paid module each home tile belongs to: a tile shows only if that module is in the licence
@@ -46,8 +46,7 @@ const waitingLine = (ts: Tile[]) => ts.filter(x => x.count && x.page && WAITING[
 export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => void; open: string | null; onOpen: (m: string | null) => void }) {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [subs, setSubs] = useState<Record<string, Tile[]>>({});
-  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; overdue: number; cash: number; leaves: number; advances: number; staffReqs: number; first: Page | null } | null>(null);
-  const [q, setQ] = useState('');
+  const [morning, setMorning] = useState<{ name: string; orders: number; toDeliver: number; sales: number; outstanding: number; canReports: boolean; canOutstanding: boolean; leaves: number; advances: number; staffReqs: number; first: Page | null } | null>(null);
   useEffect(() => {
     (async () => {
       const s = await db.settings.toCollection().first();
@@ -109,36 +108,36 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'trips', icon: BarChart3, en: 'Trip reports' },
           ...(owner ? [{ page: 'vans' as Page, icon: Truck, en: 'Vans & drivers' }] : []),
         ];
-        sub.collection = [
-          { page: 'outstanding', icon: Wallet, en: 'Outstanding' },
-          ...(owner ? [{ page: 'cash' as Page, icon: Banknote, en: 'Cash with staff', count: c.cashStaff, tone: 'bad' as const }] : []),
-          { page: 'cheques', icon: ReceiptText, en: 'Cheques & UPI' },
-        ];
+        // Accountant = the owner's accounts employee (founder, 14 Nov 2026): collection, GST and day close live here too
         sub.accountant = [
-          { page: 'bank', icon: Landmark, en: 'Bank' },
-          { page: 'expenses', icon: Wallet, en: 'Expenses' },
-          ...(owner ? [{ page: 'pnl' as Page, icon: PieChart, en: 'P&L' }] : []), // profit is the owner's only
-          { page: 'cashflow', icon: Scale, en: 'Cash flow' },
-          { page: 'reports', icon: BarChart3, en: 'Reports' },
-          { page: 'export', icon: Download, en: 'Export' },
+          { page: 'outstanding', icon: Wallet, en: 'Outstanding', mod: 'collection' },
+          ...(owner ? [{ page: 'cash' as Page, icon: Banknote, en: 'Cash with staff', count: c.cashStaff, tone: 'bad' as const, mod: 'collection' as ModuleKey }] : []),
+          { page: 'cheques', icon: ReceiptText, en: 'Cheques & UPI', mod: 'collection' },
+          { page: 'bank', icon: Landmark, en: 'Bank', mod: 'accountant' },
+          { page: 'expenses', icon: Wallet, en: 'Expenses', mod: 'accountant' },
+          ...(owner ? [{ page: 'pnl' as Page, icon: PieChart, en: 'P&L', mod: 'accountant' as ModuleKey }] : []), // profit is the owner's only
+          { page: 'cashflow', icon: Scale, en: 'Cash flow', mod: 'accountant' },
+          { page: 'gst', icon: FileCheck2, en: 'GST', mod: 'gst' },
+          { page: 'reports', icon: BarChart3, en: 'Reports', mod: 'accountant' },
+          { page: 'export', icon: Download, en: 'Export', mod: 'accountant' },
+          ...(owner ? [{ page: 'dayclose' as Page, icon: Scale, en: 'Day close', count: c.dayClosed ? undefined : (c.tripsToday || diffs || undefined), tone: 'ok' as const, mod: 'bill' as ModuleKey }] : []),
         ];
         sub.payroll = [
           { page: 'today', icon: CalendarCheck, en: 'Today', count: leaves || undefined, tone: 'warn' },
           { page: 'staff', icon: Users, en: 'Staff' },
           ...(owner ? [{ page: 'salary' as Page, icon: IndianRupee, en: 'Salary sheet' }] : []),
         ];
+        for (const k of Object.keys(sub)) sub[k] = sub[k].filter(x => !x.mod || mods[x.mod] !== false); // each screen only with its own module
         const sum = (k: string) => sub[k].reduce((a, x) => a + (x.count ?? 0), 0) || undefined;
         const tone = (k: string) => sub[k].find(x => x.count && x.tone === 'bad') ? 'bad' : sub[k].find(x => x.count && x.tone === 'warn') ? 'warn' : 'ok';
+        // Home = six modules, Sales first (founder, 14 Nov 2026)
         t = [
+          { module: 'sales', icon: ShoppingBag, en: 'Sales', count: sum('sales'), tone: tone('sales') },
           { module: 'bill', icon: Receipt, en: 'Bill', count: sum('bill'), tone: tone('bill') },
           { module: 'delivery', icon: Truck, en: 'Delivery', count: sum('delivery'), tone: tone('delivery') },
-          { module: 'collection', icon: IndianRupee, en: 'Collection', count: sum('collection'), tone: tone('collection') },
-          { module: 'sales', icon: ShoppingBag, en: 'Sales', count: sum('sales'), tone: tone('sales') },
-          { module: 'inventory', icon: Boxes, en: 'Inventory', count: sum('inventory'), tone: tone('inventory') },
-          { module: 'accountant', icon: Landmark, en: 'Accountant' },
-          { page: 'gst', icon: FileCheck2, en: 'GST' },
+          { module: 'accountant', icon: Landmark, en: 'Accountant', count: sum('accountant'), tone: tone('accountant') },
+          { module: 'inventory', icon: Boxes, en: 'Stock', count: sum('inventory'), tone: tone('inventory') },
           { module: 'payroll', icon: Users, en: 'Payroll', count: sum('payroll') || (staffN - checkedIn > 0 ? staffN - checkedIn : undefined), tone: sum('payroll') ? 'warn' : 'bad' },
-          ...(owner ? [{ page: 'dayclose' as Page, icon: Scale, en: 'Day close', count: c.dayClosed ? undefined : (c.tripsToday || diffs || undefined), tone: 'ok' as const }] : []),
         ];
       } else if (role === 'salesman') {
         const myShops = (await db.shops.toArray()).filter(x => x.salesmanId === me);
@@ -167,41 +166,40 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'collect', icon: IndianRupee, en: 'Collect' },
         ];
       }
-      const allowed = (x: Tile) => x.module ? mods[x.module as ModuleKey] !== false : !(x.page && NEED[x.page]) || mods[NEED[x.page]!];
+      const on = (k: ModuleKey) => mods[k] !== false;
+      const allowed = (x: Tile) => x.module === 'accountant' ? sub.accountant?.length > 0 : x.module ? on(x.module as ModuleKey) : !(x.page && NEED[x.page]) || mods[NEED[x.page]!];
       setTiles(t.filter(allowed)); setSubs(sub);
       if ((role === 'owner' || role === 'office') && !standalone(mods)) {
-        const bal = (await invoiceBalances()).filter(b => b.balance > 0.5 && b.overdueDays > 0);
+        // the owner's two numbers (founder, 14 Nov 2026), by the same rules as Reports and the Outstanding screen
+        const { sales, outstanding } = await ownerNumbers();
         const leaveN = await db.leaves.where('status').equals('waiting').count();
         const advanceN = await db.advances.where('status').equals('waiting').count();
         const reqN = (await waitingRequests()).length;
         const meName = (await db.staff.get(me))?.name.split(' ')[0] ?? '';
-        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, overdue: Math.round(bal.reduce((a, b) => a + b.balance, 0)), cash: c.cashWithStaff ?? 0, leaves: leaveN, advances: advanceN, staffReqs: reqN, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : (leaveN || advanceN) ? 'today' : diffs ? 'status' : null });
+        setMorning({ name: meName, orders: c.toApproveOrders, toDeliver: c.toPlan, sales: Math.round(sales), outstanding: Math.round(outstanding), canReports: mods.accountant !== false, canOutstanding: mods.collection !== false, leaves: leaveN, advances: advanceN, staffReqs: reqN, first: c.toApproveOrders ? 'orders-received' : c.toApprove ? 'verify' : c.toPlan ? 'plan' : (leaveN || advanceN) ? 'today' : diffs ? 'status' : null });
       } else setMorning(null);
     })();
   }, [role, open]);
 
-  const list = open ? subs[open] ?? [] : tiles;
+  const shut = open && !(subs[open]?.length) ? null : open; // a module with nothing in this plan → the six tiles, never a blank page
+  const list = shut ? subs[shut] ?? [] : tiles;
   const label = (t: Tile) => t.en;
-  const tag = open ? waitingLine(subs[open] ?? []) : null;
+  const tag = shut ? waitingLine(subs[shut] ?? []) : null;
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const all: (Tile & { mod?: string })[] = [...tiles.filter(t => t.page), ...Object.entries(subs).flatMap(([m, ts]) => ts.map(t => ({ ...t, mod: m })))];
-  const hits = q.trim() ? all.filter(t => t.en.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
   return (
     <div className={`home n${list.length}`}>
-      {!open && <label className="home-search"><Search size={18} /><input value={q} onChange={e => setQ(e.target.value)} placeholder={'Search a screen or ask TESRAX…'} /></label>}
-      {!open && hits.length > 0 && <div className="home-results">{hits.map(h => <button key={h.page} className="item tap" onClick={() => { setQ(''); go(h.page!); }}><div className="grow" style={{ textAlign: 'left' }}><div className="t">{label(h)}</div>{h.mod && <div className="s">{h.mod}</div>}</div></button>)}</div>}
-      {!open && !q && morning && (
+      {!shut && morning && (
         <div className="morning">
           <div className="grow">
             <div className="t">{greet}{morning.name ? `, ${morning.name}` : ''}.</div>
             <div className="s">{(() => { const w = [morning.orders ? `${plural(morning.orders, 'order')} waiting for your OK` : '', morning.toDeliver ? `${plural(morning.toDeliver, 'bill')} to plan for delivery` : '', morning.leaves ? `${plural(morning.leaves, 'leave request')}` : '', morning.advances ? `${plural(morning.advances, 'advance request')}` : '', morning.staffReqs ? `${plural(morning.staffReqs, 'staff request')} (returns, write-offs)` : ''].filter(Boolean); return w.length ? `${w.join(' · ')}.` : 'Nothing is waiting on you right now.'; })()}</div>
-            <div className="kv"><div><b>{morning.orders}</b><span>{'orders'}</span></div><div><b>{morning.toDeliver}</b><span>{'to deliver'}</span></div><div><b>{inr(morning.overdue)}</b><span>{'overdue'}</span></div><div><b>{inr(morning.cash)}</b><span>{'with staff'}</span></div></div>
+            <div className="hk"><button disabled={!morning.canReports} onClick={() => go('reports')}><b>{inr(morning.sales)}</b><span>{'Sales this month so far, before GST'}</span></button><button disabled={!morning.canOutstanding} onClick={() => go('outstanding')}><b>{inr(morning.outstanding)}</b><span>{'Outstanding'}</span></button></div>
             {morning.first && <button className="pill" onClick={() => go(morning.first!)}>{'Start here'} →</button>}
           </div>
         </div>
       )}
-      {open && <div className="home-back"><button onClick={() => onOpen(null)} aria-label="Back"><ArrowLeft /></button><span>{tiles.find(x => x.module === open) ? label(tiles.find(x => x.module === open)!) : open}</span></div>}
+      {shut && <div className="home-back"><button onClick={() => onOpen(null)} aria-label="Back"><ArrowLeft /></button><span>{tiles.find(x => x.module === shut) ? label(tiles.find(x => x.module === shut)!) : shut}</span></div>}
       {tag && <div className="home-tag">{tag}</div>}
       {list.map(t => (
         <button key={t.page ?? t.module} className={`tile ${t.module ? 'module' : ''}`} onClick={() => t.module ? onOpen(t.module) : go(t.page!)}>

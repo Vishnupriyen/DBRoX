@@ -43,7 +43,7 @@ export function Boost() {
               : <button className="btn primary small" onClick={() => void request(s.key, s.title)}>{'Request'}</button>}
           </div>); })}
       </div>
-      <div className="muted" style={{ fontSize: '.8125rem' }}>{'Credit and insurance come only from licensed banks, NBFCs and insurers. Hanubix connects you; it does not lend or sell insurance.'}</div>
+      <div className="muted" style={{ fontSize: 'var(--f2)' }}>{'Credit and insurance come only from licensed banks, NBFCs and insurers. Hanubix connects you; it does not lend or sell insurance.'}</div>
     </div>
   );
 }

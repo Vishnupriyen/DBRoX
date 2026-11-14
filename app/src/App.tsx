@@ -209,7 +209,7 @@ export default function App() {
   if (gate?.step === 'consent') return <><ConsentScreen me={me} onDone={() => setGate(null)} /><DialogHost /></>;
   if (locked) return <><LockScreen me={me} length={locked} onOpen={() => setLocked(null)} onLogout={logout} /><DialogHost /></>;
   const home = () => { setPage('home'); };
-  const go = (p: string) => { if (p.startsWith('module:')) { setPage('home'); setModule(p.slice(7)); } else setPage((ALIAS[p] ?? p) as Page); setRox(false); }; // a module (Bill, Inventory…) opens its tiles on Home
+  const go = (p: string) => { if (p.startsWith('module:')) { const m = p.slice(7); setPage('home'); setModule(m === 'collection' ? 'accountant' : m); } /* Collection now lives inside Accountant (14 Nov 2026) */ else setPage((ALIAS[p] ?? p) as Page); setRox(false); }; // a module (Bill, Inventory…) opens its tiles on Home
   const company = settings?.kind === 'company';
   const title = page in CO_TITLE ? CO_TITLE[page as CoPage] : TITLE[page as Page];
   const openRox = () => { sound.wake(); setRox(true); };
@@ -282,7 +282,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app${rox ? " has-engine" : ""}`}>
       <GradDefs />
       {page === 'home' ? (
         // Home: the logo with RETAIL INTELLIGENCE on the left; the person and the firm stacked on the right
@@ -325,7 +325,10 @@ export default function App() {
       <nav className="tabs">
         <button className={page === 'home' ? 'on' : ''} onClick={() => { home(); setModule(null); }}><span className="ic"><HomeIcon /></span>{'Home'}</button>
         {/* TESRAX: the core sits in the centre of the tab bar on every screen, for every role. It proposes, you approve. */}
-        <div className="fab"><TesraxCore size={62} n={420} onDark onActivate={openRox} label="TESRAX — double tap to open" /></div>
+        <div className="fab"><TesraxCore size={84} n={1250} onDark onActivate={openRox} label="TESRAX — double tap to open" />
+          {/* the word TESRAX inside the disc, curved under the sphere (founder, 14 Nov 2026) */}
+          <svg className="fab-word" viewBox="0 0 88 88" aria-hidden="true"><defs><path id="fabArc" d="M 6.5 44 A 37.5 37.5 0 0 0 81.5 44" /><linearGradient id="fabWordG" x1="0" x2="1"><stop offset="0" stopColor="#e3c983" /><stop offset=".5" stopColor="#fff1c9" /><stop offset="1" stopColor="#e3c983" /></linearGradient></defs>
+            <text dominantBaseline="central"><textPath href="#fabArc" startOffset="50%" textAnchor="middle">TESRAX</textPath></text></svg></div>
         <button className={page === 'more' ? 'on' : ''} onClick={() => { setPage('more'); setMoreKey(k => k + 1); }}><span className="ic"><Menu /></span>{'Menu'}</button>
       </nav>
     </div>

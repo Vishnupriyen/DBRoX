@@ -49,7 +49,7 @@ export function PickOrders() {
                 <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
                   <Pack product={p} size="lg" />
                   <div className="grow">
-                    <div className="t" style={{ fontSize: '1.125rem' }}>{p.name}</div>
+                    <div className="t" style={{ fontSize: 'var(--f4)' }}>{p.name}</div>
                     <div className="s">MRP {r.mrp} · {r.extra ? 'second MRP line' : <>{'ordered'} <b>{r.ordered}</b> pcs</>} · {'stock'} {pcsCs(stock, p.caseSize)}</div>
                     {(() => { const tot = rows.filter(x => x.product.id === p.id).reduce((a, x) => a + x.qty, 0); if (r.extra) return null; return tot < r.ordered ? <span className="badge bad"><AlertTriangle size={12} /> {'short'} {r.ordered - tot}</span> : tot > r.ordered ? <span className="badge warn">+{tot - r.ordered} {'extra'}</span> : null; })()}
                   </div>
@@ -58,7 +58,7 @@ export function PickOrders() {
                 <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
                   <div className="stepper"><button aria-label="less" onClick={() => upd(i, x => ({ ...x, qty: Math.max(0, x.qty - 1), done: false }))}><Minus /></button><input type="number" value={r.qty} onChange={e => upd(i, x => ({ ...x, qty: Math.max(0, Number(e.target.value)), done: false }))} aria-label="Quantity" /><button aria-label="more" onClick={() => upd(i, x => ({ ...x, qty: x.qty + 1, done: false }))}><Plus /></button></div>
                   {p.caseSize > 1 && <><button className="btn small" aria-label="less case" onClick={() => upd(i, x => ({ ...x, qty: Math.max(0, x.qty - p.caseSize), done: false }))}>{'− 1 case'}</button><button className="btn small" aria-label="more case" onClick={() => upd(i, x => ({ ...x, qty: x.qty + p.caseSize, done: false }))}>{'+ 1 case'}</button></>}
-                  <span className="badge navy" style={{ fontSize: '0.875rem' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}{!r.qty ? '0' : ''}</span>
+                  <span className="badge navy" style={{ fontSize: 'var(--f2)' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}{!r.qty ? '0' : ''}</span>
                 </div>
                 {r.batches.length > 0 && (
                   <div className="row" style={{ gap: 6 }}>

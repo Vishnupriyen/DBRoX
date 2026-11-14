@@ -76,11 +76,11 @@ export function Live() {
         return (
           <div key={r.trip.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <b style={{ fontSize: '1.0625rem' }}><Truck size={18} style={{ verticalAlign: -3, color: VAN_COLORS[ri % VAN_COLORS.length] }} /> {r.van} <span className="muted">· {r.driver}</span></b>
+              <b style={{ fontSize: 'var(--f4)' }}><Truck size={18} style={{ verticalAlign: -3, color: VAN_COLORS[ri % VAN_COLORS.length] }} /> {r.van} <span className="muted">· {r.driver}</span></b>
               <span className={`badge ${r.trip.status === 'out' ? 'ok' : r.trip.status === 'done' ? '' : 'warn'}`}>{r.trip.status === 'out' ? <><Navigation size={12} /> {'on the road'}</> : r.trip.status === 'done' ? 'back' : 'loading'}</span>
             </div>
             <div className="row" style={{ gap: 14 }}>
-              <div><div className="eyebrow">{'Stops'}</div><div className="num" style={{ fontSize: '1.375rem', fontWeight: 800 }}>{done}<span className="muted" style={{ fontSize: '0.875rem' }}>/{r.stops.length}</span></div></div>
+              <div><div className="eyebrow">{'Stops'}</div><div className="num" style={{ fontSize: 'var(--f5)', fontWeight: 800 }}>{done}<span className="muted" style={{ fontSize: 'var(--f2)' }}>/{r.stops.length}</span></div></div>
               <div><div className="eyebrow">{'Now at'}</div><div style={{ fontWeight: 700 }}>{cur?.name ?? (r.trip.status === 'done' ? 'Godown' : '—')}</div></div>
               <div><div className="eyebrow">{'Last location'}</div><div style={{ fontWeight: 700 }}>{mins == null ? '—' : mins < 1 ? 'just now' : `${mins} ${'min ago'}`}</div></div>
             </div>

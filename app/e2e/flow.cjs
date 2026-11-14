@@ -180,7 +180,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   while (await p.locator('button:has-text("End trip"), button:has-text("Cancel trip")').count()) { await p.locator('button:has-text("End trip"), button:has-text("Cancel trip")').first().click(); await p.waitForTimeout(300); await p.click('button:has-text("Yes")'); await p.waitForTimeout(600); }
   await shot('owner-live-ended');
   await home(); await tile('Delivery'); await tile('Delivery status'); await shot('owner-status');
-  await home(); await tile('Day close'); await shot('owner-dayclose-checklist');
+  await home(); await tile('Accountant'); await tile('Day close'); await shot('owner-dayclose-checklist');
   await p.click('.check:has-text("differences")'); await p.waitForTimeout(600); await shot('owner-differences');
   must(await p.locator('.card', { hasText: 'Bill stays' }).count(), 'each day-close choice says what it does ("Bill stays; shop gets ₹… back")');
   await backArrow(); must(await p.locator('h3', { hasText: 'Checklist' }).count(), 'back from the differences goes to the day-close checklist, not home');
@@ -189,15 +189,15 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   const mb = p.locator('.card .row button:has-text("Credit note")'); for (let k = 0; k < 30 && await mb.count(); k++) { await mb.first().click(); await p.waitForTimeout(500); const d = p.locator('.dialog-wrap', { hasText: 'with GST, taken off bill' }); must(await d.count() === 1 && /Reason:/.test(await d.innerText()), 'a credit note asks first: amount with GST, the bill and the reason'); await p.click('.dialog-wrap button:has-text("Make credit note")'); await p.waitForTimeout(500); }
   await p.click('button:has-text("Back to day close")').catch(() => p.click('text=← Day close')); await p.waitForTimeout(600);
   // remaining items: trips not ended → end trip is driver's; mark via Live? we end trip from owner side quickly by logging in as driver later. Approve expenses:
-  const exp = p.locator('.check:has-text("Expenses")'); if (await exp.count() && !(await exp.isDisabled())) { await exp.click(); await p.waitForTimeout(500); await p.click('button:has-text("Approve all")').catch(() => {}); await p.waitForTimeout(400); await home(); await tile('Day close'); }
+  const exp = p.locator('.check:has-text("Expenses")'); if (await exp.count() && !(await exp.isDisabled())) { await exp.click(); await p.waitForTimeout(500); await p.click('button:has-text("Approve all")').catch(() => {}); await p.waitForTimeout(400); await home(); await tile('Accountant'); await tile('Day close'); }
   const cashInputs = p.locator('input[aria-label^="Received from"]'); const ci = await cashInputs.count(); for (let i = 0; i < ci; i++) await cashInputs.nth(i).fill('1000');
   await shot('owner-dayclose-progress');
   if (await p.locator('button:has-text("Close day"):not([disabled])').count()) { await p.click('button:has-text("Close day")'); await p.waitForTimeout(300); await p.locator('button:has-text("Close day")').last().click(); await p.waitForTimeout(700); await shot('owner-day-closed'); }
   await home(); await tile('Accountant'); await shot('owner-accountant-icons'); await tile('P&L'); await shot('owner-pnl');
-  await home(); await tile('GST'); await shot('owner-gst');
+  await home(); await tile('Accountant'); await tile('GST'); await shot('owner-gst');
   await home(); await tile('Payroll'); await tile('Today'); await shot('owner-payroll-today');
-  await home(); await tile('Inventory'); await tile('Ageing'); await shot('owner-ageing');
-  await home(); await tile('Collection'); await tile('Outstanding'); await shot('owner-outstanding');
+  await home(); await tile('Stock'); await tile('Ageing'); await shot('owner-ageing');
+  await home(); await tile('Accountant'); await tile('Outstanding'); await shot('owner-outstanding');
   await home(); await tile('Sales'); await tile('Beats'); await shot('owner-beats');
   await home(); await tile('Bill'); await tile('Billed'); await shot('owner-billed-list');
   // P3: the bill editor stacks each line on a phone: no sideways scroll

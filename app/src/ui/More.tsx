@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Blocks, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat, ShieldCheck } from 'lucide-react';
+import { Blocks, Download, RefreshCw, LogOut, Trash2, Printer, X, Truck, Link2, Repeat, ShieldCheck, ShoppingBag, Store, Target, Route, ReceiptText, ClipboardList, PackageCheck, Map as MapIcon, CircleCheck, History, FileText, CarFront, Calculator, HandCoins, Wallet, QrCode, Landmark, ReceiptIndianRupee, TrendingUp, ArrowLeftRight, Percent, ChartColumn, Moon, Boxes, ShoppingCart, PackageX, Hourglass, BadgePercent, ChartBar, Users, CalendarCheck, IndianRupee, Settings2, Settings as SettingsIcon, Sparkles, CreditCard, Rocket, ChevronRight, FolderOpen } from 'lucide-react';
+import { MyFilesPage } from './MyFiles';
+import type { LucideIcon } from 'lucide-react';
 import { TesraxReport } from './TesraxReport';
 import { CompanyLinks } from './CompanyLinks';
 import { SIDE_KEY } from '../core/db';
@@ -17,19 +19,23 @@ import { BillEditor } from './BillEditor';
 import { cancelInvoice } from '../core/pipeline';
 import { errorLog } from './Safety';
 
-type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links' | 'tesrax';
+type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'links' | 'tesrax' | 'myfiles';
 
-// The Menu (was "More", 12 Nov 2026): every screen for this role, grouped the way the business works; then the app itself.
-const MENU: { group: string; mod?: ModuleKey; items: { page: string; label: string; owner?: boolean }[] }[] = [
-  { group: 'Bills', mod: 'bill', items: [{ page: 'orders-received', label: 'Orders received' }, { page: 'verify', label: 'Picked — to verify' }, { page: 'billed', label: 'Bills' }] },
-  { group: 'Delivery', mod: 'delivery', items: [{ page: 'plan', label: 'Delivery plan' }, { page: 'live', label: 'Live vans', owner: true }, { page: 'status', label: 'Delivery status' }, { page: 'trips', label: 'Trip reports' }, { page: 'print', label: 'Load sheet' }, { page: 'vans', label: 'Vans & drivers', owner: true }] },
-  { group: 'Money', mod: 'collection', items: [{ page: 'outstanding', label: 'Outstanding' }, { page: 'cash', label: 'Cash with staff', owner: true }, { page: 'cheques', label: 'Cheques & UPI' }, { page: 'dayclose', label: 'Day close', owner: true }] },
-  { group: 'Accounts', mod: 'accountant', items: [{ page: 'bank', label: 'Bank' }, { page: 'expenses', label: 'Expenses' }, { page: 'pnl', label: 'P&L', owner: true }, { page: 'cashflow', label: 'Cash flow', owner: true }, { page: 'gst', label: 'GST' }, { page: 'export', label: 'Export' }] },
-  { group: 'Sales', mod: 'sales', items: [{ page: 'newshops', label: 'New shops' }, { page: 'targets', label: 'Targets' }, { page: 'beat', label: 'Beats' }, { page: 'reports', label: 'Reports' }] },
-  { group: 'Stock', mod: 'inventory', items: [{ page: 'stock', label: 'Stock position' }, { page: 'stockin', label: 'Purchases' }, { page: 'damages', label: 'Damages' }, { page: 'ageing', label: 'Ageing' }, { page: 'claims', label: 'Claims' }, { page: 'stock-reports', label: 'Stock reports' }] },
-  { group: 'Staff', mod: 'payroll', items: [{ page: 'today', label: 'Today' }, { page: 'salary', label: 'Salary', owner: true }, { page: 'staff', label: 'Staff & access' }] },
-  { group: 'Business Boost', items: [{ page: 'boost', label: 'Offers and services' }] },
-  { group: 'Settings', items: [{ page: 'settings', label: 'Settings' }, { page: 'links', label: 'Company links' }, { page: 'tesrax', label: 'TESRAX report', owner: true }, { page: 'billing', label: 'Plan & billing', owner: true }] },
+// The Menu (was "More", 12 Nov 2026; cards 14 Nov 2026): every screen for this role, in the same six groups as Home (Sales, Bill,
+// Delivery, Accountant, Stock, Payroll) + Settings; Business Boost is its own gold card on top. Each item may need its own module.
+type MenuItem = { page: string; label: string; icon: LucideIcon; owner?: boolean; mod?: ModuleKey };
+const MENU: { group: string; icon: LucideIcon; mod?: ModuleKey; items: MenuItem[] }[] = [
+  { group: 'Sales', icon: ShoppingBag, mod: 'sales', items: [{ page: 'newshops', label: 'New shops', icon: Store }, { page: 'targets', label: 'Targets', icon: Target }, { page: 'beat', label: 'Beats', icon: Route }] },
+  { group: 'Bill', icon: ReceiptText, mod: 'bill', items: [{ page: 'orders-received', label: 'Orders', icon: ClipboardList }, { page: 'verify', label: 'Verify picked', icon: PackageCheck }, { page: 'billed', label: 'Bills', icon: ReceiptText }] },
+  { group: 'Delivery', icon: Truck, mod: 'delivery', items: [{ page: 'plan', label: 'Plan route', icon: MapIcon }, { page: 'live', label: 'Live vans', icon: Truck, owner: true }, { page: 'status', label: 'Status', icon: CircleCheck }, { page: 'trips', label: 'Trips', icon: History }, { page: 'print', label: 'Load sheet', icon: FileText }, { page: 'vans', label: 'Vans', icon: CarFront, owner: true }] },
+  { group: 'Accountant', icon: Calculator, items: [
+    { page: 'outstanding', label: 'Outstanding', icon: HandCoins, mod: 'collection' }, { page: 'cash', label: 'Staff cash', icon: Wallet, owner: true, mod: 'collection' }, { page: 'cheques', label: 'Cheques & UPI', icon: QrCode, mod: 'collection' },
+    { page: 'bank', label: 'Bank', icon: Landmark, mod: 'accountant' }, { page: 'expenses', label: 'Expenses', icon: ReceiptIndianRupee, mod: 'accountant' }, { page: 'pnl', label: 'P&L', icon: TrendingUp, owner: true, mod: 'accountant' },
+    { page: 'cashflow', label: 'Cash flow', icon: ArrowLeftRight, owner: true, mod: 'accountant' }, { page: 'gst', label: 'GST', icon: Percent, mod: 'gst' }, { page: 'reports', label: 'Reports', icon: ChartColumn, mod: 'accountant' },
+    { page: 'export', label: 'Export', icon: Download, mod: 'accountant' }, { page: 'dayclose', label: 'Day close', icon: Moon, owner: true, mod: 'bill' }] },
+  { group: 'Stock', icon: Boxes, mod: 'inventory', items: [{ page: 'stock', label: 'Stock', icon: Boxes }, { page: 'stockin', label: 'Purchases', icon: ShoppingCart }, { page: 'damages', label: 'Damages', icon: PackageX }, { page: 'ageing', label: 'Ageing', icon: Hourglass }, { page: 'claims', label: 'Claims', icon: BadgePercent }, { page: 'stock-reports', label: 'Reports', icon: ChartBar }] },
+  { group: 'Payroll', icon: Users, mod: 'payroll', items: [{ page: 'today', label: 'Today', icon: CalendarCheck }, { page: 'salary', label: 'Salary', icon: IndianRupee, owner: true }, { page: 'staff', label: 'Staff', icon: Users }] },
+  { group: 'Settings', icon: Settings2, items: [{ page: 'settings', label: 'Settings', icon: SettingsIcon }, { page: 'links', label: 'Company links', icon: Link2 }, { page: 'tesrax', label: 'TESRAX report', icon: Sparkles, owner: true }, { page: 'billing', label: 'Plan & billing', icon: CreditCard, owner: true }] },
 ];
 
 export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLogout: () => void; initial?: 'bills' | 'claims' | 'staff' | 'settings' | 'links' | 'tesrax'; onPlan?: () => void; go?: (p: string) => void }) {
@@ -54,12 +60,15 @@ export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLo
   if (page === 'claims') return <>{back}<Claims /></>;
   if (page === 'links') return <>{back}<CompanyLinks editable={role === 'owner'} /></>;
   if (page === 'tesrax') return <>{back}<TesraxReport /></>;
+  if (page === 'myfiles') return <MyFilesPage />;
   const open = (p: string) => { if (p === 'billing') onPlan?.(); else if (go) go(p); else if (['bills', 'claims', 'staff', 'settings', 'links', 'tesrax'].includes(p)) setPage(p as Page); };
   return (
     <div className="stack menu">
-      {boss && MENU.filter(g => !g.mod || !mods || mods[g.mod]).map(g => {
-        const items = g.items.filter(i => !i.owner || role === 'owner');
-        return items.length ? <section key={g.group}><h3 className="menu-grp">{g.group}</h3><div className="menu-chips">{items.map(i => <button key={i.page} className="menu-chip" onClick={() => open(i.page)}>{i.label}</button>)}</div></section> : null;
+      {boss && <button className="menu-boost" onClick={() => open('boost')}><span className="menu-boost-ic"><Rocket /></span><span className="grow"><b>Business Boost</b><small>Offers and services for your business</small></span><ChevronRight className="menu-boost-go" /></button>}
+      {boss && MENU.filter(g => !g.mod || !mods || mods[g.mod] !== false).map(g => {
+        const items = g.items.filter(i => (!i.owner || role === 'owner') && (!i.mod || !mods || mods[i.mod] !== false));
+        return items.length ? <section key={g.group} className="menu-card"><h3 className="menu-head"><span className="menu-head-ic"><g.icon /></span>{g.group}</h3>
+          <div className="menu-grid">{items.map(i => <button key={i.page} className="menu-chip" onClick={() => open(i.page)}><span className="menu-ic"><i.icon /></span><span className="menu-l">{i.label}</span></button>)}</div></section> : null;
       })}
       <section><h3 className="menu-grp">{'App'}</h3>
     <div className="list">
@@ -70,6 +79,7 @@ export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLo
         dump.errorLog = errorLog(); // what went wrong on this phone, for support
         downloadText(`Hanubix-backup-${today()}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
+      <button className="item" onClick={() => setPage('myfiles')}><FolderOpen /> <span className="grow">My files</span></button>
       <button className="item" onClick={async () => notify('Sync', await syncNow())}><RefreshCw /> <span className="grow">Sync now</span></button>
       {go && <button className="item" onClick={() => go('privacy')}><ShieldCheck /> <span className="grow">Privacy & security</span></button>}
       <button className="item" onClick={onLogout}><LogOut /> <span className="grow">{t('logout')}</span></button>

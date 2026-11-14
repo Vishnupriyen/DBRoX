@@ -236,7 +236,7 @@ const stages = {
         for (const [id] of mine) if (!srv.has(id)) { diff++; if (check.mismatches.length < 15) check.mismatches.push(`${person[0]} ${t} ${id}: only on the phone`); }
       }
       let outstanding = null;
-      if (role === 'owner' || role === 'office') { await ph.tile('Collection'); await ph.tile('Outstanding'); outstanding = (await ph.p.locator('.main').innerText()).match(/(₹[\d,\.]+)\s*in the market/)?.[1]; }
+      if (role === 'owner' || role === 'office') { await ph.tile('Accountant'); await ph.tile('Outstanding'); outstanding = (await ph.p.locator('.main').innerText()).match(/(₹[\d,\.]+)\s*in the market/)?.[1]; }
       check.phones[person[0]] = { records: same + diff, same, different: diff, notSent: dirty, outstanding };
       console.log(person[0], JSON.stringify(check.phones[person[0]]));
       await ph.ctx.close();
@@ -269,13 +269,13 @@ const stages = {
     const ph = await phone(who('office')); await ph.login(); await ph.gate(); await ph.sync();
     for (const t of ['tea and snacks 240', 'electricity bill 3850', 'outstanding list', 'today sales']) { const r = await ph.tesrax(t); note(`office typed "${t}" → ${r.saved ? 'saved' : 'shown'}: ${r.said.slice(0, 120)}`); }
     await ph.closeTesrax();
-    for (const [m, t] of [['Collection', 'Outstanding'], ['Bill', 'Billed'], ['Accountant', 'P&L']]) { await ph.home(); await ph.tile(m); await timed(`office: open ${t}`, () => ph.tile(t)); await ph.shot(t.toLowerCase().replace(/\W/g, '')); }
+    for (const [m, t] of [['Accountant', 'Outstanding'], ['Bill', 'Billed'], ['Accountant', 'P&L']]) { await ph.home(); await ph.tile(m); await timed(`office: open ${t}`, () => ph.tile(t)); await ph.shot(t.toLowerCase().replace(/\W/g, '')); }
     await ph.sync(); await ph.ctx.close();
   },
   async close() {
     const ph = await phone(who('owner')); await ph.login(); await ph.sync();
     const p = ph.p;
-    const open = async () => { await ph.home(); await ph.tile('Day close'); await p.waitForSelector('text=Checklist', { timeout: 120000 }); };
+    const open = async () => { await ph.home(); await ph.tile('Accountant'); await ph.tile('Day close'); await p.waitForSelector('text=Checklist', { timeout: 120000 }); };
     const item = t => p.locator(`.check:has-text("${t}")`);
     await open(); await ph.shot('dayclose');
     const cleared = [];

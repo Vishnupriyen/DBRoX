@@ -21,7 +21,7 @@ export function Splash() {
   return (
     <div className={`splash${phase === 'out' ? ' out' : ''}`} onClick={() => setPhase('out')} role="presentation">
       <div className="splash-halo" />
-      <TesraxCore size={240} n={900} interactive={false} onDark gather />
+      <TesraxCore size={240} n={1250} interactive={false} onDark gather />
       <div className="splash-logo"><Logo width={260} stroke={2.6} /></div>
       <div className="splash-powered">POWERED BY <b>TESRAX</b></div>
       <div className="splash-bar"><i /></div>

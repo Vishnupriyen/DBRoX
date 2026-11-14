@@ -72,7 +72,7 @@ export function NewShops() {
         <div key={s.id} className="card stack" style={{ gap: 8 }}>
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             {s.photo ? <img src={s.photo} alt="" style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover' }} /> : <div className="avatar" style={{ width: 72, height: 72 }}><Store /></div>}
-            <div className="grow"><div className="t" style={{ fontSize: '1.0625rem', fontWeight: 700 }}>{s.name}</div><div className="s">{s.owner} · {s.area} · {s.beat}</div><div className="s">{'added by'} {staff.get(s.salesmanId ?? '') ?? '—'}{s.lat ? ` · ${s.lat.toFixed(4)}, ${s.lng?.toFixed(4)}` : ` · ${'no location yet'}`}</div></div>
+            <div className="grow"><div className="t" style={{ fontSize: 'var(--f4)', fontWeight: 700 }}>{s.name}</div><div className="s">{s.owner} · {s.area} · {s.beat}</div><div className="s">{'added by'} {staff.get(s.salesmanId ?? '') ?? '—'}{s.lat ? ` · ${s.lat.toFixed(4)}, ${s.lng?.toFixed(4)}` : ` · ${'no location yet'}`}</div></div>
           </div>
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <button className="btn primary grow" onClick={() => approve(s)}><Check /> {'Approve & set credit'}</button>

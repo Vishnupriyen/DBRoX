@@ -31,6 +31,11 @@ export function TesraxCore({ state = 'idle', size = 160, n, pulse = 0, interacti
       const r = size * .345, mid = size / 2, co = Math.cos(L.angle), si = Math.sin(L.angle), ct = Math.cos(L.tilt), st = Math.sin(L.tilt);
       const points = pts.map((p, idx) => { const x = p[0] * co + p[2] * si; let z = -p[0] * si + p[2] * co; const y = p[1] * ct - z * st; z = p[1] * st + z * ct; const wave = reduced ? 0 : Math.sin(p[1] * 15 + now * .0022) * .008 + L.energy * Math.sin(p[1] * 17 - now * .007) * .025, k = (1 + wave) * 3.7 / (3.7 - z * .35); return { x: mid + x * r * k, y: mid + y * r * k, z, t: (x + 1) / 2, idx }; }).sort((a, b) => a.z - b.z);
       const k = gather && !reduced ? Math.min(1, Math.max(0, (now - born - 100) / 1300)) : 1, e = 1 - Math.pow(1 - k, 3);
+      if (onDark) { // inner light: a warm core glow behind the particles and a soft mint rim, so the sphere reads as lit glass, not flat dots
+        const h = g.createRadialGradient(mid - r * .18, mid - r * .22, r * .05, mid, mid, r * 1.25);
+        h.addColorStop(0, 'rgba(255,226,150,.30)'); h.addColorStop(.45, 'rgba(120,214,170,.12)'); h.addColorStop(1, 'rgba(0,0,0,0)');
+        g.globalCompositeOperation = 'source-over'; g.fillStyle = h; g.beginPath(); g.arc(mid, mid, r * 1.25, 0, Math.PI * 2); g.fill();
+      }
       g.globalCompositeOperation = onDark ? 'lighter' : 'source-over';
       for (const p of points) {
         if (e < 1) { p.x = mid + (p.x - mid) * e + scatter[p.idx][0] * r * (1 - e); p.y = mid + (p.y - mid) * e + scatter[p.idx][1] * r * (1 - e); }
@@ -41,6 +46,8 @@ export function TesraxCore({ state = 'idle', size = 160, n, pulse = 0, interacti
           : `rgba(${Math.round(9 + 183 * p.t)},${Math.round(134 + 17 * p.t)},${Math.round(95 - 34 * p.t)},${.18 + (p.z + 1) * .36})`;
         g.beginPath(); g.arc(p.x, p.y, Math.max(.5, (1.35 + (p.z + 1) * .75) * size / 430), 0, Math.PI * 2); g.fill();
       }
+      if (onDark) { const rim = g.createLinearGradient(mid - r, mid - r, mid + r, mid + r); rim.addColorStop(0, 'rgba(170,245,210,.38)'); rim.addColorStop(.5, 'rgba(170,245,210,0)'); rim.addColorStop(1, 'rgba(245,205,120,.34)');
+        g.globalCompositeOperation = 'source-over'; g.strokeStyle = rim; g.lineWidth = Math.max(.8, size / 110); g.beginPath(); g.arc(mid, mid, r * 1.08, 0, Math.PI * 2); g.stroke(); }
     };
     raf = requestAnimationFrame(frame); return () => cancelAnimationFrame(raf);
   }, [size, n, onDark, gather]);

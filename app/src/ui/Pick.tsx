@@ -65,8 +65,8 @@ export function Pick() {
       </div>
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{mine.length} <span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>{'bills'}</span></div><div className="l">{plural([...new Set(mine.map(i => i.shopId))].length, 'shop')} · {inr(total)}</div></div>
-          <div style={{ textAlign: 'right' }}><div className="v">{ticked.size}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{lines.length}</span></div><div className="l">{'lines picked'}</div></div>
+          <div><div className="v">{mine.length} <span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>{'bills'}</span></div><div className="l">{plural([...new Set(mine.map(i => i.shopId))].length, 'shop')} · {inr(total)}</div></div>
+          <div style={{ textAlign: 'right' }}><div className="v">{ticked.size}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{lines.length}</span></div><div className="l">{'lines picked'}</div></div>
         </div>
       </div>
       <div className="segmented" style={{ maxWidth: 320 }}>
@@ -83,10 +83,10 @@ export function Pick() {
               <button key={p.id} className={`item tap ${done ? '' : ''}`} style={{ opacity: done ? .55 : 1, alignItems: 'flex-start' }} onClick={() => toggle(p.id)}>
                 <Pack product={p} size="lg" />
                 <div className="grow">
-                  <div className="t" style={{ fontSize: '1.125rem' }}>{p.name}</div>
+                  <div className="t" style={{ fontSize: 'var(--f4)' }}>{p.name}</div>
                   <div className="s">MRP {p.mrp}</div>
                   <div className="row" style={{ marginTop: 6 }}>
-                    <span className="badge navy" style={{ fontSize: '0.9375rem', padding: '5px 12px' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}</span>
+                    <span className="badge navy" style={{ fontSize: 'var(--f3)', padding: '5px 12px' }}>{cs ? `${cs} ${'cs'}` : ''}{cs && pcs ? ' + ' : ''}{pcs ? `${pcs} ${'pcs'}` : ''}</span>
                     {l.batches.sort((a, b) => a.expiry.localeCompare(b.expiry)).map(b => <span key={b.batch} className="badge">{'batch'} <b>{b.batch}</b> · {b.qty}</span>)}
                   </div>
                 </div>
@@ -103,7 +103,7 @@ export function Pick() {
             const sInv = mine.filter(i => i.shopId === sid);
             return (
               <div key={sid} className="card">
-                <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: '1.0625rem' }}><span className="badge navy">{k + 1}</span> {shops.get(sid)}</b><span className="muted">{sInv.map(i => i.number).join(', ')}</span></div>
+                <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 'var(--f4)' }}><span className="badge navy">{k + 1}</span> {shops.get(sid)}</b><span className="muted">{sInv.map(i => i.number).join(', ')}</span></div>
                 <div className="stack" style={{ gap: 6, marginTop: 8 }}>
                   {sInv.flatMap(i => i.lines).map((l, k) => { const p = products.get(l.productId)!; return <div key={k} className="row" style={{ flexWrap: 'nowrap' }}><Pack product={p} /><span className="grow">{p.name}</span><b className="num">{l.qty + l.freeQty} pcs</b></div>; })}
                 </div>
@@ -117,7 +117,7 @@ export function Pick() {
         <div className="sticky-foot">
           {!allDone && <div className="muted grow"><AlertTriangle size={16} style={{ verticalAlign: -3 }} /> {'Tick every line before the van leaves'}</div>}
           {trip?.status === 'loaded'
-            ? <span className="badge ok" style={{ fontSize: '0.9375rem', padding: '8px 14px' }}><Check size={16} /> {'Loaded — waiting for driver'}</span>
+            ? <span className="badge ok" style={{ fontSize: 'var(--f3)', padding: '8px 14px' }}><Check size={16} /> {'Loaded — waiting for driver'}</span>
             : <button className="btn primary big grow" disabled={!allDone} onClick={async () => { if (trip) { await tripLoaded(trip.id); setTick(x => x + 1); } }}><Truck /> {'Van loaded'}</button>}
         </div>
       )}

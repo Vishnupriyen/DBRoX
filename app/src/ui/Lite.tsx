@@ -84,7 +84,7 @@ export function LiteDelivery() {
   const done = stops.filter(s => s.entry).length;
   return (
     <div className="stack">
-      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done today'}</div></div>
+      <div className="kpi navy"><div className="v">{done}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{stops.length}</span></div><div className="l">{'shops done today'}</div></div>
       <div className="route">
         {stops.map((s, k) => (
           <button key={s.id} className={`stop item tap ${s.entry ? 'done' : k === done ? 'now' : ''}`} style={{ opacity: s.entry ? .6 : 1 }} onClick={() => setOpen(s)}>

@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
     const p = ctx.pages()[0] || await ctx.newPage();
     if (slow) { const cdp = await ctx.newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }); }
     let t = Date.now(); await p.goto('http://localhost:4180'); await p.waitForSelector('.tile'); out[`${slow ? 'cheap' : 'normal'} · open app to home`] = (Date.now() - t) / 1000;
-    const screens = [['Collection', 'Outstanding', 'text=in the market'], ['Bill', 'Billed', '.item'], ['Bill', 'Orders received', '.sechead'], ['Day close', null, 'text=Checklist'], ['Accountant', 'P&L', '.kpi'], ['GST', null, '.main .card, .main .kpi'], ['Inventory', 'Stock', '.item'], ['Sales', 'Beats', '.chip']];
+    const screens = [['Accountant', 'Outstanding', 'text=in the market'], ['Bill', 'Billed', '.item'], ['Bill', 'Orders received', '.sechead'], ['Accountant', 'Day close', 'text=Checklist'], ['Accountant', 'P&L', '.kpi'], ['Accountant', 'GST', '.main .card, .main .kpi'], ['Stock', 'Stock position', '.item'], ['Sales', 'Beats', '.chip']];
     for (const [m, sub, ready] of screens) {
       await p.click('nav >> text=Home'); await p.waitForTimeout(400);
       t = Date.now(); await p.click(`.tile:has-text("${m}")`);

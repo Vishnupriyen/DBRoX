@@ -84,7 +84,7 @@ export function PayBox({ shop, preferInvoiceIds = [], onDone, onSkip }: { shop: 
       {chosen.length > 0 && <>
         <div className="eyebrow">{'2. Amount'} · {'due'} {inr(due)}</div>
         <div className="row" style={{ gap: 6 }}><button className="btn small" onClick={() => setAmount(due)}>{'Full'} {inr(due)}</button></div>
-        <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}><span className="amt num" style={{ fontSize: '1.75rem' }}>₹</span><input className="bigamount grow" type="text" inputMode="decimal" placeholder={String(due)} value={amount || ''} onChange={e => { const v = e.target.value.replace(/[^\d.]/g, ''); setAmount(Number(v) || 0); }} aria-label={t('amount')} /></div>
+        <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}><span className="amt num" style={{ fontSize: 'var(--f5)' }}>₹</span><input className="bigamount grow" type="text" inputMode="decimal" placeholder={String(due)} value={amount || ''} onChange={e => { const v = e.target.value.replace(/[^\d.]/g, ''); setAmount(Number(v) || 0); }} aria-label={t('amount')} /></div>
         {excess > 0 && <div className="alert ok"><Check /><div>{inr(excess)} {'extra — carried to the next bill automatically'}</div></div>}
         {shortBy > 0 && amount > 0 && <div className="alert"><AlertTriangle /><div>{'Short by'} {inr(shortBy)} — {'bill stays open; owner is told'}</div></div>}
         <div className="eyebrow">{'3. How'}</div>

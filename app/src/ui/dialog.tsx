@@ -39,7 +39,7 @@ export function DialogHost() {
         <h3>{cur.title}</h3>
         {cur.message && <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{cur.message}</p>}
         {cur.input && (
-          <input id="dialog-input" autoFocus style={{ width: '100%', padding: 12, fontSize: '1.25rem', marginBottom: 12, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--paper)' }}
+          <input id="dialog-input" autoFocus style={{ width: '100%', padding: 12, fontSize: 'var(--f5)', marginBottom: 12, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--paper)' }}
             inputMode={cur.input === 'number' ? 'decimal' : 'text'} value={val} onChange={e => setVal(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') close(val); }} />
         )}

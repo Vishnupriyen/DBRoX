@@ -126,8 +126,8 @@ if (require.main === module) (async () => {
     }
     // the Menu (was More, 12 Nov 2026) + engine
     await p.click('nav >> text=Menu'); await check('Menu');
-    for (const item of ['Bills', 'Claims', 'Staff & access', 'Company links', 'Settings', 'Plan & billing', 'Offers and services']) {
-      const sel = `.menu-chip:text-is("${item}")`;
+    for (const item of ['Bills', 'Claims', 'Staff', 'Company links', 'Settings', 'Plan & billing', 'Business Boost']) { // Menu cards, 14 Nov 2026
+      const sel = item === 'Business Boost' ? '.menu-boost' : `.menu-chip:has(.menu-l:text-is("${item}"))`;
       if (await p.$(sel)) { await p.click(sel); await check('Menu › ' + item); await p.click('nav >> text=Menu'); await p.waitForTimeout(200); }
     }
     // every role: Privacy & security (security standard, 13 Nov 2026) — choices, my data, PIN, and the owner's activity

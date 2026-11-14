@@ -57,7 +57,7 @@ export function Delivery() {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{stops.length ? <>{done}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{stops.length}</span></> : '—'}</div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
+          <div><div className="v">{stops.length ? <>{done}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{stops.length}</span></> : '—'}</div><div className="l">{t('delivery')} · {trip ? (trip.status === 'out' ? 'on the road' : trip.status === 'loaded' ? 'loaded, ready to go' : 'being loaded') : 'no trip today'}</div></div>
           {trip && trip.status === 'out' && <span className="badge gold"><Navigation size={12} /> live</span>}
         </div>
       </div>
@@ -144,7 +144,7 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
     <div className="stack" style={{ textAlign: 'center', paddingTop: 30 }}>
       <div className="avatar ok" style={{ width: 96, height: 96, margin: '0 auto', borderRadius: 28 }}><Check size={56} /></div>
       <h2>{stop.shop.name}</h2>
-      {paid && <div className="amt num" style={{ fontSize: '1.375rem' }}>{inr(paid.amount)} {'by'} {paid.mode === 'upi' ? 'UPI' : paid.mode === 'cheque' ? 'cheque' : 'cash'}</div>}
+      {paid && <div className="amt num" style={{ fontSize: 'var(--f5)' }}>{inr(paid.amount)} {'by'} {paid.mode === 'upi' ? 'UPI' : paid.mode === 'cheque' ? 'cheque' : 'cash'}</div>}
       {outcome === 'returned' && <div className="muted" data-testid="stop-summary">{'Shop refused everything'} · {inr(billTotal)} {'goes back to the godown — the owner decides the bill at day close.'}</div>}
       {outcome === 'unpaid' && <div className="muted" data-testid="stop-summary">{'Delivered'} {inr(delivered)} · {'no payment today — the money stays due.'}</div>}
       {paid && <div className="muted" data-testid="stop-summary">{'Delivered'} {inr(delivered)} · {'paid'} {inr(paid.amount)}{paid.amount < delivered ? ` · ${inr(r2(delivered - paid.amount))} ${'still due'}` : ''}</div>}
@@ -166,16 +166,16 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         <div className="sechead"><h3>{stop.shop.name}</h3></div>
         <div className="card stack" style={{ textAlign: 'center' }}>
           <div className="eyebrow">{'Goods delivered'}</div>
-          <div className="num" style={{ fontSize: '2.75rem', fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
+          <div className="num" style={{ fontSize: 'var(--f6)', fontWeight: 800, lineHeight: 1 }}>{inr(delivered)}</div>
           {shortValue > 0 && <div><span className="badge warn">{'Short'} {inr(shortValue)}</span></div>}
           {extraValue > 0 && <div><span className="badge warn">{'Extra'} {inr(extraValue)}</span></div>}
           <div className="row" style={{ justifyContent: 'center', gap: 8 }}>
-            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label={'1. Shop photo'} />{shopPhoto && <span className="muted" style={{ fontSize: '0.75rem' }}>{pos ? (distanceM != null ? `${distanceM} m ${'from shop'}` : 'location saved') : 'no GPS — marked'}</span>}</div>
+            <div className="stack" style={{ gap: 4 }}><PhotoButton facing="environment" onPhoto={takeShopPhoto} label={'1. Shop photo'} />{shopPhoto && <span className="muted" style={{ fontSize: 'var(--f1)' }}>{pos ? (distanceM != null ? `${distanceM} m ${'from shop'}` : 'location saved') : 'no GPS — marked'}</span>}</div>
             {grn && <PhotoButton facing="environment" onPhoto={setBillPhoto} label={'2. Signed bill / GRN'} />}
           </div>
           <p className="muted" style={{ margin: 0 }}>{t('shopConfirm')}</p>
           <button className="btn ok-huge" disabled={!ready} onClick={() => confirmDelivery(false)} aria-label="Shop confirms delivery">{'Goods received'} <Check size={40} /></button>
-          {!ready && <div className="muted" style={{ fontSize: '0.75rem' }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
+          {!ready && <div className="muted" style={{ fontSize: 'var(--f1)' }}>{grn ? 'Both photos are needed' : 'Shop photo is needed'}</div>}
           <button className="btn ghost" onClick={() => setStep('items')}><ArrowLeft /> {'Back'}</button>
         </div>
       </div>

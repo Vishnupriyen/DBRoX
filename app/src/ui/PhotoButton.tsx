@@ -14,14 +14,14 @@ export function PhotoButton({ onPhoto, facing = 'environment', label }: { onPhot
   const open = (r: React.RefObject<HTMLInputElement | null>) => { if (embedded) setNote('In this preview the browser may block the camera. It works in the installed app.'); r.current?.click(); };
   return (
     <div className="stack" style={{ gap: 6 }}>
-      {label && <div className="muted" style={{ fontSize: '0.75rem' }}>{label}</div>}
+      {label && <div className="muted" style={{ fontSize: 'var(--f1)' }}>{label}</div>}
       <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
         <button type="button" className={`btn grow ${taken ? 'ok-soft' : ''}`} onClick={() => open(cam)}>{taken ? <Check /> : <Camera />} {taken ? ('Taken ✓') : t('takePhoto')}</button>
         <button type="button" className="btn" onClick={() => open(gal)} aria-label="Upload photo"><Upload /></button>
       </div>
       <input ref={cam} type="file" accept="image/*" capture={facing} style={{ display: 'none' }} onChange={got} />
       <input ref={gal} type="file" accept="image/*" style={{ display: 'none' }} onChange={got} />
-      {note && <div className="muted" style={{ fontSize: '0.75rem' }}>{note}</div>}
+      {note && <div className="muted" style={{ fontSize: 'var(--f1)' }}>{note}</div>}
     </div>
   );
 }

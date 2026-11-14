@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Check, Download, Plus, X } from 'lucide-react';
+import { Check, Download, FileText, Plus, X } from 'lucide-react';
+import { PrintTable } from './MyFiles';
 import { commit, hasErrors, validate, type Proposal, type Row, type Validation } from '../core/proposals';
 import { CHEQUE_FIELDS, refreshOrderRow } from '../core/engine';
 import { downloadSheet } from '../core/readers';
@@ -176,6 +177,7 @@ export function ApproveTable({ proposal, onDone }: Props) {
 
 export function ReadTable({ table }: { table: { columns: string[]; rows: (string | number)[][]; name: string } }) {
   const role = useRole();
+  const [pdf, setPdf] = useState(false);
   return (
     <div>
       <div className="tablewrap">
@@ -187,7 +189,11 @@ export function ReadTable({ table }: { table: { columns: string[]; rows: (string
           </tbody>
         </table>
       </div>
-      {table.rows.length > 0 && !(role && FIELD.includes(role)) && <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> {t('download')}</button>}
+      {/* TESRAX answers in place (item 6): Excel or PDF, right here — the file is kept in My files too */}
+      {table.rows.length > 0 && !(role && FIELD.includes(role)) && <div className="row" style={{ marginTop: 8, gap: 8 }}>
+        <button className="btn small ghost" onClick={() => downloadSheet(table.name, table.columns, table.rows)}><Download /> Excel</button>
+        <button className="btn small ghost" onClick={() => setPdf(true)}><FileText /> PDF</button></div>}
+      {pdf && <PrintTable title={table.name} sheets={[{ name: table.name, header: table.columns, rows: table.rows }]} onClose={() => setPdf(false)} />}
     </div>
   );
 }

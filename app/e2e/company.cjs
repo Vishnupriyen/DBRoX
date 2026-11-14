@@ -52,7 +52,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
     await p.click('.tile:has-text("Bill")'); await p.click('.tile:has-text("Orders received")'); await p.waitForTimeout(1200);
     if (!(await p.$(`.card:has-text("${shopName}"):has-text("Kaveri")`))) fail('distributor does not see the rep\'s order'); else step('distributor sees the rep\'s order');
     await shot('db-orders');
-    await p.click('nav >> text=Home'); await p.click('.tile:has-text("Inventory")'); await p.click('.tile:has-text("Company bills")'); await p.waitForTimeout(800);
+    await p.click('nav >> text=Home'); await p.click('.tile:has-text("Stock")'); await p.click('.tile:has-text("Company bills")'); await p.waitForTimeout(800);
     await p.click('.list .item.tap:has-text("To receive")'); await p.waitForSelector('text=Anything short or damaged?');
     await p.fill('textarea', 'coconut oil 1 case short'); await p.click('text=Read it'); await p.waitForSelector('text=Short:');
     await p.click('button:has-text("Receive")'); await p.click('.dialog button:has-text("Receive")'); await p.waitForSelector('text=Company bills'); step('distributor received the bill with 1 case short');

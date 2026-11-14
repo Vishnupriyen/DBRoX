@@ -60,7 +60,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
     <div className="stack">
       <div className="kpi navy">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div><div className="v">{billsToday}<span style={{ fontSize: '1rem', color: 'var(--on-navy-2)' }}>/{plural(bills, 'bill')}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
+          <div><div className="v">{billsToday}<span style={{ fontSize: 'var(--f3)', color: 'var(--on-navy-2)' }}>/{plural(bills, 'bill')}</span></div><div className="l">{'today'} · {plan.filter(x => x.van.id && x.shops.length).length} {'van(s)'} · {total - unplanned} {'stops'}{unplanned ? ` · ${unplanned} ${'tomorrow'}` : ''}</div></div>
           <button className="btn small" style={{ background: 'transparent', color: 'var(--on-navy)', borderColor: 'var(--on-navy-2)' }} onClick={() => setMode('ask')}>{mode === 'rox' ? 'TESRAX plan' : 'My route'} · {'change'}</button>
         </div>
       </div>
@@ -68,7 +68,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
       {plan.filter(x => x.van.id || x.shops.length).map(p => (
         <div key={p.van.id || 'tomorrow'} className="card stack" style={{ gap: 8, borderStyle: p.van.id ? 'solid' : 'dashed' }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
-            <b style={{ fontSize: '1.0625rem' }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
+            <b style={{ fontSize: 'var(--f4)' }}>{p.van.id ? <Truck size={18} style={{ verticalAlign: -3 }} /> : <Clock size={18} style={{ verticalAlign: -3 }} />} {p.van.name} <span className="muted">{p.van.number}</span></b>
             <span className={`badge ${p.van.id ? 'navy' : 'warn'}`}>{plural(p.shops.length, 'stop')} · {inr(p.shops.reduce((a, s) => a + s.value, 0))}{p.van.id && km(p) ? ` · ${km(p)}` : ''}</span>
           </div>
           <div className="route">
