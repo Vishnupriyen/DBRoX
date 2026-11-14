@@ -680,3 +680,4 @@ body[data-toast] .main { padding-top: var(--toast-pad, 72px); }
 .linecard.short { border-color: var(--bad); } .linecard.extra { border-color: var(--warn); }
 .lc-note { font-size: var(--f1); color: var(--mut); }
 .lc-short { color: var(--bad); font-weight: 600; } .lc-extra { color: var(--warn); font-weight: 600; }
+.linecard .lc-boxes.pick-first { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); } .linecard .lc-boxes.pick-first .lc-box:first-child input { font-size: var(--f5); font-weight: 700; }

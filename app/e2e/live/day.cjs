@@ -156,8 +156,8 @@ const stages = {
   },
   async bill() {
     const ph = await phone(who('owner')); await ph.login(); await ph.sync();
-    await ph.tile('Bill'); await ph.tile('to verify'); await ph.shot('verify'); let n = 0;
-    const dn = ph.p.locator('button:has-text("Done → bill")');
+    await ph.tile('Bill'); await ph.tile('Verify picked'); await ph.shot('verify'); let n = 0;
+    const dn = ph.p.locator('button:has-text("Make bill")');
     await timed('owner: bill every picked order', async () => { while (await dn.count()) { await dn.first().click(); await ph.p.waitForTimeout(700); n++; if (n > 80) break; } });
     results['orders billed'] = n; await ph.shot('billed'); await ph.sync(); await ph.ctx.close();
   },

@@ -101,6 +101,8 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - 2b Orders received: list of order cards → stacked line cards (Qty/Rate/Disc %, Ordered N note, add with last-5 chips, activity on
   the order), Approve one tap + Undo (core/orderEdit.ts), Excel + Bill reports in the header; Disc % 0–100 guard (phone + server);
   TESRAX download/open/approve order (core/tesraxOrders.ts). Tests: orders-received, part2-tesrax; e2e flow edits + approves.
+- 2c Verify picked (core/verify.ts, ui/Approve.tsx): Ordered/Picked per line (Picked first, defaults to Ordered), Verify all, red short /
+  amber extra, Rate + Disc % editable, Make bill blocked with the reason (stock); godown view hides rates (no godown tile yet). Test: verify-picked.
 
 ## Waiting for the owner
 - **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the

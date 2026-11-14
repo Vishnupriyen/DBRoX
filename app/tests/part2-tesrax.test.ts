@@ -37,3 +37,9 @@ describe('2b Orders received', () => {
     expect((await db.orders.toArray()).some(o => o.shopId === shop.id && o.status === 'approved')).toBe(true);
   });
 });
+
+describe('2c Verify picked', () => {
+  for (const t of ['verify picked', 'open verify picked', 'picked orders']) it(`"${t}" opens Verify picked`, async () => {
+    const r = await say(t); expect(r.go).toBe('verify'); expect(r.text).toBe('Opening Verify picked.');
+  });
+});

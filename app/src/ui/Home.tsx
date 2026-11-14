@@ -87,7 +87,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
         ];
         sub.bill = [
           { page: 'orders-received', icon: ClipboardList, en: 'Orders received', count: c.toApproveOrders, tone: 'bad' },
-          { page: 'verify', icon: ClipboardCheck, en: 'Picked — to verify', count: c.toApprove, tone: 'warn' },
+          { page: 'verify', icon: ClipboardCheck, en: 'Verify picked', count: c.toApprove, tone: 'warn' },
           { page: 'billed', icon: Receipt, en: 'Billed' },
         ];
         const gotIds = new Set((await db.receipts.toArray()).map(r => r.inboundId));

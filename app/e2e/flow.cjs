@@ -104,9 +104,9 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Stock'); await p.locator('.item.tap').first().click(); await p.waitForTimeout(500); await p.locator('.item.tap').first().click(); await p.waitForTimeout(500); await shot('godown-stock-lots');
   await logout();
 
-  // Owner: verify → Done → bill; plan (two buttons); load sheet print
-  await loginAs('Vishnu (Owner)'); await tile('Bill'); await tile('to verify'); await shot('owner-verify');
-  const dn = p.locator('button:has-text("Done → bill")'); while (await dn.count()) { await dn.first().click(); await p.waitForTimeout(700); }
+  // Owner: verify → Make bill; plan (two buttons); load sheet print
+  await loginAs('Vishnu (Owner)'); await tile('Bill'); await tile('Verify picked'); await shot('owner-verify');
+  const dn = p.locator('button:has-text("Make bill"):not([disabled])'); while (await dn.count()) { await dn.first().click(); await p.waitForTimeout(700); }
   await shot('owner-billed');
   { const said = Number(((await p.textContent('.alert.ok b').catch(() => '')) || '').match(/^(\d+) bills?/)?.[1] ?? 0); const nChips = await p.locator('.alert.ok button').count();
     must(said > 0 && nChips === said, `every bill made has its chip (${said} made, ${nChips} shown)`);

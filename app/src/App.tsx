@@ -54,7 +54,7 @@ import { dailyPurge, forgetSession, purgePersonal } from './core/myfiles';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, string>> = {
-  'orders-received': 'Orders received', verify: 'Picked — to verify', billed: 'Billed',
+  'orders-received': 'Orders received', verify: 'Verify picked', billed: 'Billed',
   newshops: 'New shops', targets: 'Targets', beat: "Today's beat", myday: 'My day', newshop: 'New shop', 'orders-excel': 'Orders Excel',
   stockin: 'Purchases / stock in', stock: 'Stock position', damages: 'Damages', ageing: 'Ageing', 'stock-reports': 'Stock reports',
   plan: 'Delivery plan', live: 'Live vans', status: 'Delivery status', trips: 'Trip reports', load: 'Load vans', print: 'Load sheet', trip: 'My trip', pick: 'Pick orders',
@@ -232,7 +232,7 @@ export default function App() {
     switch (page as Page) {
       case 'home': return <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
       case 'orders-received': return <OrdersReceived go={go} />;
-      case 'verify': return <Approve go={go} />;
+      case 'verify': return <Approve go={go} role={me.role} />;
       case 'billed': case 'bills': return <More role={me.role} onLogout={logout} initial="bills" />;
       case 'newshops': return <NewShops />;
       case 'targets': return <Targets />;
