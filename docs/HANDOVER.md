@@ -91,6 +91,8 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - Plan locked: Hostinger KVM 2 → website → our control panel → distributor dashboard → company dashboard; ERP integrations later.
 
 ## Waiting for the owner
+- **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the
+  main session; ui-designer, security-operations and tesrax-language-specialist reviews of Part 1 were started 14 Nov evening.
 - **Correction round Part 1 (look & TESRAX) BUILT and pushed on the founder's word (14 Nov, "directly push") before the full gate
   finished** — check the gate result for this push first; fix anything red before Part 2. Done: sphere 88 px with TESRAX inside the
   disc (approved mock v5), bar on every screen incl. TESRAX, opening screen same sphere; Home = 6 modules (Sales, Bill, Delivery,

@@ -44,6 +44,11 @@ Specialists, whenever their area is touched: **gst-accounts-specialist** (bills,
 P&L, e-invoice, GSTR-1, Tally — after step 4, before release) and **tesrax-language-specialist** (any TESRAX change, and
 every week on the TESRAX report's misses).
 Small fixes may skip 1–3, never 5. The owner is told about a step only when it changes what they get.
+**Work only through the team (owner, 14 Nov 2026).** The main session is the manager only: it never builds, designs, tests or
+reviews by itself — every piece of work is handed to the right agent above (developer builds, ui-designer checks the look,
+security-operations checks data and safety, tesrax-language-specialist checks any TESRAX change, gst-accounts-specialist any money
+or tax change, independent-tester every change). Each part: business-analyst → systems-engineer → ux-designer → developer →
+independent-tester → ui-designer → security-operations (+ specialists for their areas) → push. Cheap models for checks.
 **Using usage wisely (owner, 13 Nov 2026 — every chat and every agent follows this):**
 - **Ask before any big job.** Split it into parts; show the owner each part's result and get his yes before the next. Never run a
   whole round ("build it complete") as one long job — tell him the size first ("about N parts").
