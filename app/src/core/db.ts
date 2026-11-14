@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { billLotsProblem } from './lots';
+import { numberLines, pickedLines } from './lines';
 import type {
   AuditEntry, BankLine, Batch, Claim, ClaimEntry, Company, CreditNote, Expense, Invoice,
   Order, Payment, Product, Purchase, Scheme, Settings, Shop, Staff, TableName, Van, Base, Visit, Target, Trip, DayClose, DayPlan, LiteEntry, CheckIn, LeaveRequest, Advance,
@@ -322,6 +323,13 @@ function photosFrom(logged: unknown, now: unknown): unknown {
   return logged;
 }
 
+/** every order saved carries line numbers on its lines and picked rows (Part 2, 2a0); an old order gets them when next saved */
+function withLineNumbers(o: Order): Order {
+  if (!Array.isArray(o.lines)) return o;
+  const lines = numberLines(o.lines);
+  return { ...o, lines, ...(Array.isArray(o.picked) ? { picked: pickedLines({ lines, picked: o.picked }) } : {}) };
+}
+
 // A Change set = everything one ✓ approval writes. Written in one transaction with an
 // audit entry per record, so the whole approval can be undone later.
 export class ChangeSet {
@@ -331,6 +339,7 @@ export class ChangeSet {
   constructor(opts: { noAudit?: boolean } = {}) { this.opts = opts; }
   private writes: { table: TableName; rec: Base; action: string }[] = [];
   put<T extends Base = Base>(table: TableName, rec: object, action = 'save'): T {
+    if (table === 'orders') rec = withLineNumbers(rec as Order);
     const s = stamp(rec as Partial<Base>) as unknown as T;
     this.writes.push({ table, rec: s, action });
     return s as T;

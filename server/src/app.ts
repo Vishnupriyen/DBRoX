@@ -7,7 +7,7 @@ import { config, rates } from './config.js';
 import { hashPin, pinFits, pinLength, readToken, signToken, verifyPin, type Claims } from './auth.js';
 import { logEvent, phoneMark, rotateLog, type SecEvent } from './seclog.js';
 import { addConsent, CONSENT_KINDS, consentsOf, DUE_DAYS, eraseSubject, exportPerson, firmConsent, grievance, PRIVACY_VERSION, retention } from './privacy.js';
-import { badLines, badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
+import { badLines, badMoney, badMove, billAddsUp, billLotsOk, cleanText, creditNoteRoom, distributorRule, keepCreditLimit, keepDeliveryResult, keepLineNumbers, keepOwnerOnly, mayDownload, numberIssued, OWN_ROWS, weakPin } from './rules.js';
 import { clearHits, hit, isLocked, tooMany } from './limits.js';
 import { scanWithAI, type ScanKind } from './scan.js';
 import { BIG_TABLES, companyDocs, companyReport, scopeFor } from './reports.js';
@@ -293,6 +293,7 @@ export async function buildApp(pool: pg.Pool, opts: { owner?: pg.Pool } = {}) {
           if (ch.table === 'products') data = keepCompanyFields(data as never, ex as never);
           // an owner or office copy made before the driver's delivery result never wipes it
           if (ch.table === 'invoices') data = keepDeliveryResult(c.r, data, ex);
+          if (ch.table === 'orders') data = keepLineNumbers(data, ex); // an older phone never wipes order line numbers
           if (ch.table === 'shops') data = keepCreditLimit(c.r, data, ex);
         }
         data = keepOwnerOnly(c.r, OWNER_ONLY[ch.table], data, ex);

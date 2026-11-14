@@ -155,7 +155,7 @@ function Differences({ invoices, onBack }: { invoices: Invoice[]; onBack: () => 
           <div key={inv.id} className="card stack" style={{ gap: 8 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}><div><b>{sh?.name}</b><div className="muted"><span className="billno">{inv.number}</span> · {inr(inv.total)}</div></div>{sh?.pref && <span className="badge">{'usually'}: {sh.pref === 'modified' ? 'modified bill' : 'credit note'}</span>}</div>
             <div className="list">
-              {inv.delivery?.shortages.map(x => <div key={x.productId} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge bad">−{x.qty} · {x.reason}</span></div>)}
+              {inv.delivery?.shortages.map((x, k) => <div key={k} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge bad">−{x.qty} · {x.reason}</span></div>)}
               {inv.delivery?.excess?.map(x => <div key={x.productId} className="row"><span className="grow">{products.get(x.productId)}</span><span className="badge warn">+{x.qty} {'extra'}</span></div>)}
             </div>
             <div className="row" style={{ flexWrap: 'nowrap' }}>

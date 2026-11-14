@@ -94,6 +94,8 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
 - Part 1 follow-ups: "orders to approve"/"needs ok"/"approvals" answer in place (new + needs-OK table, Open button; "approve" still opens
   the screen); "aprove"/"loadsheet" typos; unknown role hides owner-only files; file kind tagged at the source; forgetSession() on every
   way out (offline too long, access removed, kicked). Test: app/tests/part1-followups.test.ts.
+- 2a0 line numbers: OrderLine/picked `line` (stable 1,2,3…, ChangeSet numbers every order saved), shortage/excess `line` = bill line
+  index; core/lines.ts (lineOf, pickedLines, shortageLines); server keepLineNumbers. Old records work unchanged. Tests: app line-numbers, server line-numbers.
 
 ## Waiting for the owner
 - **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the

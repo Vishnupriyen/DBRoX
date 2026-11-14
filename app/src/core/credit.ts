@@ -10,7 +10,7 @@ import { billIsInter, lineCredits, taxOn } from './gst';
 import { nextNumbers } from './sync';
 import type { ClaimEntry, CreditNote, CreditNoteLine, Invoice, Product, Scheme } from './types';
 
-export interface CreditItem { productId: string; paid: number; free: number; restock: boolean }
+export interface CreditItem { productId: string; paid: number; free: number; restock: boolean; line?: number } // line: the bill line (index) to credit first
 
 /** what is still open on each bill line: paid and free pieces not yet credited, and the money behind them */
 export function lineRoom(inv: Invoice, cns: CreditNote[]) {
@@ -31,7 +31,8 @@ export function buildCreditNote(inv: Invoice, cns: CreditNote[], items: CreditIt
   for (const it of items) {
     let paid = Math.max(0, Math.floor(it.paid)), free = Math.max(0, Math.floor(it.free));
     if (!paid && !free) continue;
-    const idx = inv.lines.map((_, i) => i).filter(i => inv.lines[i].productId === it.productId);
+    const idx = inv.lines.map((_, i) => i).filter(i => inv.lines[i].productId === it.productId)
+      .sort((a, b) => (a === it.line ? -1 : b === it.line ? 1 : 0)); // the named line first, then the product's other lines
     const name = inv.lines[idx[0]]?.name ?? 'this item';
     if (!idx.length) throw new Error(`Bill ${inv.number} has no ${name}.`);
     const paidOpen = idx.reduce((a, i) => a + room[i].paid, 0), freeOpen = idx.reduce((a, i) => a + room[i].free, 0);

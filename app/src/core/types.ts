@@ -152,7 +152,7 @@ export interface Scheme extends Base {
   budget?: number; // company schemes: the most the company will pay out on this scheme
 }
 
-export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number } // batch/MRP chosen by the picker
+export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number; line?: number } // batch/MRP chosen by the picker; line = stable number 1,2,3… (core/lines.ts)
 
 export interface Order extends Base {
   shopId: string;
@@ -171,7 +171,7 @@ export interface Order extends Base {
   issues: string[];
   date: string;
   invoiceIds: string[];
-  picked?: { productId: string; qty: number; batchId?: string; mrp?: number }[]; // what the godown actually packed
+  picked?: { productId: string; qty: number; batchId?: string; mrp?: number; line?: number }[]; // what the godown actually packed; line = the order line it packs
   pickedBy?: string;
   pickedAt?: string;
   flagsPending?: boolean;      // a company rep's order just arrived: checked (stock, credit) on the distributor's phone
@@ -221,8 +221,8 @@ export interface Invoice extends Base {
   deliveryStatus: 'pending' | 'planned' | 'out' | 'delivered' | 'partial' | 'returned' | 'undelivered';
   delivery?: {
     at: string; by: string; photo?: string; lat?: number; lng?: number;
-    shortages: { productId: string; qty: number; reason: string; paid?: number; free?: number }[]; // qty = pieces; paid/free = how many were charged vs scheme-free
-    excess?: { productId: string; qty: number }[];
+    shortages: { productId: string; qty: number; reason: string; paid?: number; free?: number; line?: number }[]; // qty = pieces; paid/free = how many were charged vs scheme-free; line = bill line index (old: first line of the product)
+    excess?: { productId: string; qty: number; line?: number }[];
     shopPhoto?: string; billPhoto?: string; distanceM?: number;
   };
   diffAction?: 'modified' | 'credit_note'; // owner's choice at day close for delivery differences

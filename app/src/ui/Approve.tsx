@@ -3,6 +3,7 @@ import { Check, X, Printer, Lock, Minus, Plus } from 'lucide-react';
 import { db, getSettings } from '../core/db';
 import { billValueOf } from '../core/billing';
 import { isInterState } from '../core/gst';
+import { orderLineFor, pickedLines } from '../core/lines';
 import { approvePicked, billingLockedBy, rejectOrder } from '../core/pipeline';
 import { inr, plural, showTime } from '../core/i18n';
 import { askText } from './dialog';
@@ -39,10 +40,10 @@ export function Approve({ go }: { go?: (p: string) => void }) {
     })();
   }, [tick]);
 
-  const pickedOf = (o: Order): NonNullable<Order['picked']> => o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }));
+  const pickedOf = (o: Order): NonNullable<Order['picked']> => pickedLines(o);
   const qtyAt = (o: Order, i: number) => edit[o.id]?.[i] ?? pickedOf(o)[i].qty;
   // the amount shown is what the bill will be: the same schemes, tax and round-off as billing (core/billing.ts)
-  const value = (o: Order & { shop: Shop }) => billValueOf(pickedOf(o).map((pk, i) => ({ productId: pk.productId, qty: qtyAt(o, i), rate: o.lines.find(x => x.productId === pk.productId)?.rate ?? 0 })), products, schemes, isInterState(o.shop, cfg ?? { stateCode: '' }));
+  const value = (o: Order & { shop: Shop }) => billValueOf(pickedOf(o).map((pk, i) => ({ productId: pk.productId, qty: qtyAt(o, i), rate: orderLineFor(o, pk)?.rate ?? 0 })), products, schemes, isInterState(o.shop, cfg ?? { stateCode: '' }));
   const [saving, setSaving] = useState<string | null>(null);
   const done = async (o: Order) => {
     if (saving) return; setSaving(o.id);

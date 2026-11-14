@@ -24,7 +24,7 @@ export function DeliveryStatus() {
           {open.delivery?.billPhoto && <img src={open.delivery.billPhoto} alt="Bill" style={{ width: 150, height: 110, objectFit: 'cover', borderRadius: 12 }} />}
         </div>
         <div className="muted"><MapPin size={14} style={{ verticalAlign: -2 }} /> {open.delivery?.lat ? `${open.delivery.lat.toFixed(5)}, ${open.delivery.lng?.toFixed(5)}` : 'no location'}{open.delivery?.distanceM != null && <span className={`badge ${open.delivery.distanceM > 150 ? 'bad' : 'ok'}`} style={{ marginLeft: 6 }}>{open.delivery.distanceM} m {'from shop'}</span>}</div>
-        {open.delivery?.shortages.map(x => <div key={x.productId} className="row"><span className="grow">{x.productId}</span><span className="badge bad">−{x.qty} {x.reason}</span></div>)}
+        {open.delivery?.shortages.map((x, k) => <div key={k} className="row"><span className="grow">{x.productId}</span><span className="badge bad">−{x.qty} {x.reason}</span></div>)}
         {open.diffAction && <span className="badge">{open.diffAction === 'modified' ? 'bill revised' : 'credit note made'}</span>}
       </div>
     </div>

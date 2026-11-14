@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react';
 import { Check, ArrowLeft, AlertTriangle, PackageOpen, Minus, Plus, Copy } from 'lucide-react';
 import { db, today } from '../core/db';
 import { pickOrder } from '../core/pipeline';
+import { lineOf } from '../core/lines';
 import { Pack } from './Pack';
 import { useBack } from './useBack';
 import type { Batch, Order, Product, Shop } from '../core/types';
 
-interface Row { product: Product; ordered: number; qty: number; batches: Batch[]; batchId?: string; mrp: number; done: boolean; extra?: boolean }
+interface Row { line: number; product: Product; ordered: number; qty: number; batches: Batch[]; batchId?: string; mrp: number; done: boolean; extra?: boolean }
 
 // Godown: pick each approved order. Qty up or down, batch (oldest first), MRP — never a new product.
 /** stock with its unit: "96 pcs (8 cs)" — never a bare number */
@@ -25,10 +26,10 @@ export function PickOrders() {
   const start = async (o: Order & { shop: Shop }) => {
     const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
     const all = (await db.batches.toArray()).filter(b => b.qty > 0 && b.expiry >= today()).sort((a, b) => a.expiry.localeCompare(b.expiry));
-    setRows(o.lines.map(l => {
+    setRows(o.lines.map((l, li) => {
       const p = products.get(l.productId)!; const bs = all.filter(b => b.productId === p.id);
       const stock = bs.reduce((a, b) => a + b.qty, 0);
-      return { product: p, ordered: l.qty, qty: Math.min(l.qty, stock), batches: bs, batchId: bs[0]?.id, mrp: bs[0]?.mrp ?? p.mrp, done: false };
+      return { line: lineOf(l, li), product: p, ordered: l.qty, qty: Math.min(l.qty, stock), batches: bs, batchId: bs[0]?.id, mrp: bs[0]?.mrp ?? p.mrp, done: false };
     }));
     setOpen(o);
   };
@@ -51,7 +52,7 @@ export function PickOrders() {
                   <div className="grow">
                     <div className="t" style={{ fontSize: 'var(--f4)' }}>{p.name}</div>
                     <div className="s">MRP {r.mrp} · {r.extra ? 'second MRP line' : <>{'ordered'} <b>{r.ordered}</b> pcs</>} · {'stock'} {pcsCs(stock, p.caseSize)}</div>
-                    {(() => { const tot = rows.filter(x => x.product.id === p.id).reduce((a, x) => a + x.qty, 0); if (r.extra) return null; return tot < r.ordered ? <span className="badge bad"><AlertTriangle size={12} /> {'short'} {r.ordered - tot}</span> : tot > r.ordered ? <span className="badge warn">+{tot - r.ordered} {'extra'}</span> : null; })()}
+                    {(() => { const tot = rows.filter(x => x.line === r.line).reduce((a, x) => a + x.qty, 0); if (r.extra) return null; return tot < r.ordered ? <span className="badge bad"><AlertTriangle size={12} /> {'short'} {r.ordered - tot}</span> : tot > r.ordered ? <span className="badge warn">+{tot - r.ordered} {'extra'}</span> : null; })()}
                   </div>
                   <button className={`avatar ${r.done ? 'ok' : ''}`} style={{ width: 52, height: 52, borderRadius: 16, border: 0 }} onClick={() => upd(i, x => ({ ...x, done: !x.done }))} aria-label="Packed">{r.done ? <Check size={30} /> : <Check size={24} style={{ opacity: .35 }} />}</button>
                 </div>
@@ -75,7 +76,7 @@ export function PickOrders() {
         </div>
         <div className="sticky-foot">
           {!allDone && <div className="muted grow">{'Tick every line as you pack'}</div>}
-          <button className="btn primary big grow" disabled={!allDone} onClick={async () => { await pickOrder(open.id, rows.filter(r => r.qty > 0 || !r.extra).map(r => ({ productId: r.product.id, qty: r.qty, batchId: r.batchId, mrp: r.mrp }))); setOpen(null); setTick(x => x + 1); }}><Check /> {'Packed → owner'}</button>
+          <button className="btn primary big grow" disabled={!allDone} onClick={async () => { await pickOrder(open.id, rows.filter(r => r.qty > 0 || !r.extra).map(r => ({ productId: r.product.id, qty: r.qty, batchId: r.batchId, mrp: r.mrp, line: r.line }))); setOpen(null); setTick(x => x + 1); }}><Check /> {'Packed → owner'}</button>
         </div>
       </div>
     );

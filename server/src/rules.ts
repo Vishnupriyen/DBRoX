@@ -106,6 +106,22 @@ export function keepDeliveryResult(role: string, data: Doc, existing: Doc | unde
   return out;
 }
 
+/** Order line numbers are stable ids (Part 2, 2a0). An older phone sends an order without them: when the stored order has
+ *  numbers and the same products in the same order, the stored numbers stay on its lines (and on picked rows of the same
+ *  products). Any other change is the phone's copy as it is. */
+export function keepLineNumbers(data: Doc, existing: Doc | undefined): Doc {
+  const mine = Array.isArray(data.lines) ? data.lines as Doc[] : null, had = Array.isArray(existing?.lines) ? existing!.lines as Doc[] : null;
+  if (!mine || !had || mine.some(l => l && l.line != null) || !had.some(l => l && l.line != null)) return data;
+  if (mine.length !== had.length || mine.some((l, i) => String(l?.productId) !== String(had[i]?.productId))) return data;
+  const out: Doc = { ...data, lines: mine.map((l, i) => had[i].line != null ? { ...l, line: had[i].line } : l) };
+  if (Array.isArray(data.picked)) out.picked = (data.picked as Doc[]).map(r => {
+    if (!r || r.line != null) return r;
+    const at = had.find(l => String(l.productId) === String(r.productId));
+    return at && at.line != null ? { ...r, line: at.line } : r;
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------- money fields (every role, owner too)
 const fin = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
 /** the app's own list (app/src/core/db.ts guard): every money field, when present, is a real number */

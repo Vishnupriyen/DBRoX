@@ -8,6 +8,7 @@ import { nextNumbers } from './sync';
 import { locationAllowed } from './privacy';
 import { billChangeBlock, isInterState } from './gst';
 import { buildCreditNote, costValue, extraBill, lineRoom, makeCreditNote, splitShort } from './credit';
+import { orderLineFor, pickedLines, shortageLines } from './lines';
 import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
@@ -95,7 +96,7 @@ export async function shopHistory(shopId: string) {
 }
 
 // ---- 2. godown picks what is actually available (qty, batch, MRP may change; never adds a product)
-export async function pickOrder(orderId: string, picked: { productId: string; qty: number; batchId?: string; mrp?: number }[]) {
+export async function pickOrder(orderId: string, picked: { productId: string; qty: number; batchId?: string; mrp?: number; line?: number }[]) {
   const o = await db.orders.get(orderId);
   if (!o) throw new Error('Order not found.');
   // read again: the owner may have cancelled it (or another godown phone packed it) while this phone was offline
@@ -132,9 +133,9 @@ async function approvePickedOnce(orderId: string) {
   const shop = (await db.shops.get(o.shopId))!;
   const cs = new ChangeSet();
   // picker's quantities, batch and MRP go into the bill exactly as packed
-  const picked: NonNullable<Order['picked']> = o.picked ?? o.lines.map(l => ({ productId: l.productId, qty: l.qty }));
-  const lines = picked.filter(p => p.qty > 0)
-    .map(p => ({ productId: p.productId, qty: p.qty, rate: o.lines.find(l => l.productId === p.productId)?.rate ?? 0, batchId: p.batchId, mrp: p.mrp }));
+  // each packed row is billed at the rate of the order line it packs (by line number; an old row: its product's first line)
+  const lines = pickedLines(o).filter(p => p.qty > 0)
+    .map(p => ({ productId: p.productId, qty: p.qty, rate: orderLineFor(o, p)?.rate ?? 0, batchId: p.batchId, mrp: p.mrp, line: p.line }));
   // numbers from the server when there is one (never a duplicate across phones); needs internet
   const products = new Map((await db.products.toArray()).map(p => [p.id, p.companyId]));
   const companies = new Set(lines.map(l => products.get(l.productId)));
@@ -441,10 +442,11 @@ export async function settleDifference(invoiceId: string, action: 'modified' | '
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
   if (ex.length) await extraBill(cs, work, ex);
-  const items = sh.map(x => {
-    const l = inv.lines.find(y => y.productId === x.productId);
+  const at = shortageLines(inv);
+  const items = sh.map((x, k) => {
+    const l = inv.lines[at[k]];
     const split = x.paid != null ? { paid: x.paid, free: x.free ?? 0 } : l ? splitShort(l, x.qty, products.get(x.productId), schemes, inv.date) : { paid: 0, free: 0 };
-    return { productId: x.productId, ...split, restock: !!DELIVERY_REASONS.find(r => r.label === x.reason)?.restock };
+    return { productId: x.productId, line: at[k] >= 0 ? at[k] : undefined, ...split, restock: !!DELIVERY_REASONS.find(r => r.label === x.reason)?.restock };
   }).filter(x => x.paid || x.free);
   if (items.length) await makeCreditNote(cs, work, items, { reason: 'Short at delivery', source: 'delivery', takeOffBill: false });
   cs.put('invoices', { ...work, diffAction: 'credit_note' }, ex.length ? 'credit note + extra billed on a new bill' : 'credit note chosen');
@@ -456,10 +458,11 @@ export async function differenceMoney(inv: Invoice) {
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
   const schemes = await db.schemes.toArray();
   const cns = await db.creditNotes.where('invoiceId').equals(inv.id).toArray();
-  const items = (inv.delivery?.shortages ?? []).map(x => {
-    const l = inv.lines.find(y => y.productId === x.productId);
+  const at = shortageLines(inv);
+  const items = (inv.delivery?.shortages ?? []).map((x, k) => {
+    const l = inv.lines[at[k]];
     const split = x.paid != null ? { paid: x.paid, free: x.free ?? 0 } : l ? splitShort(l, x.qty, products.get(x.productId), schemes, inv.date) : { paid: 0, free: 0 };
-    return { productId: x.productId, ...split, restock: true };
+    return { productId: x.productId, line: at[k] >= 0 ? at[k] : undefined, ...split, restock: true };
   }).filter(x => x.paid || x.free);
   const back = items.length ? r2(buildCreditNote(inv, cns, items).total) : 0;
   const extra = r2((inv.delivery?.excess ?? []).reduce((a, x) => { const l = inv.lines.find(y => y.productId === x.productId); return a + (l ? x.qty * l.total / (l.qty || 1) : 0); }, 0));
@@ -550,7 +553,7 @@ export const DELIVERY_REASONS = [
 ] as const;
 export type DeliveryInput = {
   returnAll?: boolean;
-  short?: Record<string, { qty: number; reason: string }>; // key `${invoiceId}|${productId}`
+  short?: Record<string, { qty: number; reason: string }>; // key `${invoiceId}|${productId}|${lineIndex}` (or `${invoiceId}|${productId}` = each line of that product)
   extra?: Record<string, number>;
   shopPhoto?: string; billPhoto?: string; pos?: { lat: number; lng: number } | null; distanceM?: number;
 };
@@ -567,26 +570,27 @@ export async function recordDelivery(invoiceIds: string[], input: DeliveryInput)
     const lines = inv.lines.map(l => ({ ...l, batches: l.batches.map(b => ({ ...b })) }));
     // pieces a shop already returned (credit note) are off the bill: the short is split against what is still open on each line
     const room = lineRoom(inv, await db.creditNotes.where('invoiceId').equals(inv.id).toArray());
-    const shortages: { productId: string; qty: number; reason: string }[] = [];
-    const excess: { productId: string; qty: number }[] = [];
-    for (const l of lines) {
-      const k = `${inv.id}|${l.productId}`;
-      const s = input.returnAll ? { qty: l.qty + l.freeQty, reason: 'refused' } : input.short?.[k];
-      const e = input.extra?.[k];
+    const shortages: { productId: string; qty: number; reason: string; line: number }[] = [];
+    const excess: { productId: string; qty: number; line: number }[] = [];
+    for (const [li, l] of lines.entries()) {
+      // per bill line `id|product|line`; the older key `id|product` (no line) applies to each line of that product, as before
+      const k = `${inv.id}|${l.productId}|${li}`, k0 = `${inv.id}|${l.productId}`;
+      const s = input.returnAll ? { qty: l.qty + l.freeQty, reason: 'refused' } : input.short?.[k] ?? input.short?.[k0];
+      const e = input.extra?.[k] ?? input.extra?.[k0];
       if (e && e > 0) {
         // extra pieces given from the van: taken from stock and recorded on the bill line, so a cancel puts them back
         const b = batches.filter(x => x.productId === l.productId && x.qty >= e).sort((a, c) => a.expiry.localeCompare(c.expiry))[0];
-        if (b) { b.qty -= e; cs.put('batches', { ...b }, 'extra given from van'); l.batches.push({ batchId: b.id, batch: b.batch, qty: e, expiry: b.expiry }); excess.push({ productId: l.productId, qty: e }); }
+        if (b) { b.qty -= e; cs.put('batches', { ...b }, 'extra given from van'); l.batches.push({ batchId: b.id, batch: b.batch, qty: e, expiry: b.expiry }); excess.push({ productId: l.productId, qty: e, line: li }); }
       }
       if (!s?.qty) continue;
       const qty = Math.min(s.qty, l.batches.reduce((a, b) => a + b.qty, 0));
       if (qty <= 0) continue;
       const reason = DELIVERY_REASONS.find(r => r.value === s.reason) ?? DELIVERY_REASONS[0];
       // paid and scheme-free pieces are kept apart: the shop keeps the most paid pieces whose free pieces still fit
-      const full = splitShort(l, qty, products.get(l.productId), schemes, inv.date), open = room[lines.indexOf(l)];
+      const full = splitShort(l, qty, products.get(l.productId), schemes, inv.date), open = room[li];
       const paid = Math.min(open.paid, Math.max(full.paid, qty - open.free));
       const split = { paid, free: Math.min(open.free, qty - paid) };
-      shortages.push({ productId: l.productId, qty, reason: reason.label, ...split });
+      shortages.push({ productId: l.productId, qty, reason: reason.label, ...split, line: li });
       // these pieces are no longer out on the bill: take them off its batches so a later cancel/edit can't put them back twice
       let left = qty;
       for (const lb of l.batches) { if (left <= 0) break; const take = Math.min(left, lb.qty); lb.qty -= take; left -= take; if (reason.restock) { const b = batches.find(x => x.id === lb.batchId); if (b) { b.qty += take; cs.put('batches', { ...b }, 'back to stock'); } } }
