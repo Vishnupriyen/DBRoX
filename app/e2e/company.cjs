@@ -57,7 +57,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
     await p.fill('textarea', 'coconut oil 1 case short'); await p.click('text=Read it'); await p.waitForSelector('text=Short:');
     await p.click('button:has-text("Receive")'); await p.click('.dialog button:has-text("Receive")'); await p.waitForSelector('text=Company bills'); step('distributor received the bill with 1 case short');
     await shot('db-received');
-    await p.click('nav >> text=Menu'); await p.click('.menu-chip:text-is("Claims")'); await p.waitForTimeout(800);
+    await p.click('nav >> text=Menu'); await p.click('.menu-chip:has(.menu-l:text-is("Claims"))'); await p.waitForTimeout(800);
     await p.click('.item:has-text("Kaveri") button:has-text("Send")'); await p.click('.dialog button:has-text("Send")'); await p.waitForTimeout(1000);
     if (!(await p.$('text=sent, waiting for the company'))) fail('claim not sent'); else step('distributor sent the claim');
 
@@ -69,7 +69,7 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
     if (!(await p.$('text=Received with differences'))) fail('company does not see the goods receipt'); else step('company sees the goods receipt');
     await tile('Sales'); await shot('ho-sales'); await tile('Stock at distributors'); await shot('ho-stock');
     await login('distributor', 'Vishnu (Owner)');
-    await p.click('nav >> text=Menu'); await p.click('.menu-chip:text-is("Claims")'); await p.waitForTimeout(800);
+    await p.click('nav >> text=Menu'); await p.click('.menu-chip:has(.menu-l:text-is("Claims"))'); await p.waitForTimeout(800);
     if (!(await p.$('text=credit note'))) fail('distributor does not see the credit note'); else step('distributor sees the credit note');
 
     // 4. the manager's day view

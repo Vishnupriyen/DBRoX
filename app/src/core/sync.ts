@@ -2,6 +2,7 @@
 // there is signal. Server is swappable because the app only knows this small protocol.
 import { saveLicence } from './licence';
 import { ChangeSet, db, getSettings } from './db';
+import { purgePersonal } from './myfiles';
 import { authHeader, checkPinOffline, clearToken, getToken, offlineState, OFFLINE_LOGIN_DAYS, rememberPin, securePins, setToken, touchServer } from './secure';
 import privacy from '../../../shared/privacy.json';
 import type { Base, TableName } from './types';
@@ -198,7 +199,8 @@ export async function wipeLocal(): Promise<boolean> {
     await Promise.all(db.tables.map(t => t.clear()));
     return true;
   });
-  if (!cleared) return false;
+  // chats and My files of everyone on this phone go even when unsent firm work keeps the rest (security, 14 Nov 2026)
+  if (!cleared) { await purgePersonal(); return false; }
   await clearToken();
   for (const k of ['dbrox.token', 'dbrox.session']) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
   return true;

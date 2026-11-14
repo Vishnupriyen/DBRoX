@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      # npm sbom reads the installed packages: without them it stops with "missing: pg…" (issue #11)
+      - run: npm ci --ignore-scripts
       - name: Known holes in packages (report)
         run: npm audit --omit=dev --audit-level=high || true
       - name: Known holes in packages (critical fails the run)
@@ -46,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy (free, open source) — Dockerfile, compose and packages
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0   # 0.28.0 no longer exists (issue #10)
         with:
           scan-type: fs
           scanners: vuln,misconfig,secret

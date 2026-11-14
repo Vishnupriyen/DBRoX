@@ -101,6 +101,12 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   (--f1..--f6, 1rem = 14 px); TESRAX never jumps (Open button), Excel/PDF on every table, My files + chat history by day (30 days,
   per person, phone only — core/myfiles.ts, not synced), Clear chat. Tester: 2 majors fixed with tests (owner-card.test.ts);
   open: screen-type answers (P&L, Orders received) leave no file — planned with item 46 (Reports card, Part 4).
+- **Part 1 review fixes (14 Nov evening, developer):** company e2e (Menu chip selector), TESRAX (Stock module, "collection module" →
+  Accountant, needs-OK / load sheet answered in place), security (backup leaves out chats/My files, wipe/erase/new Privacy button
+  clear them, daily 30-day purge, owner-only files hidden by role, no shared "nobody" bucket), CI (Trivy v0.36.0, npm ci before SBOM,
+  age on the CI server job — issues #10/#11), look (white TESRAX panel — no ghost smudges, full firm name on 2 lines, no stripe on the
+  owner card). **Owner decisions (14 Nov 18:57, built):** logging out deletes that person's chats and My files from the phone; My
+  files expire after 30 days like chats.
 - **NEXT (owner, 14 Nov): the CORRECTION ROUND — 47 items in 5 parts, locked in `docs/HANUBIX_CORRECTIONS_LOCKED.md`** (from the
   founder's handwritten review + chat). It REPLACES the 4-part convenience round below. Start with Part 1 (look and TESRAX): first
   show the Menu mock and the font-size screenshots, get his yes, then build. Each part: build → quick tests → tester → push → GitHub's full gate (no local full gate, owner 14 Nov) → real phone

@@ -10,6 +10,7 @@ import { checkPinOffline, clearToken } from '../core/secure';
 import { DEFAULT_GRIEVANCE, giveConsent, isFieldRole, NOTICE, NOTICE_STATUS, NOTICE_TITLE, OPTIONAL, type PrivacyStatus } from '../core/privacy';
 import { db, session, today } from '../core/db';
 import { showDate } from '../core/i18n';
+import { purgePersonal } from '../core/myfiles';
 import type { Staff } from '../core/types';
 
 /** the notice itself: short sections, readable on a small phone */
@@ -145,6 +146,8 @@ export function PrivacyPage({ me, onLogout }: { me: Staff; onLogout: () => void 
     if (note === null) return;
     if (kind === 'delete' && !await confirmBox('Erase my data?', 'Your name, phone and location records are erased. Bills and payments stay for 8 years as GST law requires, without your contact details.', 'Ask to erase')) return;
     if (kind === 'delete_account' && !await confirmBox('Close the firm\'s account?', 'You get 30 days to download everything. Then the firm\'s data is erased, except the tax records the law asks us to keep. Backups are gone within 35 days.', 'Ask to close')) return;
+    // erasing my data starts on this phone: my TESRAX chats and My files go at once (security, 14 Nov 2026)
+    if (kind === 'delete') await purgePersonal(me.id).catch(() => {});
     try { const r = await api<{ id: string; due: string }>('/v1/privacy/request', { kind, note }); await notify('Request sent', `We answer by ${showDate(r.due)}.`); void load(); }
     catch (e) { await notify('Not sent', (e as Error).message); }
   };
@@ -154,6 +157,10 @@ export function PrivacyPage({ me, onLogout }: { me: Staff; onLogout: () => void 
       const { downloadText } = await import('../core/readers');
       downloadText(`Hanubix-my-data-${today()}.json`, JSON.stringify(j, null, 2));
     } catch (e) { await notify('Not downloaded', (e as Error).message); }
+  };
+  const clearMine = async () => {
+    if (!await confirmBox('Delete my chats and files?', 'Your TESRAX chats and My files are deleted from this phone. Bills, payments and reports stay.', 'Delete')) return;
+    await purgePersonal(me.id); await notify('Deleted', 'Your chats and files are gone from this phone.');
   };
   const nominee = async () => {
     const name = await askText('Nominee: the person who can act for you', st?.nominee?.name ?? ''); if (!name) return;
@@ -183,6 +190,7 @@ export function PrivacyPage({ me, onLogout }: { me: Staff; onLogout: () => void 
           <button className="item" onClick={download}><span className="grow">Download my data</span></button>
           <button className="item" onClick={() => ask('correct')}><span className="grow">Ask to correct my data</span></button>
           <button className="item" onClick={() => ask('delete')}><span className="grow">Ask to erase my data</span></button>
+          <button className="item" onClick={clearMine}><span className="grow">Delete my chats and files from this phone</span></button>
           <button className="item" onClick={nominee}><span className="grow">{st?.nominee ? `Nominee: ${st.nominee.name}` : 'Name a nominee'}</span></button>
           <button className="item" onClick={() => ask('grievance')}><span className="grow">Make a complaint</span></button>
           {me.role === 'owner' && <button className="item" style={{ color: 'var(--bad)' }} onClick={() => ask('delete_account')}><span className="grow">Close the firm's account</span></button>}

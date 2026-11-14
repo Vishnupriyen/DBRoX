@@ -517,7 +517,6 @@ table.grid td.ro { color: var(--mut); }
 .home-search { background: var(--card); border-color: var(--line); color: var(--dim); }
 .home-search input { color: var(--txt); }
 .morning { background: var(--card); color: var(--txt); border: 1px solid var(--line); position: relative; overflow: hidden; }
-.morning::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--g); }
 .morning .t { font-weight: 650; letter-spacing: -.02em; }
 .morning .s { color: var(--mut); }
 .morning .kv b { color: var(--g); font-weight: 700; font-size: var(--f5); letter-spacing: -.03em; }

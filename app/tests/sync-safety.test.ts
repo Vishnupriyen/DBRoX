@@ -107,6 +107,18 @@ describe('sync replies the phone must act on', () => {
     expect(await db.settings.count()).toBeGreaterThan(0);
   });
 
+  // security review of Part 1 (14 Nov 2026): personal TESRAX chats and My files never stay behind on a removed phone
+  it('removal / 30-day wipe with unsent firm work: the firm data stays, but every person\'s chats and My files go', async () => {
+    const cs = new ChangeSet(); cs.put('shops', { name: 'Unsent shop' }); await cs.commit('unsent');
+    for (const k of ['chat:o1:2026-11-14', 'chat:u2:2026-11-13', 'myfiles:o1', 'myfiles:u2']) await db.meta.put({ key: k, value: [] });
+    await db.meta.put({ key: 'cursor', value: 3 });
+    const { wipeLocal } = await import('../src/core/sync');
+    expect(await wipeLocal()).toBe(false);
+    expect(await db.shops.count()).toBeGreaterThan(0);
+    expect((await db.meta.toArray()).map(r => r.key).filter(k => /^(chat|myfiles):/.test(k))).toEqual([]);
+    expect(await db.meta.get('cursor')).toBeTruthy();
+  });
+
   it('the message never says "0 unsent records"', async () => {
     const { accessRemovedMsg } = await import('../src/core/sync');
     expect(accessRemovedMsg(0)).toBe('Access removed.');

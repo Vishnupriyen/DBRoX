@@ -29,13 +29,40 @@ describe('every screen opens by its own name (owner)', () => {
   });
   it('every screen name in the list opens that screen for a role that may see it', async () => {
     const miss: string[] = [];
-    // "open bill" opens the Bills list and "open collection" the Collect screen (the screens people mean); the tiles: "bill module"
-    for (const s of SCREENS.filter(x => x.page !== 'module:bill' && x.page !== 'module:collection')) {
+    // "open bill" opens the Bills list and "open stock" Stock position (the screens people mean); the tiles: "bill module", "stock module"
+    for (const s of SCREENS.filter(x => x.page !== 'module:bill' && x.page !== 'module:inventory')) {
       as(s.roles[0]);
       const r = await say(`open ${s.name.toLowerCase()}`);
       if (r.go !== s.page && !(SCREENS.some(o => o.page === r.go && o.name === s.name))) miss.push(`${s.name} → ${code(r)}`);
     }
     expect(miss).toEqual([]);
+  });
+});
+
+describe('correction round Part 1 review: Stock module, Collection inside Accountant, answers in place (14 Nov 2026)', () => {
+  it('the inventory module is called Stock and "stock module" opens it; "stock position" still opens Stock position', async () => {
+    expect(SCREENS.find(s => s.page === 'module:inventory')!.name).toBe('Stock');
+    expect(code(await say('stock module'))).toBe('go:module:inventory');
+    expect(code(await say('open stock module'))).toBe('go:module:inventory');
+    expect(code(await say('stock position'))).toBe('go:stock');
+    expect(code(await say('open stock'))).toBe('go:stock'); // the Menu's "Stock" chip is Stock position too
+  });
+  it('"collection module" goes straight to Accountant and says Collection, GST and Day close are inside it', async () => {
+    expect(SCREENS.some(s => s.page === 'module:collection')).toBe(false);
+    for (const t of ['collection module', 'open collection module']) {
+      const r = await say(t);
+      expect(r.go).toBe('module:accountant'); expect(r.text).toMatch(/Collection, GST and Day close are inside Accountant/);
+    }
+  });
+  it('owner and office: "waiting for approval" answers in place with the Needs OK table and an Open button', async () => {
+    for (const r of ['owner', 'office'] as Role[]) {
+      as(r); const x = await say('what is waiting for approval');
+      expect(x.go).toBeUndefined(); expect(x.table?.name).toBe('Needs OK'); expect(x.link?.page).toBe('orders-received');
+    }
+  });
+  it('godown: "load sheet" answers in place with the load sheet and an Open Load vans button', async () => {
+    as('godown'); const x = await say('load sheet');
+    expect(x.go).toBeUndefined(); expect(x.text).toMatch(/Load/); expect(x.link?.page).toBe('load');
   });
 });
 

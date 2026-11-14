@@ -25,7 +25,8 @@ describe('RoX opens screens by name', () => {
   it('godown: pick, load sheet', async () => {
     await as('godown');
     expect((await handle('pick orders', [])).go).toBe('pick');
-    expect((await handle('load sheet', [])).go).toBe('load');
+    const ls = await handle('load sheet', []); expect(ls.go).toBeUndefined(); expect(ls.link?.page).toBe('load'); // answered in place (founder rule)
+    expect((await handle('load vans', [])).go).toBe('load');
   });
   it('data questions still answer, not navigate', async () => {
     await as('owner');

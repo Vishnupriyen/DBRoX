@@ -28,5 +28,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
+      # the deploy kit backs up before every change and the backup refuses to run without age (an unencrypted dump is never
+      # written): without age on the runner every deploy test stopped at "1/4 Backup" (issue #11) — same as the Quality gate
+      - run: sudo apt-get install -y -q age
+      - run: node scripts/relay-copy.mjs   # the relay's one source is shared/relay.ts
       - run: npm run build
       - run: npx vitest run

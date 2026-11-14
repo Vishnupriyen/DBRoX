@@ -50,6 +50,7 @@ import { DialogHost, notify } from './ui/dialog';
 import type { Invoice, Settings, Staff } from './core/types';
 import { PrintBill } from './ui/PrintBill';
 import { Boost } from './ui/Boost';
+import { dailyPurge, purgePersonal } from './core/myfiles';
 
 // Page titles shown in the header when inside a page (Home shows the firm name instead).
 const TITLE: Partial<Record<Page, string>> = {
@@ -80,6 +81,8 @@ export default function App() {
     window.addEventListener('hanubix:print-bill', on);
     return () => window.removeEventListener('hanubix:print-bill', on);
   }, []);
+  // once a day at app start: chat days and My files older than 30 days are deleted (security, 14 Nov 2026)
+  useEffect(() => { void dailyPurge().catch(() => {}); }, []);
   const [moreKey, setMoreKey] = useState(0);
   const [soundOn, setSoundOn] = useState(sound.isOn());
   const [checkedIn, setCheckedIn] = useState(true);
@@ -203,7 +206,8 @@ export default function App() {
     else if (!(await noticeAccepted())) setGate({ step: 'consent' });
   }} /></>;
 
-  const logout = () => { localStorage.removeItem('dbrox.session'); void clearToken(); setGate(null); setLocked(null); setMe(null); };
+  // logging out deletes this person's TESRAX chats and My files from the phone (owner decision, 14 Nov 2026)
+  const logout = () => { const uid = me?.id; localStorage.removeItem('dbrox.session'); void clearToken(); if (uid) void purgePersonal(uid).catch(() => {}); setGate(null); setLocked(null); setMe(null); };
   // before anything else: the owner's new 6-digit PIN, the privacy notice on a first login, the app lock
   if (gate?.step === 'pin') return <><PinChange me={me} length={gate.length ?? 6} forced onDone={async () => setGate((await noticeAccepted()) ? null : { step: 'consent' })} /><DialogHost /></>;
   if (gate?.step === 'consent') return <><ConsentScreen me={me} onDone={() => setGate(null)} /><DialogHost /></>;

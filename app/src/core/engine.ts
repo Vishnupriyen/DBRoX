@@ -80,7 +80,7 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'collect', name: 'Collect', roles: ['owner', 'office', 'salesman', 'delivery'], words: ['collect', 'collection'] },
   { page: 'pick', name: 'Pick orders', roles: ['godown'], words: ['pick', 'pick orders', 'orders to pick', 'pack'] },
   { page: 'print', name: 'Load sheet print', roles: ['godown', 'owner', 'office'], words: ['print load sheet', 'print', 'load sheet print'] },
-  { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'load sheet', 'loading'] },
+  { page: 'load', name: 'Load vans', roles: ['godown'], words: ['load van', 'load vans', 'loading'] }, // "load sheet" is answered in place (with an Open Load vans button)
   { page: 'trip', name: 'My trip', roles: ['delivery'], words: ['trip', 'my trip', 'start trip', 'delivery'] },
   { page: 'beat', name: "Today's beat", roles: ['salesman'], words: ['beat', 'beats', 'today beat', 'my shops', 'next shop', 'next shops', 'which shop next', 'shops today'] },
   { page: 'myday', name: 'My day', roles: ['salesman'], words: ['my day', 'my orders'] },
@@ -95,10 +95,9 @@ export const SCREENS: { page: string; name: string; roles: Role[]; words: string
   { page: 'boost', name: 'Business Boost', roles: ['owner', 'office'], words: ['business boost', 'boost', 'boost services', 'services', 'offers', 'offers and services', 'gst filing', 'ca help', 'working capital', 'business loan', 'stock insurance', 'godown insurance', 'insurance', 'printer', 'barcode scanner', 'tally help'] },
   { page: 'module:bill', name: 'Bill', roles: ['owner', 'office'], words: ['bill module', 'billing module'] },
   { page: 'module:delivery', name: 'Delivery', roles: ['owner', 'office'], words: ['delivery', 'delivery module', 'deliveries'] },
-  { page: 'module:collection', name: 'Collection', roles: ['owner', 'office'], words: ['collection module', 'collections module'] },
   { page: 'module:sales', name: 'Sales', roles: ['owner', 'office'], words: ['sales module'] },
-  { page: 'module:inventory', name: 'Inventory', roles: ['owner', 'office'], words: ['inventory', 'inventory module'] },
-  { page: 'module:accountant', name: 'Accountant', roles: ['owner', 'office'], words: ['accountant', 'accounts', 'accountant module', 'accounts module', 'accounting'] },
+  { page: 'module:inventory', name: 'Stock', roles: ['owner', 'office'], words: ['inventory', 'inventory module', 'stock module'] },
+  { page: 'module:accountant', name: 'Accountant', roles: ['owner', 'office'], words: ['accountant', 'accounts', 'accountant module', 'accounts module', 'accounting', 'collection module', 'collections module'] },
   { page: 'module:payroll', name: 'Payroll', roles: ['owner', 'office'], words: ['payroll', 'payroll module', 'hr'] },
 ];
 function screenFor(text: string, role: Role, exact = false): Reply | null {
@@ -119,7 +118,7 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
     const mine = hit.find(h => h.roles.includes(role)) ?? hit[0];
     if (!mine) return null;
     if (!mine.roles.includes(role)) return null; // not this person's screen: let the rest of TESRAX answer
-    return { text: `Opening ${mine.name}.`, go: mine.page };
+    return opening(mine, text);
   }
   const hit = SCREENS.filter(s => s.words.some(w => text === w || text.startsWith(w + ' ') || text.endsWith(' ' + w) || text.includes(' ' + w + ' ') || (w.length > 5 && text.includes(w))))
     .sort((a, b) => Math.max(...b.words.filter(w => text.includes(w)).map(w => w.length)) - Math.max(...a.words.filter(w => text.includes(w)).map(w => w.length)))
@@ -127,7 +126,12 @@ function screenFor(text: string, role: Role, exact = false): Reply | null {
     .find((h, _i, all) => { const len = (x: typeof h) => Math.max(...x.words.filter(w => text.includes(w)).map(w => w.length)); const tie = all.filter(x => len(x) === len(all[0])); return tie.includes(h) && (h.roles.includes(role) || !tie.some(x => x.roles.includes(role))); });
   if (!hit) return null;
   if (!hit.roles.includes(role)) return { text: `${hit.name} is the ${hit.roles[0] === 'owner' ? 'owner' : hit.roles[0]}'s screen. Ask them to open it.`, tone: 'warn', refused: true };
-  return { text: `Opening ${hit.name}.`, go: hit.page };
+  return opening(hit, text);
+}
+// Collection now lives inside Accountant (14 Nov 2026): "collection module" opens Accountant and says so
+function opening(s: { page: string; name: string }, text: string): Reply {
+  if (s.page === 'module:accountant' && /\bcollections? module\b/.test(text)) return { text: 'Opening Accountant. Collection, GST and Day close are inside Accountant.', go: s.page };
+  return { text: `Opening ${s.name}.`, go: s.page };
 }
 
 const has = hasWord;
@@ -352,10 +356,10 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
   if (/\b(stock received|goods received|new stock|stock came|purchase entry|stock in|stock inward)\b/.test(text) || (!shop && /\breceived\b/.test(text) && /\bfrom\b/.test(text) && !/\b(cash|upi|cheque|payment|money|rs|₹)\b/.test(text)) || (!shop && /\b(stock|goods|load|lorry|items|company|purchase|parcel)\b.*\bcame\b/.test(text))) { const sc = screenFor('purchases', role, true); if (sc) return sc; }
 
   // ------------------------ questions ------------------------
-  if (has(text, W.needsOk)) return (role === 'owner' || role === 'office') ? { text: 'Opening Orders received.', go: 'orders-received' } : needsOkTable();
+  if (has(text, W.needsOk)) return needsOkTable(role); // answered in place (founder rule); owner/office get the Open button
   if (role === 'owner' && !shop && /\bcash\b/.test(text) && /\b(staff|salesmen|drivers|who|whom)\b/.test(text)) { const sc = screenFor('cash with staff', role, true); if (sc) return sc; }
   if (has(text, W.cashHand) || (!shop && /\bcash\b/.test(text) && /\bhow much\b/.test(text))) return cashInHand();
-  if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; if (role === 'godown') return { text: 'Opening Load vans.', go: 'load' }; return loadSheet(); }
+  if (has(text, W.loadSheet)) { const r = need('inventory', mods); if (r) return r; const ls = await loadSheet(); return role === 'godown' ? { ...ls, link: { label: 'Open Load vans', page: 'load' } } : ls; }
   if (has(text, W.nearExpiry)) return nearExpiry();
   if (!shop && has(text, W.outstanding) && /\b(pcs|pieces|stock|left|cases|qty)\b/.test(text) && bestProduct(productsActive, text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim()).product)
     return stockTable(text.replace(/\b(balance|pcs|pieces|stock|left|cases|qty|how much|how many)\b/g, ' ').trim());
@@ -1199,10 +1203,11 @@ async function schemesTable(): Promise<Reply> {
   return { text: rows.length ? `${plural(rows.length, 'scheme')} running today. They apply on every bill automatically.` : 'No scheme is running today.', table: { name: 'Schemes', columns: ['Company', 'Product', 'Offer', 'Till'], rows } };
 }
 
-async function needsOkTable(): Promise<Reply> {
+async function needsOkTable(role?: Role): Promise<Reply> {
   const orders = (await db.orders.where('status').equals('needs_ok').toArray());
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s.name]));
-  return { text: orders.length ? `${plural(orders.length, 'order')} wait for your OK. Open "Today" to approve them.` : 'Nothing waiting for your OK.', table: { name: 'Needs OK', columns: ['Shop', 'Date', 'Items', 'Why'], rows: orders.map(o => [shops.get(o.shopId) ?? '', o.date, o.lines.length, o.issues.join('; ')]) } };
+  const boss = role === 'owner' || role === 'office';
+  return { text: orders.length ? `${plural(orders.length, 'order')} wait for your OK.${boss ? '' : ' Open "Today" to approve them.'}` : 'Nothing waiting for your OK.', ...(boss ? { link: { label: 'Open Orders received', page: 'orders-received' } } : {}), table: { name: 'Needs OK', columns: ['Shop', 'Date', 'Items', 'Why'], rows: orders.map(o => [shops.get(o.shopId) ?? '', o.date, o.lines.length, o.issues.join('; ')]) } };
 }
 
 

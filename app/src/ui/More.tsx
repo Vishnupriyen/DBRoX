@@ -10,6 +10,7 @@ import { inr, t, showDate } from '../core/i18n';
 import { norm } from '../core/match';
 import { downloadText } from '../core/readers';
 import { api, ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
+import { backupDump } from '../core/backup';
 import { addClaimLine, claimable, decisionsFor, dropClaimLine, openLines, sendClaim } from '../core/claims';
 import { billChangeBlock } from '../core/gst';
 import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
@@ -73,9 +74,8 @@ export function More({ role, onLogout, initial, onPlan, go }: { role: Role; onLo
       <section><h3 className="menu-grp">{'App'}</h3>
     <div className="list">
       {role === 'owner' && <button className="item" onClick={async () => {
-        const dump: Record<string, unknown[]> = {};
-        // the phone's own security records (login token, PIN hashes) never go into a file
-        for (const tb of db.tables) dump[tb.name] = tb.name === 'meta' ? (await tb.toArray()).filter(r => !/^(auth\.|pinv:|pinFails)/.test(String((r as { key: string }).key))) : await tb.toArray();
+        // the phone's own security records and each person's chats and My files never go into a file (core/backup.ts)
+        const dump = await backupDump();
         dump.errorLog = errorLog(); // what went wrong on this phone, for support
         downloadText(`Hanubix-backup-${today()}.json`, JSON.stringify(dump));
       }}><Download /> <span className="grow">Download full backup (all my data)</span></button>}
