@@ -36,8 +36,10 @@ export function applySchemes(_p: Product, qty: number, rate: number, schemes: Sc
 }
 
 /** one bill line, priced the same way everywhere (new bill, bill editor, extra bill): schemes, then tax on the taxable value */
-export function billLine(p: Product, qty: number, rate: number, schemes: Scheme[], inter: boolean, opts: { mrp?: number; discount?: number; noFree?: boolean } = {}): InvoiceLine {
+export function billLine(p: Product, qty: number, rate: number, schemes: Scheme[], inter: boolean, opts: { mrp?: number; discount?: number; discountPct?: number; noFree?: boolean } = {}): InvoiceLine {
   const sch = applySchemes(p, qty, rate, schemes);
+  // Disc % on the line: the ₹ figure is worked out here once (gross × % to the paisa) and is the legal figure on the bill
+  if (opts.discount == null && opts.discountPct != null && Number.isFinite(opts.discountPct)) opts = { ...opts, discount: r2(sch.gross * Math.min(100, Math.max(0, opts.discountPct)) / 100) };
   const discount = opts.discount != null && Number.isFinite(opts.discount) ? r2(Math.min(sch.gross, Math.max(0, opts.discount))) : sch.discount;
   const taxable = r2(sch.gross - discount);
   const tax = taxOn(taxable, p.gst, inter);
@@ -62,12 +64,12 @@ export function billTotals(lines: InvoiceLine[]) {
  * What these lines would be billed at, to the rupee: the same schemes, tax and per-bill round-off as makeInvoices (one bill per company).
  * The order, approval and picking screens show this, so the order total is the bill total when it is packed as ordered.
  */
-export function billValueOf(lines: { productId: string; qty: number; rate: number }[], products: Map<string, Product>, schemes: Scheme[], inter: boolean, date = today()) {
+export function billValueOf(lines: { productId: string; qty: number; rate: number; discountPct?: number }[], products: Map<string, Product>, schemes: Scheme[], inter: boolean, date = today()) {
   const by = new Map<string, InvoiceLine[]>();
   for (const l of lines) {
     const p = products.get(l.productId);
     if (!p || !(l.qty > 0)) continue;
-    by.set(p.companyId, [...(by.get(p.companyId) ?? []), billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter)]);
+    by.set(p.companyId, [...(by.get(p.companyId) ?? []), billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter, { discountPct: l.discountPct })]);
   }
   return r2([...by.values()].reduce((a, ls) => a + billTotals(ls).total, 0));
 }
@@ -233,7 +235,7 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
       if (qty < l0.qty) cuts?.push({ productId: p.id, name: p.name, wanted: l0.qty, billed: qty });
       if (qty <= 0) continue;
       const l = { ...l0, qty };
-      const line = billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter, { mrp: l.mrp });
+      const line = billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter, { mrp: l.mrp, discountPct: l.discountPct });
       // the picker's batch first (what is physically in the van), the rest oldest-expiry first
       const picks: ReturnType<typeof pickBatches>['picks'] = [];
       let need = l.qty + line.freeQty;

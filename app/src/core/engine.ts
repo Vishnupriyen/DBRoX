@@ -283,6 +283,7 @@ export async function handleOne(said: string, files: File[]): Promise<Reply> {
 
   // ------------------------ a screen asked for by its exact name ("dead stock", "stock position", "day close") ------------------------
   if (!/\d{2,}/.test(text)) { const sc = screenFor(text, role, true); if (sc) return sc; }
+  { const { ordersByVoice } = await import('./tesraxOrders'); const r = await ordersByVoice(text, role); if (r) return r; } // Part 2: download / open / approve an order
 
   // ------------------------ actions ------------------------
   const shops = (await db.shops.toArray()).filter(s => s.active !== false);

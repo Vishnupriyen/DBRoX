@@ -71,7 +71,17 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   must(/leave request/.test(await p.textContent('.morning .s').catch(() => '')), 'the morning card counts the waiting leave request (not "Nothing is waiting")');
   await tile('Bill'); await shot('owner-bill-icons');
   await tile('Orders received'); await shot('owner-orders-received');
-  const ap = p.locator('button:has-text("Approve → godown")'); while (await ap.count()) { await ap.first().click(); await p.waitForTimeout(500); }
+  // Part 2 item 8: each order opens as stacked line cards (Qty, Rate, Disc %), one edit, then Approve (one tap + Undo)
+  for (let k = 0; k < 12; k++) {
+    const card = p.locator('button.card.tap'); if (!(await card.count())) break;
+    await card.first().click(); await p.waitForSelector('.linecard');
+    if (k === 0) {
+      await p.fill('.linecard input[aria-label="Qty"] >> nth=0', '7'); await p.fill('.linecard input[aria-label="Disc %"] >> nth=0', '2.5');
+      must(await p.isVisible('.sticky-foot button:has-text("Save changes")'), 'an edited order shows "Save changes"');
+      await shot('owner-order-editor');
+    }
+    await p.click('.sticky-foot button:has-text("Approve")'); await p.waitForSelector('text=Approved. Sent to godown');
+  }
   await shot('owner-orders-approved');
   await home(); await tile('Sales'); await tile('New shops'); await shot('owner-newshops');
   await logout();

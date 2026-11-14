@@ -304,6 +304,7 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
     }
     if (table === 'expenses' && (!fin(r.amount) || (r.amount as number) < 0)) throw new GuardError('Expense amount is not valid.');
     if (table === 'orders' && ((r.lines as { qty: number }[]) ?? []).some(l => !fin(l.qty) || l.qty < 0)) throw new GuardError('An order line has an invalid quantity.');
+    if ((table === 'orders' || table === 'invoices') && ((r.lines as { discountPct?: number }[]) ?? []).some(l => l.discountPct != null && (!fin(l.discountPct) || l.discountPct < 0 || l.discountPct > 100))) throw new GuardError("Discount can't be more than 100%");
   }
 }
 

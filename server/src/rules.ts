@@ -154,6 +154,7 @@ export function badLines(table: string, d: Doc): string | null {
       if (!l || typeof l !== 'object') return 'a line is not valid';
       if (table === 'invoices' && l.qty === undefined) continue; // a bill line without pieces (old or partial record) is the bill's own checks
       if (!Number.isInteger(l.qty) || (l.qty as number) < 0 || (table === 'orders' && (l.qty as number) <= 0)) return 'quantity must be whole pieces';
+      if (l.discountPct != null && !(typeof l.discountPct === 'number' && Number.isFinite(l.discountPct) && l.discountPct >= 0 && l.discountPct <= 100)) return 'Disc % must be 0 to 100';
       if (((l.qty as number) > 0 || table === 'orders') && !(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0)) return 'rate must be more than 0';
     }
   }

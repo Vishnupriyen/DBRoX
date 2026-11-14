@@ -80,9 +80,13 @@ export async function approveOrder(orderId: string) {
   try {
     const o = await db.orders.get(orderId);
     if (!o) throw new Error('Order not found.');
-    if (o.status !== 'new' && o.status !== 'needs_ok') throw new Error(o.status === 'cancelled' ? 'This order was already cancelled.' : 'This order is already approved.');
+    if (o.status !== 'new' && o.status !== 'needs_ok') {
+      if (o.status === 'cancelled') throw new Error('This order was already cancelled.');
+      const who = o.approvedBy ? (await db.staff.get(o.approvedBy))?.name : undefined;
+      throw new Error(`Order already approved${who ? ` by ${who}` : ''}. Pull down to refresh.`);
+    }
     const cs = new ChangeSet();
-    cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso() }, 'owner approved');
+    cs.put('orders', { ...o, status: 'approved', approvedBy: session().userId, approvedAt: nowIso(), activity: [...(o.activity ?? []), { at: nowIso(), by: session().userId, what: 'approved, sent to godown' }] }, 'owner approved');
     await cs.commit('Order approved');
   } finally { approving.delete(orderId); }
 }
@@ -135,7 +139,7 @@ async function approvePickedOnce(orderId: string) {
   // picker's quantities, batch and MRP go into the bill exactly as packed
   // each packed row is billed at the rate of the order line it packs (by line number; an old row: its product's first line)
   const lines = pickedLines(o).filter(p => p.qty > 0)
-    .map(p => ({ productId: p.productId, qty: p.qty, rate: orderLineFor(o, p)?.rate ?? 0, batchId: p.batchId, mrp: p.mrp, line: p.line }));
+    .map(p => ({ productId: p.productId, qty: p.qty, rate: orderLineFor(o, p)?.rate ?? 0, discountPct: orderLineFor(o, p)?.discountPct, batchId: p.batchId, mrp: p.mrp, line: p.line }));
   // numbers from the server when there is one (never a duplicate across phones); needs internet
   const products = new Map((await db.products.toArray()).map(p => [p.id, p.companyId]));
   const companies = new Set(lines.map(l => products.get(l.productId)));

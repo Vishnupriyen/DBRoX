@@ -667,3 +667,16 @@ body[data-toast] .main { padding-top: var(--toast-pad, 72px); }
 .main.has-home { padding-bottom: calc(76px + 28px + env(safe-area-inset-bottom, 0px)); }
 /* a long bill number shrinks a little on a narrow screen at large text instead of running out of its box */
 .item .billno { font-size: min(1em, 5.4vw); }
+
+/* Part 2 (14 Nov 2026): every editable bill table is one card per line — no sideways scroll at 360 px */
+.linecard { border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px 12px; display: grid; gap: 8px; }
+.linecard .lc-head { display: flex; align-items: center; gap: 8px; }
+.linecard .lc-name { flex: 1; min-width: 0; font-weight: 600; font-size: var(--f3); overflow-wrap: anywhere; }
+.linecard .lc-boxes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.linecard .lc-box label { display: block; font-size: var(--f1); color: var(--mut); margin-bottom: 2px; }
+.linecard .lc-box input { width: 100%; min-height: 44px; box-sizing: border-box; }
+.linecard .lc-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--f2); color: var(--mut); }
+.linecard .lc-amt { color: var(--jade); font-size: var(--f4); font-weight: 700; white-space: nowrap; }
+.linecard.short { border-color: var(--bad); } .linecard.extra { border-color: var(--warn); }
+.lc-note { font-size: var(--f1); color: var(--mut); }
+.lc-short { color: var(--bad); font-weight: 600; } .lc-extra { color: var(--warn); font-weight: 600; }

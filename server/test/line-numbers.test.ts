@@ -1,7 +1,7 @@
 // Part 2 step 2a0: order line numbers are stable ids. An old phone that sends an order without them never wipes the
 // numbers the server already holds (same products in the same order); a real change of lines takes the phone's copy.
 import { describe, it, expect } from 'vitest';
-import { keepLineNumbers } from '../src/rules.js';
+import { badLines, keepLineNumbers } from '../src/rules.js';
 
 const stored = { id: 'o1', lines: [{ productId: 'a', qty: 5, rate: 10, line: 1 }, { productId: 'b', qty: 2, rate: 20, line: 3 }], picked: [{ productId: 'a', qty: 5, line: 1 }] };
 describe('order line numbers (server keeps them)', () => {
@@ -16,5 +16,13 @@ describe('order line numbers (server keeps them)', () => {
     const numbered = { id: 'o1', lines: [{ productId: 'a', qty: 5, rate: 10, line: 7 }, { productId: 'b', qty: 2, rate: 20, line: 8 }] };
     expect(keepLineNumbers(numbered, stored)).toEqual(numbered);
     expect(keepLineNumbers(other, undefined)).toEqual(other);
+  });
+});
+
+describe('Disc % on order and bill lines (server holds it too)', () => {
+  it('0 to 100 only', () => {
+    expect(badLines('orders', { lines: [{ productId: 'a', qty: 1, rate: 10, discountPct: 5 }] })).toBeNull();
+    expect(badLines('orders', { lines: [{ productId: 'a', qty: 1, rate: 10, discountPct: 120 }] })).toBe('Disc % must be 0 to 100');
+    expect(badLines('invoices', { lines: [{ productId: 'a', qty: 1, rate: 10, discountPct: -1 }] })).toBe('Disc % must be 0 to 100');
   });
 });

@@ -96,6 +96,7 @@ export interface Product extends Base {
   aliases: string[];
   focus?: boolean;
   active: boolean;
+  unit?: string; // GST unit (UQC); missing = PCS (Part 2 item 10)
   companyProductId?: string; // the company's own id for this product (when the company is linked)
 }
 
@@ -152,7 +153,7 @@ export interface Scheme extends Base {
   budget?: number; // company schemes: the most the company will pay out on this scheme
 }
 
-export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number; line?: number } // batch/MRP chosen by the picker; line = stable number 1,2,3… (core/lines.ts)
+export interface OrderLine { productId: string; qty: number; rate: number; batchId?: string; mrp?: number; line?: number; discountPct?: number } // discountPct: the owner's Disc % (replaces scheme %); batch/MRP chosen by the picker; line = stable number 1,2,3… (core/lines.ts)
 
 export interface Order extends Base {
   shopId: string;
@@ -164,6 +165,9 @@ export interface Order extends Base {
   dbLinkId?: string; repId?: string; repName?: string; // company side: the field order and who took it
   rateRemark?: string; // salesman asked for a lower rate; owner approves
   lines: OrderLine[];
+  editedAt?: string; editedBy?: string; // last change in Orders received
+  activity?: { at: string; by: string; what: string }[]; // Orders received edits and approvals, oldest first (travels with the order)
+  original?: OrderLine[]; // the salesman's lines, kept at the first edit in Orders received (Part 2 item 8)
   // pipeline: new → picked (godown) → billed (owner approved) ; cancelled at any point
   // new (owner to approve) → approved (godown to pick) → picked (owner to verify) → billed
   status: 'new' | 'approved' | 'picked' | 'needs_ok' | 'billed' | 'cancelled';

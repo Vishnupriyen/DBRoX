@@ -231,7 +231,7 @@ export default function App() {
     }
     switch (page as Page) {
       case 'home': return <Home role={me.role} go={p => setPage(p)} open={module} onOpen={setModule} />;
-      case 'orders-received': return <OrdersReceived />;
+      case 'orders-received': return <OrdersReceived go={go} />;
       case 'verify': return <Approve go={go} />;
       case 'billed': case 'bills': return <More role={me.role} onLogout={logout} initial="bills" />;
       case 'newshops': return <NewShops />;
