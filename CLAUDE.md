@@ -8,7 +8,8 @@ Hanubix™ — FMCG distributor app for Tamil Nadu (TESRAX is ENGLISH FIRST — 
 Read `QUALITY.md` before changing anything. Follow its Definition of done on every change.
 
 Before saying any work is finished:
-1. `cd app && npm run gate` must print `✔ GATE PASSED`.
+1. The full gate must be green: GitHub's "Quality gate" run on the push (same `npm run gate`). Locally run only the quick
+   tests that touch the change (owner, 14 Nov 2026 — no duplicate local full gate).
 2. For a demo or release, also `npm run test:chaos`.
 3. Any bug found → a regression test first, then the fix.
 Never report work as done while the gate is red. Never weaken a guard, a law or a sweep check to make it pass —
@@ -46,8 +47,9 @@ Small fixes may skip 1–3, never 5. The owner is told about a step only when it
 **Using usage wisely (owner, 13 Nov 2026 — every chat and every agent follows this):**
 - **Ask before any big job.** Split it into parts; show the owner each part's result and get his yes before the next. Never run a
   whole round ("build it complete") as one long job — tell him the size first ("about N parts").
-- **Full gate once per part, at the end.** While fixing, run only the tests that touch the change; the full gate (~16 min),
-  chaos and the full server suite run once before the push — never after every small fix.
+- **No local full gate (owner, 14 Nov 2026).** Each part: build → quick tests on what changed (type check + the touched test
+  files) → independent tester → push at once → GitHub's Quality gate runs the full gate; if it goes red, fix it before the next part.
+  Chaos before a demo or release only.
 - **Models:** check-runner (haiku) for gates, CI waits, logs and the APK link; tester and security on sonnet (haiku for a
   re-check of one fix); the strongest model only for hard building or design. Never wait in the foreground — background it.
 - **Bulk work in one step:** many labels, cards, files or checks are done by one script in one command — every step re-reads

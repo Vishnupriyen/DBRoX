@@ -101,7 +101,7 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   open: screen-type answers (P&L, Orders received) leave no file — planned with item 46 (Reports card, Part 4).
 - **NEXT (owner, 14 Nov): the CORRECTION ROUND — 47 items in 5 parts, locked in `docs/HANUBIX_CORRECTIONS_LOCKED.md`** (from the
   founder's handwritten review + chat). It REPLACES the 4-part convenience round below. Start with Part 1 (look and TESRAX): first
-  show the Menu mock and the font-size screenshots, get his yes, then build. Each part: build → tester → one full gate → real phone
+  show the Menu mock and the font-size screenshots, get his yes, then build. Each part: build → quick tests → tester → push → GitHub's full gate (no local full gate, owner 14 Nov) → real phone
   screenshots → his yes → next part. Also fold in the minor wipe-race fix and the open CI cards #10 and #11.
 - Owner decisions 14 Nov (not app work): skip n8n (GitHub cards + scheduled tasks + server scripts + Postiz cover it); Postiz
   self-hosted on the Hostinger server later (free); iOS app only after the Android pilot and a customer asks (~₹8,700/yr Apple fee,

@@ -1,7 +1,7 @@
 # Hanubix — Correction round, LOCKED (founder, 14 Nov 2026)
 
 Source: founder's handwritten review of the DB app (4 pages) + chat answers, 14 Nov 2026. 48 items in 5 parts.
-Each part: build → tester → one full gate → real phone screenshots → founder's yes → next part.
+Each part: build → quick tests → tester → push → GitHub's full gate green (fix if red) → real phone screenshots → founder's yes → next part (owner, 14 Nov 2026).
 This replaces the earlier 4-part "convenience round" plan in HANDOVER.md.
 
 ## Part 1 — Look and TESRAX (small)
