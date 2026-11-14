@@ -103,6 +103,10 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   TESRAX download/open/approve order (core/tesraxOrders.ts). Tests: orders-received, part2-tesrax; e2e flow edits + approves.
 - 2c Verify picked (core/verify.ts, ui/Approve.tsx): Ordered/Picked per line (Picked first, defaults to Ordered), Verify all, red short /
   amber extra, Rate + Disc % editable, Make bill blocked with the reason (stock); godown view hides rates (no godown tile yet). Test: verify-picked.
+- 2d Disc % per line (₹ legal, discountPct kept) + the same product twice on sales bills (Settings.sameProductTwice, missing = on):
+  priceLines/makeInvoices free once on line 1, stock out once (new bill moves id mv:{bill}:{lot}), shortages/credits per line, Delivery per
+  line, hsnSummary from lines, company orders refused (phone + server). Chaos adds duplicate lines + "free twice" law (12×1000 green).
+  Tests: same-product-twice (GST worked example ₹1,652 / HSN 15→17), part2-tesrax (Disc % by voice).
 
 ## Waiting for the owner
 - **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the

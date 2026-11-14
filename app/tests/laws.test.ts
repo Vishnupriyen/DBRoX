@@ -56,6 +56,8 @@ async function checkLaws(start: Map<string, number>): Promise<string[]> {
     const lineSum = r2(i.lines.reduce((a, l) => a + l.taxable, 0));
     if (Math.abs(lineSum - i.taxable) > 0.02) broken.push(`BILL LINES ≠ TAXABLE ${i.number}: ${lineSum} vs ${i.taxable}`);
     if (i.lines.some(l => l.batches.some(b => b.qty < 0))) broken.push(`NEGATIVE PIECES ON BILL ${i.number}`);
+    // the same product on two lines: scheme-free pieces only ever on its first line (worked out once, GST rule 3)
+    i.lines.forEach((l, k) => { if (l.freeQty > 0 && i.lines.findIndex(x => x.productId === l.productId) !== k) broken.push(`FREE PIECES TWICE ${i.number}: line ${k + 1} of ${l.productId}`); });
   }
   // a bill's credit notes never come to more than it charged, and never credit more paid pieces than a line billed
   for (const i of invs) {
@@ -105,13 +107,15 @@ async function play(seed: number) {
       if (roll < 0.16) {
         const shop = pick((await db.shops.toArray()).filter(s => s.active !== false));
         const prods = (await db.products.toArray()).filter(p => p.active);
-        const lines = Array.from({ length: 1 + Math.floor(R() * 3) }, () => { const p = pick(prods); return { productId: p.id, qty: 1 + Math.floor(R() * 12), rate: p.rate }; });
+        const lines: { productId: string; qty: number; rate: number; discountPct?: number }[] = Array.from({ length: 1 + Math.floor(R() * 3) }, () => { const p = pick(prods); return { productId: p.id, qty: 1 + Math.floor(R() * 12), rate: p.rate }; });
+        // Part 2 item 34: the same product on a second line, its own rate and Disc % (stock, free pieces, credits per line)
+        if (R() < 0.35) lines.push({ productId: lines[0].productId, qty: 1 + Math.floor(R() * 8), rate: r2(lines[0].rate * (0.85 + R() * 0.2)), discountPct: pick([0, 2.5, 5, 10]) });
         const cs = new ChangeSet(); const o = await bookOrder(cs, shop, lines, 'chaos'); await cs.commit('booked');
         await approveOrder(o.id); what = `order ${shop.name} ${lines.map(l => l.qty).join('+')}`;
       } else if (roll < 0.30) {
         const o = pick((await db.orders.toArray()).filter(x => x.status === 'approved')); if (!o) continue;
         const sug = await suggestPick(o);
-        await pickOrder(o.id, sug.map(x => ({ productId: x.productId, qty: Math.max(0, Math.min(x.available, Math.floor(x.available * (R() < .3 ? R() : 1)))) })));
+        await pickOrder(o.id, sug.map(x => ({ productId: x.productId, line: x.line, qty: Math.max(0, Math.min(x.available, Math.floor(x.available * (R() < .3 ? R() : 1)))) })));
         what = `pick ${o.id.slice(0, 6)}`;
       } else if (roll < 0.44) {
         const o = pick((await db.orders.toArray()).filter(x => x.status === 'picked')); if (!o) continue;
@@ -125,7 +129,7 @@ async function play(seed: number) {
       } else if (roll < 0.66) {
         const inv = pick((await db.invoices.toArray()).filter(i => i.deliveryStatus === 'out' && !i.cancelled)); if (!inv) continue;
         const kind = pick(['full', 'short', 'damaged', 'refused', 'extra', 'double']);
-        const l = pick(inv.lines); const k = `${inv.id}|${l.productId}`;
+        const l = pick(inv.lines); const k = R() < 0.5 ? `${inv.id}|${l.productId}|${inv.lines.indexOf(l)}` : `${inv.id}|${l.productId}`; // per line, or the older per-product key
         const input = kind === 'refused' ? { returnAll: true }
           : kind === 'short' ? { short: { [k]: { qty: 1 + Math.floor(R() * l.qty), reason: 'short' } } }
           : kind === 'damaged' ? { short: { [k]: { qty: 1 + Math.floor(R() * l.qty), reason: 'damaged' } } }
@@ -287,7 +291,7 @@ async function playPhones(seed: number, steps: number) {
           p.batches.push(await cs.commit('Stock in')); what = `${p.role} stock in +${n} ${b?.batch ?? 'new lot'}`;
         } else if (roll < 0.70) {
           const inv = pick((await db.invoices.toArray()).filter(i => !i.cancelled && !i.delivery)); if (!inv) return;
-          const kind = pick(['full', 'short', 'refused', 'extra', 'damaged']); const l = pick(inv.lines); const k = `${inv.id}|${l.productId}`;
+          const kind = pick(['full', 'short', 'refused', 'extra', 'damaged']); const l = pick(inv.lines); const k = R() < 0.5 ? `${inv.id}|${l.productId}|${inv.lines.indexOf(l)}` : `${inv.id}|${l.productId}`; // per line, or the older per-product key
           const input = kind === 'refused' ? { returnAll: true } : kind === 'short' ? { short: { [k]: { qty: 1 + Math.floor(R() * l.qty), reason: 'short' } } }
             : kind === 'damaged' ? { short: { [k]: { qty: 1 + Math.floor(R() * l.qty), reason: 'damaged' } } } : kind === 'extra' ? { extra: { [k]: 1 + Math.floor(R() * 3) } } : {};
           const b = await recordDelivery([inv.id], input); if (b) p.batches.push(b); what = `${p.role} deliver ${inv.number} ${kind}`;

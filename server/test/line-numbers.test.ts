@@ -26,3 +26,12 @@ describe('Disc % on order and bill lines (server holds it too)', () => {
     expect(badLines('invoices', { lines: [{ productId: 'a', qty: 1, rate: 10, discountPct: -1 }] })).toBe('Disc % must be 0 to 100');
   });
 });
+
+describe('the same product on two lines (server)', () => {
+  it('allowed on a bill and our own order; refused on a company order', () => {
+    const two = [{ productId: 'a', qty: 1, rate: 10 }, { productId: 'a', qty: 2, rate: 9 }];
+    expect(badLines('invoices', { lines: two })).toBeNull();
+    expect(badLines('orders', { source: 'salesman', lines: two })).toBeNull();
+    expect(badLines('orders', { source: 'company', lines: two })).toBe('a company order has each product once');
+  });
+});

@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, X, Plus, Trash2, Printer } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, X, Plus, Printer } from 'lucide-react';
 import { db, getSettings, today } from '../core/db';
-import { activeSchemes, billLine, billTotals } from '../core/billing';
+import { billTotals, priceLines, sameProductTwiceOn } from '../core/billing';
 import { billChangeBlock, isInterState } from '../core/gst';
 import { saveBillEdit } from '../core/pipeline';
 import { inr } from '../core/i18n';
 import { norm } from '../core/match';
-import { notify } from './dialog';
+import { ask, notify } from './dialog';
+import { NumBox } from './OrdersReceived';
 import type { Invoice, InvoiceLine, Product, Scheme, Settings, Shop } from '../core/types';
 
-type Edit = { productId: string; qty: number; rate: number; mrp: number; discount?: number }; // discount set only when typed by hand
+type Edit = { productId: string; qty: number; rate: number; mrp: number; discount?: number; discountPct?: number }; // discountPct: the line's Disc %; discount: an old line's ₹ (kept until switched to %)
 
 // Full bill editor, laid out like the bill itself: shop, every line (qty, rate, discount, MRP), add or remove lines.
 // Allowed until the bill is printed or delivered (and before the month's GST return); the number never changes; the
@@ -20,20 +21,31 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
   const [products, setProducts] = useState<Product[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [shopId, setShopId] = useState(invoice.shopId);
-  const [edits, setEdits] = useState<Edit[]>(invoice.lines.map(l => ({ productId: l.productId, qty: l.qty, rate: l.rate, mrp: l.mrp })));
+  const [edits, setEdits] = useState<Edit[]>(invoice.lines.map(l => ({ productId: l.productId, qty: l.qty, rate: l.rate, mrp: l.mrp, ...(l.discountPct != null ? { discountPct: l.discountPct } : l.discount > 0 ? { discount: l.discount } : {}) })));
   const [q, setQ] = useState('');
   const [saving, setSaving] = useState(false);
   useEffect(() => { getSettings().then(setS); db.shops.toArray().then(x => setShops(x.filter(y => y.active !== false))); db.products.toArray().then(ps => setProducts(ps.filter(p => p.companyId === invoice.companyId))); db.schemes.toArray().then(setSchemes); }, [invoice]);
   const shop = shops.find(x => x.id === shopId);
   const inter = !!s && !!shop && isInterState(shop, s);
   const pmap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
-  const lines: InvoiceLine[] = useMemo(() => edits.flatMap(e => { const p = pmap.get(e.productId); return p ? [billLine(p, Math.max(0, Math.floor(e.qty)), e.rate, activeSchemes(schemes, p, invoice.date), inter, { mrp: e.mrp, discount: e.discount })] : []; }), [edits, pmap, schemes, inter, invoice.date]);
+  // priced exactly as the save will price them (core/billing.ts priceLines): Disc % or an old ₹, free pieces once per product
+  const priced = useMemo(() => priceLines(edits.map(e => ({ ...e, qty: Math.max(0, Math.floor(e.qty)) })), pmap, schemes, inter, invoice.date), [edits, pmap, schemes, inter, invoice.date]);
+  const lines: InvoiceLine[] = useMemo(() => priced.filter((l): l is InvoiceLine => !!l), [priced]);
   const set = (i: number, patch: Partial<Edit>) => setEdits(es => es.map((e, k) => k === i ? { ...e, ...patch } : e));
   const totals = useMemo(() => { const t = billTotals(lines); return { ...t, saving: t.schemeSaving }; }, [lines]);
-  const addProduct = (p: Product) => {
-    if (edits.some(l => l.productId === p.id)) return;
-    setEdits(es => [...es, { productId: p.id, qty: p.caseSize, rate: p.rate, mrp: p.mrp }]);
-    setQ('');
+  const adding = useRef(false);
+  const addProduct = async (p: Product) => {
+    if (adding.current) return; adding.current = true; // a double tap adds one line, not two
+    try {
+      const at = edits.findIndex(l => l.productId === p.id);
+      // the same product again on a SALES bill (item 34): "Add to line N" (default) or "Keep as new line"; flag off = add to it
+      const choice = at < 0 ? 'new' : !sameProductTwiceOn(s ?? undefined) ? 'add'
+        : await ask(`Already in bill (line ${at + 1})`, { choices: [{ label: 'Keep as new line', value: 'new' }, { label: `Add to line ${at + 1}`, value: 'add', tone: 'primary' }] });
+      if (!choice) return;
+      if (choice === 'add') set(at, { qty: edits[at].qty + (p.caseSize || 1) });
+      else setEdits(es => [...es, { productId: p.id, qty: p.caseSize || 1, rate: p.rate, mrp: p.mrp }]);
+      setQ('');
+    } finally { adding.current = false; }
   };
   const block = billChangeBlock(invoice, 'edit', today());
   const save = async () => {
@@ -60,24 +72,28 @@ export function BillEditor({ invoice, onClose }: { invoice: Invoice; onClose: (s
             <select value={shopId} onChange={e => setShopId(e.target.value)}>{shops.map(x => <option key={x.id} value={x.id}>{x.name} · {x.area}</option>)}</select>
             {shop && <div className="muted">{shop.address ?? shop.area}{shop.gstin ? ` · GSTIN ${shop.gstin}` : ` · B2C`}</div>}
           </div>
-          <table className="tbl bill-tbl">
-            <thead><tr><th>{'Item'}</th><th>{'Qty'}</th><th>{'Rate'}</th><th>{'Disc ₹'}</th><th>GST</th><th className="num">{'Amount'}</th><th></th></tr></thead>
-            <tbody>
-              {lines.map((l, i) => (
-                <tr key={i}>
-                  <td><b>{l.name}</b><div className="muted">MRP <input type="number" value={l.mrp} onChange={e => set(i, { mrp: Number(e.target.value) })} style={{ width: 64 }} aria-label="MRP" />{l.freeQty ? ` · +${l.freeQty} free` : ''}</div></td>
-                  <td data-label="Qty"><input type="number" value={l.qty} onChange={e => set(i, { qty: Math.max(0, Number(e.target.value)) })} style={{ width: 64 }} aria-label="Quantity" /></td>
-                  <td data-label="Rate"><input type="number" value={l.rate} onChange={e => set(i, { rate: Number(e.target.value) })} style={{ width: 76 }} aria-label="Rate" /></td>
-                  <td data-label="Disc ₹"><input type="number" value={l.discount} onChange={e => set(i, { discount: Number(e.target.value) })} style={{ width: 70 }} aria-label="Discount" /></td>
-                  <td className="muted" data-label="GST">{l.gst}%</td>
-                  <td className="num" data-label="Amount">{inr(l.total)}</td>
-                  <td><button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => setEdits(es => es.filter((_, k) => k !== i))} aria-label="Remove line"><Trash2 size={16} /></button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {edits.map((e, i) => {
+            const l = priced[i]; const p = pmap.get(e.productId);
+            const first = edits.findIndex(x => x.productId === e.productId);
+            return (
+              <div key={i} className="linecard">
+                <div className="lc-head"><div className="lc-name">{i + 1}. {p?.name ?? 'Unknown item'}</div>
+                  <button className="icon-btn" onClick={() => setEdits(es => es.filter((_, k) => k !== i))} aria-label={`Remove ${p?.name ?? 'line'}`}><X size={18} /></button></div>
+                <div className="lc-boxes">
+                  <div className="lc-box"><label>{'Qty'}</label><NumBox whole value={e.qty} onChange={v => set(i, { qty: v })} label="Qty" /></div>
+                  <div className="lc-box"><label>{'Rate'}</label><NumBox value={e.rate} onChange={v => set(i, { rate: v })} label="Rate" /></div>
+                  <div className="lc-box"><label>{'Disc %'}</label>
+                    {e.discountPct == null && e.discount != null
+                      ? <button className="btn small" style={{ width: '100%', minHeight: 44 }} onClick={() => set(i, { discount: undefined, discountPct: l && l.gross ? Math.round(e.discount! / l.gross * 10000) / 100 : 0 })} aria-label="Change to Disc %">{inr(e.discount)} {'off'}</button>
+                      : <NumBox value={e.discountPct ?? (l && l.gross ? Math.round(l.discount / l.gross * 10000) / 100 : 0)} onChange={v => set(i, { discountPct: v, discount: undefined })} label="Disc %" />}
+                    {l && l.discount > 0 && e.discount == null && <div className="lc-note">= {inr(l.discount)}</div>}</div>
+                </div>
+                <div className="lc-foot"><span>MRP <input type="number" value={e.mrp} onChange={ev => set(i, { mrp: Number(ev.target.value) })} style={{ width: 64 }} aria-label="MRP" /> · GST {p?.gst ?? 0}%{l?.freeQty ? ` · +${l.freeQty} free` : first !== i && priced[first]?.freeQty ? ` · Free: included in line ${first + 1}` : ''}</span><span className="lc-amt num">{inr(l?.total ?? 0)}</span></div>
+              </div>
+            );
+          })}
           <div className="field"><input placeholder={'Add a product…'} value={q} onChange={e => setQ(e.target.value)} aria-label="Add product" />
-            {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => addProduct(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">{inr(p.rate)} · MRP {p.mrp}</span></button>)}</div>}
+            {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => void addProduct(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">{inr(p.rate)} · MRP {p.mrp}</span></button>)}</div>}
           </div>
           <div className="bill-totals">
             <div><span>{'Taxable'}</span><b className="num">{inr(totals.taxable)}</b></div>

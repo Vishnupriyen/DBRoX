@@ -50,6 +50,21 @@ export function billLine(p: Product, qty: number, rate: number, schemes: Scheme[
     ...(typeof p.purchaseRate === 'number' && Number.isFinite(p.purchaseRate) ? { costRate: p.purchaseRate } : {}),
   };
 }
+/** lines priced as a bill prices them (new bill, bill editor, order screens): each line its own rate and Disc % (or a typed ₹),
+ *  and a product on two lines gets its scheme-free pieces once, on the combined paid qty, on its first line (GST rule 3) */
+export function priceLines(edits: { productId: string; qty: number; rate: number; mrp?: number; discount?: number; discountPct?: number }[], products: Map<string, Product>, schemes: Scheme[], inter: boolean, date: string): (InvoiceLine | null)[] {
+  const together = new Map<string, number>(); for (const e of edits) if (e.qty > 0) together.set(e.productId, (together.get(e.productId) ?? 0) + e.qty);
+  const seen = new Set<string>();
+  return edits.map(e => {
+    const p = products.get(e.productId); if (!p || !(e.qty > 0)) return null;
+    const isFirst = !seen.has(p.id); seen.add(p.id);
+    const sch = activeSchemes(schemes, p, date);
+    const line = billLine(p, e.qty, e.rate, sch, inter, { mrp: e.mrp, ...(e.discountPct != null ? { discountPct: e.discountPct } : { discount: e.discount }), noFree: !isFirst });
+    if (isFirst && together.get(p.id)! !== e.qty) line.freeQty = applySchemes(p, together.get(p.id)!, e.rate, sch).freeQty;
+    if (e.discountPct != null) line.discountPct = e.discountPct;
+    return line;
+  });
+}
 /** a bill's totals from its lines: tax parts + round-off = total (rounded to the rupee) */
 export function billTotals(lines: InvoiceLine[]) {
   const taxable = r2(lines.reduce((s, x) => s + x.taxable, 0));
@@ -92,15 +107,22 @@ export async function refreshSchemeClaims(cs: ChangeSet, inv: Invoice, cns: Cred
   const schemes = await db.schemes.toArray();
   const credits = lineCredits(inv, cns);
   const want = new Map<string, { qty: number; amount: number; names: string[] }>();
+  // % schemes on each line's own value; free pieces once per product on the combined kept qty (a product can sit on two lines)
+  const keptOf = new Map<string, { qty: number; rate: number }>();
   if (!inv.cancelled) inv.lines.forEach((l, i) => {
     const p = products.get(l.productId); if (!p) return;
     const kept = Math.max(0, l.qty - credits[i].paid);
     const sch = applySchemes(p, kept, l.rate, activeSchemes(schemes, p, inv.date).filter(s => s.source === 'company'));
-    const amount = r2(sch.coDiscount + sch.coFree * l.rate);
     const w = want.get(l.productId) ?? { qty: 0, amount: 0, names: [] };
-    w.qty += kept; w.amount = r2(w.amount + amount); w.names = [...new Set([...w.names, ...sch.names])];
+    w.qty += kept; w.amount = r2(w.amount + sch.coDiscount); w.names = [...new Set([...w.names, ...sch.names])];
     want.set(l.productId, w);
+    const k = keptOf.get(l.productId); keptOf.set(l.productId, { qty: (k?.qty ?? 0) + kept, rate: k?.rate ?? l.rate });
   });
+  for (const [pid, k] of keptOf) {
+    const p = products.get(pid)!; const w = want.get(pid)!;
+    const sch = applySchemes(p, k.qty, k.rate, activeSchemes(schemes, p, inv.date).filter(s => s.source === 'company'));
+    w.amount = r2(w.amount + sch.coFree * k.rate); if (sch.coFree) w.names = [...new Set([...w.names, ...sch.names])];
+  }
   const seen = new Map(pending.map(e => [e.id, e]));
   // a bill's scheme lines are filed in the bill's month (indexed): never read the whole claim register per bill
   for (const e of await db.claimEntries.where('month').equals(inv.date.slice(0, 7)).toArray()) if (!seen.has(e.id)) seen.set(e.id, e);
@@ -226,22 +248,36 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
   const out: Invoice[] = [];
   for (const [companyId, lines] of byCompany) {
     const invLines: InvoiceLine[] = [];
+    // The same product can sit on two lines (Part 2 item 34): its stock goes out once for the lines together, its scheme-free
+    // pieces are worked out once on the combined paid qty and shown on its first line (GST rule 3); each line keeps its own
+    // rate and Disc %. One line per product = exactly as before.
+    const want = new Map<string, number>(); // product → qty billed on all its lines (cut to stock below)
+    for (const l of lines) want.set(l.productId, (want.get(l.productId) ?? 0) + l.qty);
+    for (const [pid, total] of want) {
+      const p = products.get(pid)!; const first = lines.find(l => l.productId === pid)!;
+      const usable = batches.filter(b => b.productId === pid && b.qty > 0 && b.expiry >= date).reduce((a, b) => a + b.qty, 0);
+      let qty = total;
+      // never bill pieces no lot can cover: cut to what stock holds (the owner sees the cut on the order)
+      while (qty > 0 && qty + applySchemes(p, qty, first.rate, activeSchemes(schemes, p, date)).freeQty > usable) qty--;
+      if (qty < total) cuts?.push({ productId: p.id, name: p.name, wanted: total, billed: qty });
+      want.set(pid, qty);
+    }
+    const left = new Map(want); const seen = new Set<string>();
     for (const l0 of lines) {
       const p = products.get(l0.productId)!;
-      // never bill pieces no lot can cover: cut to what stock holds (the owner sees the cut on the order)
-      const usable = batches.filter(b => b.productId === p.id && b.qty > 0 && b.expiry >= date).reduce((a, b) => a + b.qty, 0);
-      let qty = l0.qty;
-      while (qty > 0 && qty + applySchemes(p, qty, l0.rate, activeSchemes(schemes, p, date)).freeQty > usable) qty--;
-      if (qty < l0.qty) cuts?.push({ productId: p.id, name: p.name, wanted: l0.qty, billed: qty });
+      const room = left.get(p.id) ?? 0; const qty = Math.min(l0.qty, room); left.set(p.id, room - qty);
       if (qty <= 0) continue;
-      const l = { ...l0, qty };
-      const line = billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date), inter, { mrp: l.mrp, discountPct: l.discountPct });
+      const isFirst = !seen.has(p.id); seen.add(p.id);
+      const sch = activeSchemes(schemes, p, date);
+      const line = billLine(p, qty, l0.rate, sch, inter, { mrp: l0.mrp, discountPct: l0.discountPct, noFree: !isFirst });
+      if (isFirst && want.get(p.id)! !== qty) line.freeQty = applySchemes(p, want.get(p.id)!, l0.rate, sch).freeQty; // free on the combined paid qty
+      if (l0.discountPct != null) line.discountPct = l0.discountPct;
       // the picker's batch first (what is physically in the van), the rest oldest-expiry first
       const picks: ReturnType<typeof pickBatches>['picks'] = [];
-      let need = l.qty + line.freeQty;
+      let need = qty + line.freeQty;
       // the same rule as every other lot taken for a bill: this product's, in stock, not expired (an expired lot the picker
       // chose is never sold — the bill takes the oldest good lots instead)
-      const chosen = l.batchId ? batches.find(b => b.id === l.batchId && b.productId === p.id && b.qty > 0 && b.expiry >= date) : undefined;
+      const chosen = l0.batchId ? batches.find(b => b.id === l0.batchId && b.productId === p.id && b.qty > 0 && b.expiry >= date) : undefined;
       if (chosen) { const take = Math.min(chosen.qty, need); picks.push({ batchId: chosen.id, batch: chosen.batch, qty: take, expiry: chosen.expiry }); need -= take; }
       if (need > 0) picks.push(...pickBatches(batches.filter(b => b.id !== chosen?.id), p.id, need, date).picks);
       for (const pk of picks) {
@@ -265,3 +301,6 @@ export async function makeInvoices(cs: ChangeSet, order: Order, shop: Shop, numb
   }
   return out;
 }
+
+/** the same product on two lines of a sales bill (Part 2 item 34): on unless the owner switched it off (R1) */
+export const sameProductTwiceOn = (s: Pick<Settings, 'sameProductTwice'> | undefined) => s?.sameProductTwice !== false;

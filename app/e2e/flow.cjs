@@ -212,8 +212,9 @@ const BASE = process.env.E2E_URL || 'http://localhost:4173';
   await home(); await tile('Bill'); await tile('Billed'); await shot('owner-billed-list');
   // P3: the bill editor stacks each line on a phone: no sideways scroll
   if (await p.locator('button:has-text("Edit")').count()) { await p.locator('button:has-text("Edit")').first().click(); await p.waitForTimeout(500); await shot('owner-bill-editor');
-    const ov = await p.evaluate(() => { const s = document.querySelector('.sheet .stack'); const tb = document.querySelector('.bill-tbl'); return { sheet: s.scrollWidth - s.clientWidth, tbl: tb.scrollWidth - tb.clientWidth }; });
-    must(ov.sheet <= 1 && ov.tbl <= 1, `the bill editor does not scroll sideways on a phone (${JSON.stringify(ov)})`);
+    const ov = await p.evaluate(() => { const s = document.querySelector('.sheet .stack'); const cards = [...document.querySelectorAll('.sheet .linecard')]; return { sheet: s.scrollWidth - s.clientWidth, cards: cards.length, card: Math.max(0, ...cards.map(c => c.scrollWidth - c.clientWidth)) }; });
+    must(ov.sheet <= 1 && ov.cards > 0 && ov.card <= 1, `the bill editor is one card per line and does not scroll sideways on a phone (${JSON.stringify(ov)})`);
+    must(await p.locator('.sheet .linecard input[aria-label="Disc %"], .sheet .linecard button[aria-label="Change to Disc %"]').count() > 0, 'each bill line has Disc % (or an old "₹ off" to switch)');
     await p.click('.sheet-head button[aria-label="Close"]'); await p.waitForTimeout(300); }
   await home(); await tile('Payroll'); await tile('Salary'); await shot('owner-salary');
   await logout(); await loginAs('Ravi (Salesman)'); await tile('My day'); await shot('salesman-myday');

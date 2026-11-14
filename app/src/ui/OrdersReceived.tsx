@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, AlertTriangle, Phone, Store, MessageSquare, Download, BarChart3, Plus, Undo2, History } from 'lucide-react';
 import { ChangeSet, db, getSettings } from '../core/db';
 import { isInterState } from '../core/gst';
+import { sameProductTwiceOn } from '../core/billing';
 import { approveOrder, flagArrivedOrders, rejectOrder } from '../core/pipeline';
 import { allOutstanding } from '../core/ledger';
 import { editOrder, orderActivity, orderView, ordersSheet, undoApprove } from '../core/orderEdit';
@@ -58,7 +59,7 @@ export function OrdersReceived({ go }: { go?: (p: string) => void } = {}) {
   const current = orders.find(o => o.id === open);
   useBack(() => { if (!open) return false; setOpen(null); setTick(x => x + 1); return true; }); // the app's back goes up to the list
 
-  if (current) return <OrderEditor o={current} products={products} schemes={schemes} inter={inter(current)} bad={bad(current)}
+  if (current) return <OrderEditor o={current} products={products} schemes={schemes} inter={inter(current)} bad={bad(current)} twice={sameProductTwiceOn(cfg)}
     onBack={() => { setOpen(null); setTick(x => x + 1); }} onApprove={() => approve(current)} onChanged={() => setTick(x => x + 1)} />;
   return (
     <div className="stack">
@@ -84,7 +85,7 @@ export function OrdersReceived({ go }: { go?: (p: string) => void } = {}) {
   );
 }
 
-function OrderEditor({ o, products, schemes, inter, bad, onBack, onApprove, onChanged }: { o: Row; products: Map<string, Product>; schemes: Scheme[]; inter: boolean; bad: boolean; onBack: () => void; onApprove: () => Promise<void>; onChanged: () => void }) {
+function OrderEditor({ o, products, schemes, inter, bad, twice, onBack, onApprove, onChanged }: { o: Row; products: Map<string, Product>; schemes: Scheme[]; inter: boolean; bad: boolean; twice: boolean; onBack: () => void; onApprove: () => Promise<void>; onChanged: () => void }) {
   const [lines, setLines] = useState<OrderLine[]>(o.lines);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
@@ -109,10 +110,18 @@ function OrderEditor({ o, products, schemes, inter, bad, onBack, onApprove, onCh
     }
     setLines(ls => ls.filter((_, k) => k !== i));
   };
-  const add = (p: Product) => {
-    const at = lines.findIndex(l => l.productId === p.id);
-    if (at >= 0) set(at, { qty: lines[at].qty + 1 }); else setLines(ls => [...ls, { productId: p.id, qty: 1, rate: p.rate }]);
-    setQ('');
+  const adding = useRef(false);
+  const add = async (p: Product) => {
+    if (adding.current) return; adding.current = true; // a double tap adds one line, not two
+    try {
+      const at = lines.findIndex(l => l.productId === p.id);
+      // the same product again (item 34): "Add to line N" (default) or "Keep as new line" — not on a company's order
+      const choice = at < 0 ? 'new' : (!twice || o.source === 'company') ? 'add'
+        : await ask(`Already in bill (line ${at + 1})`, { choices: [{ label: 'Keep as new line', value: 'new' }, { label: `Add to line ${at + 1}`, value: 'add', tone: 'primary' }] });
+      if (!choice) return;
+      if (choice === 'add') set(at, { qty: lines[at].qty + 1 }); else setLines(ls => [...ls, { productId: p.id, qty: 1, rate: p.rate }]);
+      setQ('');
+    } finally { adding.current = false; }
   };
   const save = async () => { await editOrder(o.id, lines); onChanged(); };
   const run = async (f: () => Promise<void>) => {
@@ -154,8 +163,8 @@ function OrderEditor({ o, products, schemes, inter, bad, onBack, onApprove, onCh
         );
       })}
       <div className="field"><input placeholder={'Add product'} value={q} onChange={e => setQ(e.target.value)} aria-label="Add product" />
-        {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => add(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">{inr(p.rate)}</span></button>)}</div>}
-        {!q && recent.length > 0 && <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{recent.map(p => <button key={p.id} className="chip" onClick={() => add(p)}>+ {p.name}</button>)}</div>}
+        {found.length > 0 && <div className="list">{found.map(p => <button key={p.id} className="item tap" onClick={() => void add(p)}><Plus size={16} /><span className="grow">{p.name}</span><span className="muted">{inr(p.rate)}</span></button>)}</div>}
+        {!q && recent.length > 0 && <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{recent.map(p => <button key={p.id} className="chip" onClick={() => void add(p)}>+ {p.name}</button>)}</div>}
       </div>
       {log.length > 0 && <details className="card"><summary className="muted"><History size={14} style={{ verticalAlign: -2 }} /> {'Activity'} · {log.length}</summary>
         <div className="list">{log.map((x, i) => <div key={i} className="row muted" style={{ fontSize: 'var(--f2)' }}>{showTime(x.at)} · {x.by}: {x.what}</div>)}</div></details>}

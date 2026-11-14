@@ -2,13 +2,13 @@
 // salesman order → godown picks → owner approves → invoice from picked qty → delivery plan (trip per van)
 // → load → trip out (live track) → delivered/photo → collect → day close (reconciliation)
 import { ChangeSet, db, getSettings, nowIso, session, today, daysFrom, ymd } from './db';
-import { activeSchemes, billLine, billTotals, checkOrder, makeInvoices, pickBatches, refreshSchemeClaims, type BillCut } from './billing';
+import { billTotals, checkOrder, makeInvoices, pickBatches, priceLines, refreshSchemeClaims, type BillCut } from './billing';
 import { invoiceBalances, paymentCounts, r2 } from './ledger';
 import { nextNumbers } from './sync';
 import { locationAllowed } from './privacy';
 import { billChangeBlock, isInterState } from './gst';
 import { buildCreditNote, costValue, extraBill, lineRoom, makeCreditNote, splitShort } from './credit';
-import { orderLineFor, pickedLines, shortageLines } from './lines';
+import { lineOf, orderLineFor, pickedLines, shortageLines } from './lines';
 import type { ClaimEntry, Invoice, InvoiceLine, Order, OrderLine, Role, Shop, Trip, Van } from './types';
 
 // ---- 1. salesman books: always enters the chain as 'new' (checks recorded for the owner)
@@ -117,10 +117,10 @@ export async function suggestPick(o: Order) {
     if (other.id === o.id) continue;
     for (const pk of other.picked ?? []) { if (!pk.batchId || !pk.qty) continue; const b = batches.find(x => x.id === pk.batchId); if (b) b.qty -= pk.qty; }
   }
-  return o.lines.map(l => {
+  return o.lines.map((l, i) => {
     const { picks, short } = pickBatches(batches, l.productId, l.qty);
     for (const p of picks) { const b = batches.find(x => x.id === p.batchId)!; b.qty -= p.qty; } // reserve within this order
-    return { productId: l.productId, ordered: l.qty, available: l.qty - short, picks };
+    return { productId: l.productId, line: lineOf(l, i), ordered: l.qty, available: l.qty - short, picks };
   });
 }
 
@@ -390,7 +390,7 @@ export async function bounceCheque(paymentId: string, reason: string) {
  * month's GSTR-1 is due. Every line is priced again (schemes, free pieces, tax by the shop's state) and its pieces are
  * taken from stock: a bill never charges a piece that is not in stock.
  */
-export async function saveBillEdit(invoiceId: string, shopId: string, edits: { productId: string; qty: number; rate: number; mrp?: number; discount?: number }[]) {
+export async function saveBillEdit(invoiceId: string, shopId: string, edits: { productId: string; qty: number; rate: number; mrp?: number; discount?: number; discountPct?: number }[]) {
   const inv = await db.invoices.get(invoiceId);
   if (!inv) throw new Error('Bill not found.');
   const block = billChangeBlock(inv, 'edit', today()); if (block) throw new Error(block);
@@ -400,6 +400,7 @@ export async function saveBillEdit(invoiceId: string, shopId: string, edits: { p
   if (!live.length) throw new Error('A bill needs at least one line. Cancel the bill instead.');
   if (live.some(l => !Number.isInteger(l.qty) || !(l.rate > 0))) throw new Error('Quantities are whole pieces and rates are more than ₹0.');
   if (live.some(l => (l.discount ?? 0) < 0 || (l.discount ?? 0) > r2(l.qty * l.rate))) throw new Error('A discount cannot be more than the value of the line.');
+  if (live.some(l => l.discountPct != null && (!(l.discountPct >= 0) || l.discountPct > 100))) throw new Error("Discount can't be more than 100%");
   const settings = await getSettings();
   const inter = isInterState(shop, settings);
   const products = new Map((await db.products.toArray()).map(p => [p.id, p]));
@@ -408,9 +409,12 @@ export async function saveBillEdit(invoiceId: string, shopId: string, edits: { p
   // stock: put the old pieces back, then take the new quantities out (the old lots first where they still fit, then oldest expiry)
   const batches = await db.batches.toArray();
   for (const l of inv.lines) for (const b of l.batches) { const x = batches.find(y => y.id === b.batchId); if (x) x.qty += b.qty; }
-  const lines: InvoiceLine[] = live.map(e => {
-    const p = products.get(e.productId); if (!p) throw new Error('Unknown product on the bill.');
-    const line = billLine(p, e.qty, e.rate, activeSchemes(schemes, p, inv.date), inter, { mrp: e.mrp, discount: e.discount });
+  // priced as a new bill is (Disc % or the typed ₹; a product on two lines: free pieces once, on line 1)
+  if (live.some(e => !products.has(e.productId))) throw new Error('Unknown product on the bill.');
+  const priced = priceLines(live, products, schemes, inter, inv.date);
+  const lines: InvoiceLine[] = live.map((e, k) => {
+    const p = products.get(e.productId)!;
+    const line = priced[k]!;
     const need = line.qty + line.freeQty;
     const old = new Set(inv.lines.filter(l => l.productId === p.id).flatMap(l => l.batches.map(b => b.batchId)));
     const ordered = [...batches.filter(b => old.has(b.id)), ...batches.filter(b => !old.has(b.id))];

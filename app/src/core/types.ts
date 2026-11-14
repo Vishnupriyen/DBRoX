@@ -31,6 +31,7 @@ export interface Base {
 }
 
 export interface Settings extends Base {
+  sameProductTwice?: boolean; // the same product on two lines of a sales bill (Part 2 item 34); missing = on (R1: off while old phones remain)
   firmName: string;
   gstin: string;
   address: string;
@@ -191,7 +192,8 @@ export interface InvoiceLine {
   rate: number;
   mrp: number;
   gross: number;
-  discount: number;
+  discount: number;   // ₹ — the legal figure on the bill
+  discountPct?: number; // the Disc % the ₹ came from (both kept, so a printed bill never changes)
   taxable: number;
   gst: number;
   cgst: number;

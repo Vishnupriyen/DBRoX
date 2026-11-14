@@ -2,8 +2,8 @@
 // qty, rate and Disc %, adds or removes products while the order is new or needs OK. The salesman's lines are kept
 // (Order.original); every edit goes to the activity log (the audit, one plain line per change). Once approved it changes
 // only at Verify picked. The screen and the Excel use the same figures as the bill (billing.ts), to the paisa.
-import { ChangeSet, db, nowIso, session } from './db';
-import { activeSchemes, billLine, billTotals, checkOrder } from './billing';
+import { ChangeSet, db, nowIso, session, today } from './db';
+import { billTotals, checkOrder, priceLines } from './billing';
 import { isInterState } from './gst';
 import { r2 } from './ledger';
 import { lineOf } from './lines';
@@ -16,10 +16,10 @@ export const uqcOf = (p: Pick<Product, 'unit'> | undefined) => (p?.unit || 'PCS'
 export function orderView(lines: OrderLine[], products: Map<string, Product>, schemes: Scheme[], inter: boolean, date?: string) {
   const rows: { line: number; product?: Product; unit: string; qty: number; rate: number; discountPct: number; discount: number; gst: number; amount: number; bill?: InvoiceLine }[] = [];
   const byCo = new Map<string, InvoiceLine[]>();
+  const priced = priceLines(lines, products, schemes, inter, date ?? today());
   lines.forEach((l, i) => {
-    const p = products.get(l.productId);
-    if (!p || !(l.qty > 0)) { rows.push({ line: lineOf(l, i), product: p, unit: uqcOf(p), qty: l.qty, rate: l.rate, discountPct: l.discountPct ?? 0, discount: 0, gst: p?.gst ?? 0, amount: 0 }); return; }
-    const b = billLine(p, l.qty, l.rate, activeSchemes(schemes, p, date ?? new Date().toISOString().slice(0, 10)), inter, { discountPct: l.discountPct });
+    const p = products.get(l.productId); const b = priced[i];
+    if (!p || !b) { rows.push({ line: lineOf(l, i), product: p, unit: uqcOf(p), qty: l.qty, rate: l.rate, discountPct: l.discountPct ?? 0, discount: 0, gst: p?.gst ?? 0, amount: 0 }); return; }
     byCo.set(p.companyId, [...(byCo.get(p.companyId) ?? []), b]);
     const pct = l.discountPct ?? (b.gross ? r2(b.discount / b.gross * 100) : 0);
     rows.push({ line: lineOf(l, i), product: p, unit: uqcOf(p), qty: l.qty, rate: l.rate, discountPct: pct, discount: b.discount, gst: p.gst, amount: b.total, bill: b });

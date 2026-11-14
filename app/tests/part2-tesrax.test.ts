@@ -2,7 +2,8 @@
 // says what it did and the next step; answers in place, with a Download where there is a file.
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { db, setSession } from '../src/core/db';
+import { ChangeSet, db, setSession } from '../src/core/db';
+import { bookOrder } from '../src/core/pipeline';
 import { seedDemo } from '../src/core/seed';
 import { handle } from '../src/core/engine';
 import type { Role } from '../src/core/types';
@@ -41,5 +42,24 @@ describe('2b Orders received', () => {
 describe('2c Verify picked', () => {
   for (const t of ['verify picked', 'open verify picked', 'picked orders']) it(`"${t}" opens Verify picked`, async () => {
     const r = await say(t); expect(r.go).toBe('verify'); expect(r.text).toBe('Opening Verify picked.');
+  });
+});
+
+describe('2d Disc % by voice', () => {
+  it('"discount 5 percent on <product>" / "disc 5% <product>" / "5 per discount <product>": one tap sets Disc % on that order line', async () => {
+    const shop = (await db.shops.toArray()).find(s => s.approved)!;
+    const p = (await db.products.toArray()).find(x => x.active && x.name.includes('Surf'))!;
+    const cs = new ChangeSet(); const o = await bookOrder(cs, shop, [{ productId: p.id, qty: 2, rate: p.rate }], ids.owner!); await cs.commit('t');
+    for (const t of [`discount 5 percent on ${p.name} in order ${shop.name}`, `disc 5% ${p.name} in order ${shop.name}`, `5 per discount ${p.name} in order ${shop.name}`]) {
+      const r = await say(t);
+      expect(r.text, t).toMatch(new RegExp(`Disc 5% on ${p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} in`));
+      expect(r.actions?.[0].label).toBe(`Set 5% on ${p.name}`);
+    }
+    const r = await say(`discount 5 percent on ${p.name} in order ${shop.name}`);
+    await r.actions![0].run();
+    expect((await db.orders.get(o.id))!.lines.find(l => l.productId === p.id)!.discountPct).toBe(5);
+  });
+  it('more than 100% is refused in words', async () => {
+    expect((await say('discount 150 percent on surf')).text).toMatch("Discount can't be more than 100%");
   });
 });

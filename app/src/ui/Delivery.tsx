@@ -118,13 +118,13 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   useBack(() => { if (step === 'confirm') { setStep('items'); return true; } return false; });
   useEffect(() => { db.products.toArray().then(ps => setProducts(new Map(ps.map(p => [p.id, p])))); getSettings().then(s => setGrn(s.grnPhoto !== false)); }, [stop]);
 
-  const key = (inv: Invoice, pid: string) => `${inv.id}|${pid}`;
+  const key = (inv: Invoice, pid: string, li: number) => `${inv.id}|${pid}|${li}`; // per bill line (the same product can sit on two lines)
   const shortValue = useMemo(() => {
     let v = 0;
-    for (const inv of stop.invoices) for (const l of inv.lines) { const s = short[key(inv, l.productId)]; if (s?.qty) v += Math.min(s.qty, l.qty) * (l.total / (l.qty || 1)); }
+    for (const inv of stop.invoices) for (const [li, l] of inv.lines.entries()) { const s = short[key(inv, l.productId, li)]; if (s?.qty) v += Math.min(s.qty, l.qty) * (l.total / (l.qty || 1)); }
     return r2(v);
   }, [short, stop]);
-  const extraValue = useMemo(() => { let v = 0; for (const inv of stop.invoices) for (const l of inv.lines) { const e = extra[key(inv, l.productId)]; if (e) v += e * (l.total / (l.qty || 1)); } return r2(v); }, [extra, stop]);
+  const extraValue = useMemo(() => { let v = 0; for (const inv of stop.invoices) for (const [li, l] of inv.lines.entries()) { const e = extra[key(inv, l.productId, li)]; if (e) v += e * (l.total / (l.qty || 1)); } return r2(v); }, [extra, stop]);
   const billTotal = r2(stop.invoices.reduce((a, i) => a + i.total, 0));
   const delivered = r2(billTotal - shortValue + extraValue);
   const distanceM = pos && stop.shop.lat && stop.shop.lng ? Math.round(Math.hypot((pos.lat - stop.shop.lat) * 111000, (pos.lng - stop.shop.lng) * 111000 * Math.cos(pos.lat * Math.PI / 180))) : undefined;
@@ -194,14 +194,14 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
         <div className="card" key={inv.id}>
           <div className="eyebrow" style={{ marginBottom: 6 }}><span className="billno">{inv.number}</span></div>
           <div className="list">
-            {inv.lines.map(l => {
+            {inv.lines.map((l, li) => {
               const p = products.get(l.productId);
-              const s = short[key(inv, l.productId)]; const e = extra[key(inv, l.productId)];
+              const s = short[key(inv, l.productId, li)]; const e = extra[key(inv, l.productId, li)];
               return (
-                <div className="item" key={l.productId} style={{ flexWrap: 'wrap' }}>
+                <div className="item" key={li} style={{ flexWrap: 'wrap' }}>
                   {p ? <Pack product={p} /> : <div className="avatar">?</div>}
                   <div className="grow" style={{ minWidth: 0 }}>
-                    <div className="t">{l.name}</div>
+                    <div className="t">{l.name}{inv.lines.filter(x => x.productId === l.productId).length > 1 ? ` · line ${li + 1} · ${inr(l.rate)}` : ''}</div>
                     <div className="s">MRP {l.mrp}</div>
                     <div className="row" style={{ marginTop: 4 }}>
                       <span className="badge navy">{l.qty + l.freeQty} pcs{l.freeQty ? ` (${l.freeQty} free)` : ''}</span>
@@ -214,9 +214,9 @@ function StopView({ stop, onClose }: { stop: Stop; onClose: () => void }) {
                       const raw = await askText(`${t('short')}: ${l.name} — ${'how many pieces?'}`, String(s?.qty ?? ''), 'number');
                       if (raw == null) return; const q = Number(raw); if (!Number.isFinite(q)) return;
                       const reason = q ? (await ask('Why?', { choices: [{ label: 'Not loaded / short', value: 'short' }, { label: 'Shop refused', value: 'refused' }, { label: 'Damaged in van', value: 'damaged', tone: 'danger' }] })) || 'short' : 'short';
-                      setShort({ ...short, [key(inv, l.productId)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
+                      setShort({ ...short, [key(inv, l.productId, li)]: { qty: Math.max(0, Math.min(q, l.qty)), reason } });
                     }}>{t('short')}</button>
-                    <button className="btn small" style={{ flex: 1 }} onClick={async () => { const raw = await askText(`${'Extra pieces of'} ${l.name} ${'given from the van?'}`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId)]: Math.max(0, Number(raw) || 0) }); }}>{'Extra'}</button>
+                    <button className="btn small" style={{ flex: 1 }} onClick={async () => { const raw = await askText(`${'Extra pieces of'} ${l.name} ${'given from the van?'}`, String(e ?? ''), 'number'); if (raw == null) return; setExtra({ ...extra, [key(inv, l.productId, li)]: Math.max(0, Number(raw) || 0) }); }}>{'Extra'}</button>
                   </div>
                 </div>
               );

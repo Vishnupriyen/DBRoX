@@ -88,6 +88,19 @@ export function lineCredits(inv: Pick<Invoice, 'lines'>, cns: Pick<CreditNote, '
   }
   return out;
 }
+/** a bill's HSN summary (GST rule 6, Part 2): one row per HSN + unit + rate, built from the bill LINES (never by product) —
+ *  qty includes free pieces, taxable value does not; two lines of one product add up; rows add to the bill to the paisa */
+export function hsnSummary(lines: Pick<Invoice['lines'][number], 'hsn' | 'gst' | 'qty' | 'freeQty' | 'taxable' | 'cgst' | 'sgst' | 'igst'>[], unitOf: (l: unknown) => string = () => 'PCS') {
+  const rows = new Map<string, { hsn: string; unit: string; gst: number; qty: number; taxable: number; cgst: number; sgst: number; igst: number; tax: number }>();
+  for (const l of lines) {
+    const unit = unitOf(l), k = `${l.hsn}|${unit}|${l.gst}`;
+    const r = rows.get(k) ?? { hsn: l.hsn, unit, gst: l.gst, qty: 0, taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0 };
+    r.qty += l.qty + (l.freeQty ?? 0); r.taxable = r2(r.taxable + l.taxable); r.cgst = r2(r.cgst + l.cgst); r.sgst = r2(r.sgst + l.sgst); r.igst = r2(r.igst + l.igst);
+    r.tax = r2(r.cgst + r.sgst + r.igst);
+    rows.set(k, r);
+  }
+  return [...rows.values()];
+}
 /** the money of a credit note per GST rate (and HSN), for GSTR-1, Tally and the printed note */
 export function cnTaxLines(c: Pick<CreditNote, 'lines'>, inv?: Pick<Invoice, 'lines'>) {
   const rows = new Map<string, { hsn: string; gst: number; qty: number; taxable: number; cgst: number; sgst: number; igst: number }>();

@@ -304,6 +304,8 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
     }
     if (table === 'expenses' && (!fin(r.amount) || (r.amount as number) < 0)) throw new GuardError('Expense amount is not valid.');
     if (table === 'orders' && ((r.lines as { qty: number }[]) ?? []).some(l => !fin(l.qty) || l.qty < 0)) throw new GuardError('An order line has an invalid quantity.');
+    // the same product on two lines: sales bills and our own orders only; a company's order (through the link) never (Part 2)
+    if (table === 'orders' && r.source === 'company') { const ids = ((r.lines as { productId: string }[]) ?? []).map(l => l.productId); if (new Set(ids).size !== ids.length) throw new GuardError('A company order has each product once.'); }
     if ((table === 'orders' || table === 'invoices') && ((r.lines as { discountPct?: number }[]) ?? []).some(l => l.discountPct != null && (!fin(l.discountPct) || l.discountPct < 0 || l.discountPct > 100))) throw new GuardError("Discount can't be more than 100%");
   }
 }
@@ -393,14 +395,20 @@ async function stockMovesFor(writes: { table: TableName; rec: Base; action: stri
   for (const w of writes) if (w.table === 'batches') lots.set(w.rec.id, { rec: w.rec as Batch, action: w.action });
   if (!lots.size) return [];
   const cause = writes.find(w => w.table !== 'batches' && w.table !== 'stockMoves' && w.table !== 'audit');
+  // a NEW bill's stock-out has a fixed id per lot (mv:{bill}:{lot}): a retried or doubled save of the same bill can never
+  // write a second movement (the guard refuses a movement id twice). Every other movement keeps its own new id.
+  const newBill = new Map<string, string>();
+  for (const w of writes) if (w.table === 'invoices' && !(await db.invoices.get(w.rec.id)))
+    for (const l of ((w.rec as unknown as Invoice).lines ?? [])) for (const b of l.batches ?? []) newBill.set(b.batchId, w.rec.id);
   const out: { table: TableName; rec: Base; action: string }[] = [];
   for (const [id, { rec, action }] of lots) {
     const was = await db.batches.get(id);
     if (was?.legacyQty) { rec.legacyQty = true; continue; }
     const delta = Number(rec.qty) - Number(was?.qty ?? 0);
     if (!delta || !Number.isFinite(delta)) continue; // a lot whose qty did not change (expiry, MRP); a bad qty is the guard's
+    const fixed = delta < 0 && newBill.has(id) ? `mv:${newBill.get(id)}:${id}` : undefined;
     out.push({ table: 'stockMoves', action: 'stock movement', rec: stamp<StockMove>({
-      batchId: id, productId: rec.productId, delta, reason: `${label}: ${action}`, src: cause ? `${cause.table}:${cause.rec.id}` : undefined, by: currentUser, at: nowIso(),
+      ...(fixed ? { id: fixed } : {}), batchId: id, productId: rec.productId, delta, reason: `${label}: ${action}`, src: cause ? `${cause.table}:${cause.rec.id}` : undefined, by: currentUser, at: nowIso(),
     } as StockMove) });
   }
   return out;

@@ -150,6 +150,8 @@ export function badMoney(table: string, d: Doc): string | null {
 export function badLines(table: string, d: Doc): string | null {
   if (table === 'orders' || table === 'invoices') {
     const lines = Array.isArray(d.lines) ? d.lines as Doc[] : [];
+    // the same product on two lines: sales bills and our own orders only, never a company's order (Part 2)
+    if (table === 'orders' && d.source === 'company' && new Set(lines.map(l => String(l?.productId))).size !== lines.length) return 'a company order has each product once';
     for (const l of lines) {
       if (!l || typeof l !== 'object') return 'a line is not valid';
       if (table === 'invoices' && l.qty === undefined) continue; // a bill line without pieces (old or partial record) is the bill's own checks
