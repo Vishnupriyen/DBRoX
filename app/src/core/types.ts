@@ -453,6 +453,8 @@ export interface Van extends Base {
   number: string;
   kind: 'own' | 'hired' | 'auto';
   driverId?: string;
+  capacity?: number; // cases per trip; missing = no limit (Part 2)
+  active?: boolean;  // false = hidden (deleted, or kept for old trips/expenses); missing = active
 }
 
 export interface AuditEntry extends Base {

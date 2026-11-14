@@ -769,7 +769,7 @@ export const CHEQUE_FIELDS = (date: string, bank: string) => [
 // ---------------------------------------------------------------------------------------------
 async function expenseFromText(textIn: string): Promise<Reply> {
   const t = norm(textIn);
-  const vans = await db.vans.toArray();
+  const vans = (await db.vans.toArray()).filter(v => v.active !== false);
   const me = await db.staff.get(session().userId);
   const van = vans.find(v => t.includes(norm(v.name)) || t.includes(norm(v.number))) ?? (me?.vanId ? vans.find(v => v.id === me.vanId) : undefined);
   return expenseProposal([{ date: today(), category: categoryOf(t), amount: findAmount(vans.reduce((x, v) => x.replace(new RegExp(`\\b${norm(v.name)}\\b`, 'g'), ' ').replace(new RegExp(`\\b${norm(v.number)}\\b`, 'g'), ' '), t).replace(/\b(van|auto|vehicle|lorry|tempo)\s*\d+\b/g, ' ')) ?? 0, vanId: van?.id ?? '', note: textIn }]);
@@ -777,7 +777,7 @@ async function expenseFromText(textIn: string): Promise<Reply> {
 
 async function expenseFromFile(file: File, textIn: string): Promise<Reply> {
   const t = norm(textIn);
-  const vans = await db.vans.toArray();
+  const vans = (await db.vans.toArray()).filter(v => v.active !== false);
   const van = vans.find(v => t.includes(norm(v.name)) || t.includes(norm(v.number)));
   let amount = findAmount(t.replace(/van \d+/, '')) ?? 0;
   let date = today();
@@ -807,7 +807,7 @@ async function expenseProposal(rows: Row[], photo?: string): Promise<Reply> {
         { key: 'date', label: 'Date', type: 'date', width: 120 },
         { key: 'category', label: 'Category', type: 'select', options: cats.map(c => ({ value: c, label: c })), width: 120 },
         { key: 'amount', label: 'Amount ₹', type: 'number', width: 90 },
-        { key: 'vanId', label: 'Van', type: 'select', options: [{ value: '', label: '—' }, ...vans.map(v => ({ value: v.id, label: v.name }))], width: 100 },
+        { key: 'vanId', label: 'Van', type: 'select', options: [{ value: '', label: '—' }, ...vans.filter(v => v.active !== false || rows.some(r => r.vanId === v.id)).map(v => ({ value: v.id, label: v.name }))], width: 100 },
         { key: 'note', label: 'Note', width: 200 },
       ],
       rows, meta: { photo },

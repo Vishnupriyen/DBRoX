@@ -83,6 +83,7 @@ export function Home({ role, go, open, onOpen }: { role: Role; go: (p: Page) => 
           { page: 'newshops', icon: UserPlus, en: 'New shops', count: newShops, tone: 'warn' },
           { page: 'targets', icon: Target, en: 'Targets' },
           { page: 'beat', icon: Route, en: 'Beats' },
+          { page: 'reports', icon: BarChart3, en: 'Sales reports', mod: 'sales' }, // item 16: the sales reports from the Sales tile
         ];
         sub.bill = [
           { page: 'orders-received', icon: ClipboardList, en: 'Orders received', count: c.toApproveOrders, tone: 'bad' },

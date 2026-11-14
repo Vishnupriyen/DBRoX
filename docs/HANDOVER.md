@@ -96,6 +96,8 @@ Branch `apk` (repo Vishnupriyen/Hanubix). The owner wants plain, simple words, o
   way out (offline too long, access removed, kicked). Test: app/tests/part1-followups.test.ts.
 - 2a0 line numbers: OrderLine/picked `line` (stable 1,2,3…, ChangeSet numbers every order saved), shortage/excess `line` = bill line
   index; core/lines.ts (lineOf, pickedLines, shortageLines); server keepLineNumbers. Old records work unchanged. Tests: app line-numbers, server line-numbers.
+- 2a: Sales reports tile (Home + Menu Sales); vans = core/vans.ts + ui/Vans.tsx (add/edit, Cases per trip, Kind chips, delete or hide,
+  blocked while a trip is open or bills wait, unique numbers also a guard, hidden vans out of every picker). Tests: vans, part2-order.
 
 ## Waiting for the owner
 - **Rule (owner, 14 Nov): work only through the AI team** (CLAUDE.md, "Work only through the team"). Part 1 was built by the

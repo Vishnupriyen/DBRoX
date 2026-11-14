@@ -13,7 +13,7 @@ export function Plan({ onDone }: { onDone: () => void }) {
   const [vans, setVans] = useState<Van[]>([]);
   const [mode, setMode] = useState<'ask' | 'rox' | 'me'>((localStorage.getItem('dbrox.planMode') as 'rox' | 'me') ?? 'ask');
   const [pending, setPending] = useState(0);
-  useEffect(() => { db.vans.toArray().then(setVans); billsToPlan().then(setPending); }, []);
+  useEffect(() => { db.vans.toArray().then(vs => setVans(vs.filter(v => v.active !== false))); billsToPlan().then(setPending); }, []);
   useEffect(() => {
     if (mode === 'rox') suggestPlan().then(setPlan);
     if (mode === 'me') suggestPlan().then(p => setPlan(p.map(x => ({ ...x, shops: [] as PlanSuggestion['shops'] })).concat([{ van: { id: '', name: 'Not planned', number: '', kind: 'own' } as Van, shops: p.flatMap(x => x.shops) }])));

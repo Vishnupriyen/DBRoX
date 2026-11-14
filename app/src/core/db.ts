@@ -291,6 +291,17 @@ async function guard(writes: { table: TableName; rec: Base }[]) {
       const alloc = ((r.allocations as { amount: number }[]) ?? []).reduce((a, x) => a + x.amount, 0);
       if (alloc - (r.amount as number) > 0.01) throw new GuardError('A payment cannot be split across bills for more than its amount.');
     }
+    if (table === 'vans' && r.active !== false) {
+      // a van number is used by one active van only (spaces, dashes and case do not matter)
+      const key = (n: unknown) => String(n ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (key(r.number)) {
+        const mine = (x: Record<string, unknown>) => x.id !== rec.id && x.active !== false && key(x.number) === key(r.number);
+        const here = [...last.values()].filter(w => w.table === 'vans' && w.rec.id !== rec.id).map(w => w.rec as unknown as Record<string, unknown>);
+        const twin = here.find(mine) ?? (await db.vans.toArray()).find(x => !last.has(`vans|${x.id}`) && mine(x as unknown as Record<string, unknown>));
+        if (twin) throw new GuardError(`Number already used by ${String((twin as { name?: string }).name ?? 'another van')}`);
+      }
+      if (r.capacity != null && (!Number.isInteger(r.capacity) || (r.capacity as number) <= 0)) throw new GuardError('Cases per trip must be a whole number more than 0.');
+    }
     if (table === 'expenses' && (!fin(r.amount) || (r.amount as number) < 0)) throw new GuardError('Expense amount is not valid.');
     if (table === 'orders' && ((r.lines as { qty: number }[]) ?? []).some(l => !fin(l.qty) || l.qty < 0)) throw new GuardError('An order line has an invalid quantity.');
   }

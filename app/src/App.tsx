@@ -30,7 +30,7 @@ import { StockIn, StockPosition, Damages, Ageing, StockReports } from './ui/Inve
 import { DeliveryStatus, TripReports, PrintLoad } from './ui/DeliveryReports';
 import { Outstanding, Cheques, Bank, Expenses, PnL, CashFlow, ExportPage, Gst } from './ui/Money';
 import { Reports } from './ui/Reports';
-import { VansPage } from './ui/More';
+import { VansPage } from './ui/Vans';
 import { CheckInGate, Today, Salary } from './ui/Payroll';
 import { CashWithStaff } from './ui/CashWithStaff';
 import { Beat } from './ui/Beat';

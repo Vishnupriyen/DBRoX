@@ -13,7 +13,7 @@ import { api, ENV_SERVER, syncNow, weakPin, WEAK_PIN_MSG } from '../core/sync';
 import { backupDump } from '../core/backup';
 import { addClaimLine, claimable, decisionsFor, dropClaimLine, openLines, sendClaim } from '../core/claims';
 import { billChangeBlock } from '../core/gst';
-import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff, type Van } from '../core/types';
+import { MODULES, type Claim, type ClaimDecision, type ClaimEntry, type Invoice, type ModuleKey, type Role, type Settings, type Staff } from '../core/types';
 import { PrintBill } from './PrintBill';
 import { ask, askText, confirmBox, notify } from './dialog';
 import { BillEditor } from './BillEditor';
@@ -26,7 +26,7 @@ type Page = 'menu' | 'modules' | 'settings' | 'staff' | 'bills' | 'claims' | 'li
 // Delivery, Accountant, Stock, Payroll) + Settings; Business Boost is its own gold card on top. Each item may need its own module.
 type MenuItem = { page: string; label: string; icon: LucideIcon; owner?: boolean; mod?: ModuleKey };
 const MENU: { group: string; icon: LucideIcon; mod?: ModuleKey; items: MenuItem[] }[] = [
-  { group: 'Sales', icon: ShoppingBag, mod: 'sales', items: [{ page: 'newshops', label: 'New shops', icon: Store }, { page: 'targets', label: 'Targets', icon: Target }, { page: 'beat', label: 'Beats', icon: Route }] },
+  { group: 'Sales', icon: ShoppingBag, mod: 'sales', items: [{ page: 'newshops', label: 'New shops', icon: Store }, { page: 'targets', label: 'Targets', icon: Target }, { page: 'beat', label: 'Beats', icon: Route }, { page: 'reports', label: 'Sales reports', icon: ChartColumn }] },
   { group: 'Bill', icon: ReceiptText, mod: 'bill', items: [{ page: 'orders-received', label: 'Orders', icon: ClipboardList }, { page: 'verify', label: 'Verify picked', icon: PackageCheck }, { page: 'billed', label: 'Bills', icon: ReceiptText }] },
   { group: 'Delivery', icon: Truck, mod: 'delivery', items: [{ page: 'plan', label: 'Plan route', icon: MapIcon }, { page: 'live', label: 'Live vans', icon: Truck, owner: true }, { page: 'status', label: 'Status', icon: CircleCheck }, { page: 'trips', label: 'Trips', icon: History }, { page: 'print', label: 'Load sheet', icon: FileText }, { page: 'vans', label: 'Vans', icon: CarFront, owner: true }] },
   { group: 'Accountant', icon: Calculator, items: [
@@ -158,32 +158,6 @@ function SettingsPage({ editable }: { editable: boolean }) {
       {f('serverUrl', 'Hanubix server address (for sync and photo reading)')}
       {editable && <button className="btn primary" onClick={async () => { const cs = new ChangeSet(); cs.put('settings', s, 'settings'); await cs.commit('Settings saved'); setSaved(true); }}>{t('save')}</button>}
       {saved && <span className="muted"> ✓ {t('done')}</span>}
-    </div>
-  );
-}
-
-export function VansPage({ editable, staff: staffIn }: { editable: boolean; staff?: Staff[] }) {
-  const [vans, setVans] = useState<Van[]>([]);
-  const [staffLoaded, setStaffLoaded] = useState<Staff[]>([]);
-  const staff = staffIn ?? staffLoaded;
-  const load = () => { db.vans.toArray().then(setVans); if (!staffIn) db.staff.toArray().then(setStaffLoaded); };
-  useEffect(() => { load(); }, []);
-  const drivers = staff.filter(s => s.role === 'delivery' && s.active);
-  return (
-    <div className="card">
-      <h3>Vans</h3>
-      <div className="list">
-        {vans.map(v => (
-          <div key={v.id} className="item stacked">
-            <div className="row" style={{ flexWrap: 'nowrap', width: '100%' }}>
-            <div className="avatar"><Truck size={18} /></div>
-            <div className="grow"><div className="t">{v.name} <span className="muted">{v.number}</span></div><div className="muted">{v.kind === 'own' ? 'Own' : 'Hired'} · driver: {staff.find(s => s.id === v.driverId)?.name ?? '—'}</div></div>
-            </div>
-            {editable && <select className="full" value={v.driverId ?? ''} onChange={async e => { const cs = new ChangeSet(); cs.put('vans', { ...v, driverId: e.target.value || undefined }, 'driver assigned'); const d = drivers.find(x => x.id === e.target.value); if (d) cs.put('staff', { ...d, vanId: v.id }, 'van assigned'); await cs.commit('Van driver'); load(); }}><option value="">no driver</option>{drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
-          </div>
-        ))}
-      </div>
-      {editable && <button className="btn small" style={{ marginTop: 8 }} onClick={async () => { const name = await askText('Van name (e.g. Van 2)'); if (!name) return; const number = await askText('Registration number', 'TN 31 '); if (number === null) return; const kind = (await ask('Own or hired?', { choices: [{ label: 'Own', value: 'own' }, { label: 'Hired', value: 'hired' }] })) as Van['kind'] || 'own'; const cs = new ChangeSet(); cs.put<Van>('vans', { name, number, kind }, 'van added'); await cs.commit('Van added'); load(); }}>+ Add van</button>}
     </div>
   );
 }

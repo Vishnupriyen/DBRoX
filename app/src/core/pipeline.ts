@@ -196,7 +196,7 @@ export async function billsToPlan(): Promise<number> {
   return (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled).length;
 }
 export async function suggestPlan(): Promise<PlanSuggestion[]> {
-  const vans = (await db.vans.toArray()).sort((a, b) => a.name.localeCompare(b.name));
+  const vans = (await db.vans.toArray()).filter(v => v.active !== false).sort((a, b) => a.name.localeCompare(b.name)); // hidden vans never get a plan
   const pending = (await db.invoices.where('deliveryStatus').equals('pending').toArray()).filter(i => !i.cancelled);
   const shops = new Map((await db.shops.toArray()).map(s => [s.id, s]));
   const byShop = new Map<string, Invoice[]>();
