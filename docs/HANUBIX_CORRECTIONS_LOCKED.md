@@ -1,6 +1,6 @@
 # Hanubix — Correction round, LOCKED (founder, 14 Nov 2026)
 
-Source: founder's handwritten review of the DB app (4 pages) + chat answers, 14 Nov 2026. 44 items in 5 parts.
+Source: founder's handwritten review of the DB app (4 pages) + chat answers, 14 Nov 2026. 48 items in 5 parts.
 Each part: build → tester → one full gate → real phone screenshots → founder's yes → next part.
 This replaces the earlier 4-part "convenience round" plan in HANDOVER.md.
 
@@ -56,6 +56,13 @@ This replaces the earlier 4-part "convenience round" plan in HANDOVER.md.
 41. Shop credit guard: salesman sees over-limit/overdue before ordering; billing asks owner approval.
 42. Owner Undo for approvals and day-close steps (with reason, in the activity log).
 45. Company rules: a company can get its own setup (scheme/claim format, ASM order approval, target upload, own report layout, fixed margin…) for only the distributors it chooses, applied only to that company's products and bills there. One app, built as switches (never copies); company sees only its own data; no rule can change GST, security or the distributor's own accounts; small switches free, a new feature for one company is paid custom work.
+48. Plan lock = current pricing, fully automatic. Today the lock still uses the old 6 Nov packs (last_mile, office, complete) and tiers
+    (starter…enterprise) in server/src/licence.ts — replace with: DB DMS ₹999 (all modules), DB LMD + Collection + Payroll ₹399; company SFA
+    ₹999 per active sales user, company DMS ₹999. Remove the demo module switch from the distributor's Menu. Automatic end to end: plan chosen
+    on the website or in the app → Razorpay UPI Autopay → webhook updates the sealed licence → modules on within a minute; monthly renewals
+    automatic; failed payment → reminders → 7-day grace banner → lock (collect money + download data still allowed) → unlock the moment they
+    pay; self-service upgrade (now, pay the difference) / downgrade (month end); company SFA billed by active sales-user count; free trial
+    starts at sign-up and moves on by itself. Only manual case: bank transfer/cash marked paid in our control panel.
 
 ## Added to Part 4 (locked 14 Nov 2026)
 46. One "Reports" card in the Menu = the single home of every report; each module's Reports button opens it filtered to that module; TESRAX can send any report. One standard for every report: date range + filters (salesman, beat, shop, company, product) → 3 summary numbers → detail table with totals row, tap a line to open the bill/shop/product → Excel/PDF with firm name, period, filters and totals; numbers match bills and ledger to the paisa (GST & Accounts specialist checks). Groups: Sales, Bill & Delivery, Accountant, Purchase & Stock, GST, People, Owner only.
